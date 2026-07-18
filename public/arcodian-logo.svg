@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 180" role="img" aria-labelledby="title">
+  <title id="title">Arcodian</title>
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#20D9FF"/><stop offset=".45" stop-color="#0875E9"/><stop offset="1" stop-color="#081B69"/></linearGradient></defs>
+  <g transform="translate(8 4) scale(.66)">
+    <path d="M42 165A94 94 0 0 1 128 31a94 94 0 0 1 86 134" fill="none" stroke="url(#g)" stroke-width="15" stroke-linecap="round"/>
+    <path d="m128 24 59 104-24-13-35-61-35 61-24 13zM72 126l56-34 56 34-9 77-47 30-47-30-9-77m23 15 8 49 25 16 25-16 8-49-33-20z" fill="url(#g)" fill-rule="evenodd"/>
+    <ellipse cx="128" cy="145" rx="116" ry="35" fill="none" stroke="#0AA9EF" stroke-width="7"/>
+    <circle cx="128" cy="145" r="30" fill="#fff" stroke="#0AA9EF" stroke-width="7"/>
+    <path d="M128 123c3 13 9 19 22 22-13 3-19 9-22 22-3-13-9-19-22-22 13-3 19-9 22-22" fill="#0875E9"/>
+  </g>
+  <!-- Custom geometric wordmark. Every glyph is an outlined vector path: no font dependency. -->
+  <g fill="#07185E" fill-rule="evenodd" aria-label="ARCODIAN">
+    <path d="m194 116 25-70h15l25 70h-16l-5-16h-24l-5 16zm24-30h16l-8-25z"/>
+    <path d="M269 116V46h29c17 0 27 9 27 24 0 10-5 18-14 21l17 25h-18l-14-22h-11v22zm16-36h12c8 0 12-3 12-10s-4-10-12-10h-12z"/>
+    <path d="M373 117c-23 0-38-14-38-36s15-36 38-36c10 0 19 3 26 9l-9 12c-5-4-10-6-17-6-13 0-21 8-21 21s8 21 21 21c7 0 12-2 18-7l9 12c-7 7-16 10-27 10"/>
+    <path d="M442 117c-23 0-38-14-38-36s15-36 38-36 38 14 38 36-15 36-38 36m0-15c13 0 21-8 21-21s-8-21-21-21-21 8-21 21 8 21 21 21"/>
+    <path d="M491 116V46h27c25 0 40 13 40 35s-15 35-40 35zm16-15h11c15 0 23-7 23-20s-8-20-23-20h-11z"/>
+    <path d="M570 46h16v70h-16z"/>
+    <path d="m596 116 25-70h15l25 70h-16l-5-16h-24l-5 16zm24-30h16l-8-25z"/>
+    <path d="M671 116V46h15l31 43V46h16v70h-14l-32-43v43z"/>
+  </g>
+  <path d="M198 141h530" stroke="#BCD7EF" stroke-width="2"/>
+  <g fill="#54709B">
+    <path d="M198 151h38v5h-38zm52 0h34v5h-34zm48 0h31v5h-31z"/>
+    <circle cx="243" cy="153.5" r="2.5"/><circle cx="291" cy="153.5" r="2.5"/>
+  </g>
+</svg>

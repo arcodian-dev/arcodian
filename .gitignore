@@ -1,0 +1,17 @@
+# dependencies & build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# secrets / local env (public build config .env.production + .env.example are kept)
+.env
+.env.local
+.env.*.local
+
+# foundry artifacts (out/ is regenerated; cache/ can hold sensitive run data)
+contracts/out/
+contracts/cache/
+
+# misc
+.DS_Store
+*.log
