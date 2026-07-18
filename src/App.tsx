@@ -29,6 +29,7 @@ import { BrandMark, FAQ_ITEMS, short, type WalletOption } from "./shared";
 
 const Screener = lazy(() => import("./pages/Market"));
 const FxWidget = lazy(() => import("./components/FxWidget"));
+const LiquidityPanel = lazy(() => import("./components/LiquidityPanel"));
 const Profile = lazy(() => import("./pages/Profile"));
 const LandingExperience = lazy(() => import("./pages/Landing"));
 const loadTrustCenter = () => import("./pages/TrustCenter");
@@ -898,6 +899,7 @@ export default function App() {
           <div className="fx-stage">
             <Suspense fallback={<div className="loading-board">Loading FX…</div>}>
               <FxWidget account={account} activeProvider={activeProvider} onConnect={() => connect()} />
+              <LiquidityPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />
             </Suspense>
           </div>
         </section>

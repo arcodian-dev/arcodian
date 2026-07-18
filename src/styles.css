@@ -2977,3 +2977,21 @@ body::before { background-size:80px 80px; opacity:.45; }
 .cost-line { margin: 10px 0 0; font-size: 13px; color: var(--navy); line-height: 1.6; }
 .cost-line strong { font-variant-numeric: tabular-nums; }
 .cost-line-note { opacity: .7; }
+
+/* --- FX liquidity panel ----------------------------------------------- */
+.lp-panel { display: flex; flex-direction: column; gap: 14px; padding: 20px; border: 1px solid var(--hair); border-radius: 16px; }
+.lp-head { display: flex; flex-direction: column; gap: 4px; }
+.lp-title { font-weight: 600; color: var(--navy); }
+.lp-sub { font-size: 13px; opacity: .75; }
+.lp-position { display: grid; gap: 8px; padding: 14px; border-radius: 12px; background: color-mix(in srgb, var(--arc) 8%, transparent); }
+.lp-position span { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.lp-position small { font-size: 12px; opacity: .7; }
+.lp-position b { font-variant-numeric: tabular-nums; }
+.lp-inputs { display: grid; gap: 10px; }
+.lp-inputs label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.lp-inputs input { padding: 10px 12px; border: 1px solid var(--hair); border-radius: 10px; font: inherit; }
+.lp-note { margin: 0; font-size: 12px; opacity: .7; line-height: 1.5; }
+.lp-cta, .lp-remove { padding: 12px; border: 0; border-radius: 10px; background: var(--arc); color: #fff; font: inherit; cursor: pointer; }
+.lp-remove { background: transparent; border: 1px solid var(--hair); color: var(--navy); }
+.lp-cta[disabled], .lp-remove[disabled] { opacity: .6; cursor: default; }
+.lp-status { margin: 0; font-size: 13px; opacity: .8; }
