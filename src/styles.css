@@ -2927,3 +2927,20 @@ body::before { background-size:80px 80px; opacity:.45; }
   .cards article, .landing-proof-grid article, .economics-flow > div,
   .docs-cards > div, .rail-card, .faq-list details { transition: none; }
 }
+
+/* --- Contracts / Trust page: retire the old dark-green theme -> blue/navy --- */
+.contracts-page > header h1 { color: var(--navy); }
+.contracts-page > header h1 em { color: var(--arc); }
+.contracts-page > header > p:last-child { color: #5c7599; }
+.contract-address-grid article { border-color: var(--hair); }
+.contract-rules article { border-color: var(--hair); background: linear-gradient(180deg, #fff, #f5faff); }
+.contract-rules b { color: var(--arc); }
+.contract-rules p { color: #5c7599; }
+.wiring-proof { color: #cbdcf5; background: radial-gradient(120% 130% at 100% 0, #0d2a80 0, transparent 55%), linear-gradient(160deg, #0a2170, var(--navy)); }
+.wiring-proof h2 { color: var(--volt); }
+.wiring-proof p { color: #9fb6de; }
+.wiring-proof > div > small { color: #7f97c4; }
+.wiring-checks span { border-color: #14357f; background: #0c236e; }
+.wiring-checks i { color: #fff; background: linear-gradient(140deg, var(--arc), var(--volt)); }
+.wiring-checks .bad i { background: #ff6b7f; }
+.wiring-checks small { color: #9fb6de; }
