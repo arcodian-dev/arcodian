@@ -2965,3 +2965,15 @@ body::before { background-size:80px 80px; opacity:.45; }
   /* deepen the light: a soft volt aura that tracks the pointer */
   .orbit-stage::before { content: ""; position: absolute; inset: -8%; z-index: 0; border-radius: 50%; pointer-events: none; background: radial-gradient(38% 38% at calc(50% + var(--mx,0) * 40px) calc(42% + var(--my,0) * 40px), #16c8ea38, transparent 70%); transition: background .2s ease; }
 }
+
+/* --- Dual-Currency Desk ---------------------------------------------- */
+.currency-toggle { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--hair); border-radius: 10px; }
+.currency-toggle button {
+  padding: 6px 12px; border: 0; border-radius: 8px; background: transparent;
+  font: inherit; font-size: 13px; color: var(--navy); cursor: pointer;
+  transition: background .2s ease, color .2s ease;
+}
+.currency-toggle button.active { background: var(--arc); color: #fff; }
+.cost-line { margin: 10px 0 0; font-size: 13px; color: var(--navy); line-height: 1.6; }
+.cost-line strong { font-variant-numeric: tabular-nums; }
+.cost-line-note { opacity: .7; }

@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
 import { ARC, ARC_EURC_ADDRESS, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, PUMP_SUITE_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
+import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
+import { CostLine } from "../components/CostLine";
+import { convert, currencyOf, trueCost, type Currency, type FxRate } from "../fx";
+import { fetchFxRate } from "../fxRate";
 import {
   arcProvider,
   communitySigningMessage,
@@ -39,6 +43,9 @@ export default function Screener({
   const [sortKey, setSortKey] = useState<"volume" | "change" | "holders" | "progress" | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [marketView, setMarketView] = useState<"markets" | "arena">("markets");
+  // Display currency is presentation only — it never reaches a contract call.
+  const [displayCurrency, setDisplayCurrency] = useState<Currency>(loadDisplayCurrency);
+  const [fxRate, setFxRate] = useState<FxRate>({ eurcPerUsdc: 1, usdcPerEurc: 1 });
   const [launches, setLaunches] = useState<LaunchAsset[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -59,6 +66,14 @@ export default function Screener({
   useEffect(() => {
     const timer = window.setInterval(() => setArenaNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const provider = arcProvider();
+    fetchFxRate(provider)
+      .then((rate) => { if (!cancelled) setFxRate(rate); })
+      .catch(() => { /* parity fallback already in state */ });
+    return () => { cancelled = true; provider.destroy(); };
   }, []);
   useEffect(() => {
     const open = () => setShowCreate(true);
@@ -318,6 +333,7 @@ export default function Screener({
         activeProvider={activeProvider}
         connect={connect}
         close={closeCoin}
+        fxRate={fxRate}
       />
     );
   }
@@ -424,6 +440,7 @@ export default function Screener({
             {item}
           </button>
         ))}
+        <CurrencyToggle value={displayCurrency} onChange={setDisplayCurrency} />
       </div>
       {loading ? (
         <div className="loading-board">
@@ -449,7 +466,12 @@ export default function Screener({
                 {item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}
                 <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
               </span>
-              <span className="mt-num">{Number(formatEther(BigInt(item.volume24h || item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} <small>USDC</small></span>
+              <span className="mt-num">{convert(
+                Number(formatEther(BigInt(item.volume24h || item.volume || "0"))),
+                currencyOf(item),
+                displayCurrency,
+                fxRate,
+              ).toLocaleString(undefined, { maximumFractionDigits: 2 })} <small>{displayCurrency}</small></span>
               <span className={`mt-num ${(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}`}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</span>
               <span className="mt-num">{item.holderCount || 0}</span>
               <span className="mt-progress"><i><em style={{ width: `${Math.min(100, item.progress)}%` }} /></i><b>{item.progress.toFixed(1)}%</b></span>
@@ -582,12 +604,14 @@ function TradingDesk({
   activeProvider,
   connect,
   close,
+  fxRate,
 }: {
   asset: LaunchAsset;
   account: string;
   activeProvider: EthereumProvider | null;
   connect: () => void;
   close: () => void;
+  fxRate: FxRate;
 }) {
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [deskTab, setDeskTab] = useState<"trades" | "holders" | "community">("trades");
@@ -639,6 +663,11 @@ function TradingDesk({
   const venueFeeLabel = asset.graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
+  // Phase 1: the buyer always spends the asset's own quote currency, so every
+  // route reports `direct`. Task 7 replaces this with the wallet's real holding
+  // and lights up the cross-currency route.
+  const holdingCurrency: Currency = currencyOf(asset);
+  const cost = trueCost(Number(amount) || 0, holdingCurrency, asset, fxRate);
 
   async function refresh() {
     try {
@@ -1215,6 +1244,15 @@ function TradingDesk({
                 <span><small>Venue fee</small><b>{venueFeeLabel}</b></span>
                 <span><small>Deadline</small><b>10 minutes</b></span>
               </div>
+              {side === "buy" && (
+                <CostLine
+                  cost={cost}
+                  holding={holdingCurrency}
+                  quoteCurrency={currencyOf(asset)}
+                  tokensOut={Number(formatEther(quote)).toLocaleString(undefined, { maximumFractionDigits: 4 })}
+                  symbol={asset.symbol}
+                />
+              )}
               <div className="execution-preview"><span><small>Average execution</small><b>{priceLabel(averageExecutionPrice)} USDC / {asset.symbol}</b></span><span className={priceImpact>5?"warning":""}><small>Estimated price impact</small><b>{priceImpact.toLocaleString(undefined,{maximumFractionDigits:2})}%</b></span></div>
             </div>
             {insufficientBalance && <p className="inline-error">Sell amount exceeds your {asset.symbol} balance.</p>}
