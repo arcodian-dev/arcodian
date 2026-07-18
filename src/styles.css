@@ -2796,3 +2796,134 @@ body::before { background-size:80px 80px; opacity:.45; }
   .rail-card, .fx-crosslink, .docs-links button, .docs-links a { transition: none; }
   .rail-card:hover { transform: translateY(-4px); }
 }
+
+/* ============================================================================ */
+/* Orbital Instrument v2 (2026-07-18) — de-template the card system + unify the  */
+/* stray green/teal remnants into the blue/cyan orbital palette. Signature = a   */
+/* cyan "arc-tick" bracket in each card corner (the Arc/orbit motif), flat        */
+/* precise panels over soft floating glass, DM Mono coordinate labels, one deep   */
+/* navy feature panel per section. Boldness spent only on the tick + feature      */
+/* panel; everything else stays quiet. Appended last so it wins the cascade.      */
+/* ============================================================================ */
+:root {
+  --navy: #071a5c; --arc: #0a6fe8; --volt: #16c8ea; --hair: #d6e5f6;
+  --panel-top: #ffffff; --panel-bot: #f5faff;
+}
+
+/* --- shared precise-panel surface for every card kind ---------------------- */
+.cards article,
+.landing-proof-grid article,
+.economics-flow > article, .economics-flow > div,
+.docs-cards > div {
+  position: relative; overflow: hidden;
+  padding: 26px 24px;
+  border: 1px solid var(--hair); border-radius: 15px;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel-bot));
+  box-shadow: 0 1px 0 #fff inset, 0 12px 34px #0b3a780e;
+  transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
+}
+/* kill the AI "stagger" — a precise grid reads more intentional */
+.cards article:nth-child(2),
+.landing-proof-grid article:nth-child(2),
+.economics-flow > article:nth-child(even), .economics-flow > div:nth-child(even) { transform: none; }
+
+/* signature: orbital arc-tick bracket, top-right */
+.cards article::after,
+.landing-proof-grid article::after,
+.economics-flow > article::after, .economics-flow > div::after,
+.docs-cards > div::after {
+  content: ""; position: absolute; top: 12px; right: 12px;
+  width: 18px; height: 18px; margin: 0; padding: 0;
+  border: 0; border-top: 1.5px solid var(--volt); border-right: 1.5px solid var(--volt);
+  border-radius: 0 16px 0 0; background: none;
+  opacity: .5; transition: opacity .25s ease, width .25s ease, height .25s ease;
+}
+.cards article:hover, .landing-proof-grid article:hover,
+.docs-cards > div:hover, .economics-flow > article:hover, .economics-flow > div:hover {
+  transform: translateY(-3px);
+  border-color: #a9caf1; box-shadow: 0 22px 50px #0b3a7818;
+}
+.cards article:hover::after, .landing-proof-grid article:hover::after,
+.docs-cards > div:hover::after, .economics-flow > article:hover::after, .economics-flow > div:hover::after {
+  opacity: 1; width: 26px; height: 26px;
+}
+
+/* --- home .cards ----------------------------------------------------------- */
+.cards article::before { content: ""; position: absolute; left: 0; top: 20px; bottom: 20px; width: 2px; background: linear-gradient(180deg, var(--arc), var(--volt)); border-radius: 2px; opacity: .0; transition: opacity .22s ease; }
+.cards article:hover::before { opacity: .9; }
+.cards span { font: 700 11px/1 "DM Mono", monospace; letter-spacing: .18em; text-transform: uppercase; color: var(--arc); }
+.cards h3 { font-family: Syne, Manrope, sans-serif; font-size: 23px; letter-spacing: -.03em; color: var(--navy); margin: 22px 0 10px; }
+.cards p { color: #5c7599; line-height: 1.62; }
+
+/* --- landing manifesto + proof grid: recolor green -> blue ----------------- */
+.landing-manifesto { border-top: 1px solid var(--hair); }
+.landing-manifesto h2 { color: var(--navy); }
+.landing-manifesto > p { color: #3a5680; }
+.landing-manifesto > span { border-left: 2px solid var(--volt); color: #4a6690; }
+.landing-proof-grid article { min-height: 232px; }
+.landing-proof-grid b { color: var(--arc); font: 700 11px/1 "DM Mono", monospace; letter-spacing: .16em; text-transform: uppercase; }
+.landing-proof-grid h3 { margin: 46px 0 10px; color: var(--navy); letter-spacing: -.03em; }
+.landing-proof-grid p { color: #5c7599; }
+/* the one deep feature panel — navy, not teal */
+.landing-proof-grid article:nth-child(2) { background: linear-gradient(165deg, #0a2170, var(--navy)); border-color: #0a2170; }
+.landing-proof-grid article:nth-child(2)::after { border-color: var(--volt); opacity: .8; }
+.landing-proof-grid article:nth-child(2) b { color: var(--volt); }
+.landing-proof-grid article:nth-child(2) h3 { color: #fff; }
+.landing-proof-grid article:nth-child(2) p { color: #b9cdf0; }
+
+/* --- landing final CTA: navy + volt --------------------------------------- */
+.landing-final-cta { background: radial-gradient(120% 140% at 100% 0, #0d2a80 0, transparent 60%), linear-gradient(160deg, #0a2170, var(--navy)); box-shadow: 0 28px 70px #07185c22; }
+.landing-final-cta p { color: #bcd0f2; }
+.landing-final-cta button { background: linear-gradient(135deg, var(--arc), var(--volt)); color: #fff; }
+
+/* --- docs economics flow (now <div>) + ledger ----------------------------- */
+.economics-flow { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.economics-flow > div { min-height: 250px; display: flex; flex-direction: column; }
+.economics-flow i { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; color: #fff; background: linear-gradient(140deg, var(--arc), var(--volt)); font: 800 12px/1 "DM Mono", monospace; box-shadow: 0 8px 18px #0a6fe83a; }
+.economics-flow small { display: block; margin-top: 18px; color: var(--arc); font: 700 10px/1 "DM Mono", monospace; letter-spacing: .16em; text-transform: uppercase; }
+.economics-flow h3 { margin: 8px 0 12px; color: var(--navy); font-family: Syne, Manrope, sans-serif; font-size: 1.28rem; letter-spacing: -.03em; }
+.economics-flow p { color: #5c7599; line-height: 1.55; }
+.economics-ledger { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.economics-ledger > div { padding: 24px; border-radius: 16px; color: #fff; background: linear-gradient(165deg, #0a2170, var(--navy)); border: 1px solid #0a2170; position: relative; overflow: hidden; }
+.economics-ledger > div::after { content: ""; position: absolute; top: 12px; right: 12px; width: 18px; height: 18px; border-top: 1.5px solid var(--volt); border-right: 1.5px solid var(--volt); border-radius: 0 16px 0 0; opacity: .7; }
+.economics-ledger small { color: var(--volt); font: 700 10px/1 "DM Mono", monospace; letter-spacing: .14em; text-transform: uppercase; }
+.economics-ledger strong { display: block; margin: 14px 0 8px; font-family: Syne, Manrope, sans-serif; font-size: 1.9rem; letter-spacing: -.02em; }
+.economics-ledger p { margin: 0; color: #b9cdf0; }
+.economics-page > header > p:not(.kicker) { color: #3a5680; }
+
+/* --- FAQ: recolor teal -> blue ------------------------------------------- */
+.faq-page h1 { color: var(--navy); }
+.faq-page h1 em { color: var(--arc); }
+.faq-page header > p:not(.kicker) { color: #5c7599; }
+.faq-page header button, .ack-more { color: var(--arc); }
+.faq-list details { border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 10px 30px #0b3a780a; transition: border-color .2s ease, box-shadow .2s ease; }
+.faq-list details[open] { border-color: #a9caf1; box-shadow: 0 16px 40px #0b3a7814; }
+.faq-list summary { color: var(--navy); }
+.faq-list summary span { color: var(--arc); font: 700 11px/1 "DM Mono", monospace; }
+.faq-list summary i { color: var(--arc); }
+.faq-list details p { color: #5c7599; }
+
+/* --- Rails: from AI 3D-tilt tiles -> instrument console entries ------------ */
+.rail-card { border-radius: 15px; background: linear-gradient(180deg, var(--panel-top), var(--panel-bot)); box-shadow: 0 12px 34px #0b3a780e; padding: 24px 22px 22px; }
+.rail-card:hover { transform: translateY(-4px); box-shadow: 0 26px 56px #0b3a781c; border-color: #a9caf1; }
+.rail-card::before { content: ""; position: absolute; left: 0; top: 18px; bottom: 18px; width: 3px; border-radius: 3px; background: linear-gradient(180deg, var(--arc), var(--volt)); opacity: .85; }
+.rail-glyph { width: 46px; height: 46px; border-radius: 12px; font-size: 22px; transform: none; box-shadow: 0 10px 22px #0a6fe835, inset 0 1px 0 #ffffff55; }
+.rail-card b { transform: none; color: var(--navy); }
+.rail-card p { transform: none; color: #5c7599; }
+.rail-card em { color: var(--arc); }
+/* corner arc-tick for rails too */
+.rail-card::after { content: ""; position: absolute; top: 12px; right: 12px; width: 18px; height: 18px; border-top: 1.5px solid var(--volt); border-right: 1.5px solid var(--volt); border-radius: 0 16px 0 0; opacity: .5; transition: opacity .25s ease, width .25s ease, height .25s ease; }
+.rail-card:hover::after { opacity: 1; width: 26px; height: 26px; }
+.rail-shine { display: none; }
+.landing-rails-head h2 { color: var(--navy); }
+
+/* --- fx facts + docs cards accents ---------------------------------------- */
+.fx-facts span { border-color: var(--hair); }
+.fx-facts span i { color: var(--arc); }
+.docs-cards b, .docs-links b { color: var(--navy); }
+.docs-section-head h2, .docs-hero h1 { color: var(--navy); }
+
+@media (prefers-reduced-motion: reduce) {
+  .cards article, .landing-proof-grid article, .economics-flow > div,
+  .docs-cards > div, .rail-card, .faq-list details { transition: none; }
+}
