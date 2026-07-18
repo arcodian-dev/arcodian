@@ -57,13 +57,21 @@ export const LEGACY_PUMP_FACTORY_ADDRESSES = [
 ] as const;
 // USDC<->EURC FX pool (constant-product AMM over the 6-dec USDC ERC-20 interface
 // and EURC). Powers the in-app FX widget. Deployed 2026-07-18.
-export const ARC_FX_POOL_ADDRESS = "0x09c2A629834a0fb0c559659214Cc1802bCE910FD";
+// Permissionless USDC<->EURC AMM (ArcFxPoolV2). ERC-20 LP shares, 10 bps fee
+// split 8 LP / 2 protocol, no owner and no privileged withdrawal — a provider's
+// only exit is removeLiquidity, in proportion to their shares. Deployed
+// 2026-07-18, replacing the owner-only v1 pool
+// (0x09c2A629834a0fb0c559659214Cc1802bCE910FD, drained to zero on migration).
+export const ARC_FX_POOL_ADDRESS = "0x982D61ddCAb6169d82B3e37A4E4158f1982E5447";
 export const ARC_USDC_ERC20 = ARC.nativeToken; // USDC dual-interface ERC-20, 6 decimals
 // Atomic USDC -> EURC-curve buy router. Deployed 2026-07-18. Immutable and
 // ownerless: no owner, withdraw, pause or upgrade path, so the USDC allowance
 // users grant it cannot be used by anyone to move their funds. A failing leg
 // reverts the whole route, so a buyer is never stranded holding EURC.
-export const CROSS_BUY_ROUTER_ADDRESS = "0x218786BC01E6c401A5A7A514103a582D53C4a9C7";
+// Redeployed 2026-07-18 against ArcFxPoolV2 — the router is immutable and
+// hardcodes the pool address, so a new pool requires a new router. The prior
+// deployment (0x218786BC01E6c401A5A7A514103a582D53C4a9C7) pointed at the v1 pool.
+export const CROSS_BUY_ROUTER_ADDRESS = "0xF51DF463bb2Db8Fe1CfC5CCfB87D1b34B5AD9ef9";
 export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 // EURC-collateral pump suite (QUOTE_KIND=1). Launches priced/settled in EURC
 // (6 dec) instead of native USDC. Deployed 2026-07-18. Frontend create/trade

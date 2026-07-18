@@ -118,7 +118,7 @@ export default function FxWidget({ account, activeProvider, onConnect }: Props) 
     <div className="fx-widget">
       <div className="fx-head">
         <span className="fx-title">Stablecoin FX</span>
-        <span className="fx-sub">USDC ⇄ EURC · on-chain · 0.10% fee</span>
+        <span className="fx-sub">USDC ⇄ EURC · on-chain · 0.10% fee (0.08% to LPs)</span>
       </div>
       <div className="fx-row">
         <label>You pay</label>
