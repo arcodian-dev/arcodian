@@ -2952,3 +2952,16 @@ body::before { background-size:80px 80px; opacity:.45; }
 .wallet, .primary { color: #fff; }
 .mobile-dock button.dock-create { color: #fff; }
 .cards span, .landing-proof-grid b, .economics-flow small { color: var(--arc); }
+
+/* --- Hero pointer-parallax depth (only when motion is welcome) ------------- */
+@media (prefers-reduced-motion: no-preference) {
+  .orbit-stage, .orbit-glow, .orbit-ring, .brand-planet, .orbit-chip { will-change: transform; transition: transform .28s cubic-bezier(.2,.7,.2,1); }
+  .orbit-glow { transform: rotate(-10deg) translate3d(calc(var(--mx,0) * 10px), calc(var(--my,0) * 10px), 0); }
+  .orbit-ring { transform: rotateX(68deg) rotateZ(-10deg) translate3d(calc(var(--mx,0) * 16px), calc(var(--my,0) * 16px), 0); }
+  .orbit-ring.ring-two { transform: rotateY(65deg) rotateZ(24deg) translate3d(calc(var(--mx,0) * 22px), calc(var(--my,0) * 22px), 0); }
+  .brand-planet { transform: translateZ(54px) translate3d(calc(var(--mx,0) * 30px), calc(var(--my,0) * 30px), 0); }
+  .orbit-chip.chip-market { transform: translate3d(calc(var(--mx,0) * -26px), calc(var(--my,0) * -26px), 0); }
+  .orbit-chip.chip-curve { transform: translate3d(calc(var(--mx,0) * -20px), calc(var(--my,0) * -18px), 0); }
+  /* deepen the light: a soft volt aura that tracks the pointer */
+  .orbit-stage::before { content: ""; position: absolute; inset: -8%; z-index: 0; border-radius: 50%; pointer-events: none; background: radial-gradient(38% 38% at calc(50% + var(--mx,0) * 40px) calc(42% + var(--my,0) * 40px), #16c8ea38, transparent 70%); transition: background .2s ease; }
+}

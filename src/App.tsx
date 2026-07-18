@@ -805,7 +805,18 @@ export default function App() {
 
       <Suspense fallback={<div className="loading-board route-fallback">Loading workspace…</div>}>
       {tab === "home" && (
-        <section className="hero">
+        <section
+          className="hero"
+          onMouseMove={(e) => {
+            const r = e.currentTarget.getBoundingClientRect();
+            e.currentTarget.style.setProperty("--mx", String((e.clientX - r.left) / r.width - 0.5));
+            e.currentTarget.style.setProperty("--my", String((e.clientY - r.top) / r.height - 0.5));
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.setProperty("--mx", "0");
+            e.currentTarget.style.setProperty("--my", "0");
+          }}
+        >
           <div className="hero-content">
             <p className="kicker">Made for Arc · Markets are live</p>
             <h1>
