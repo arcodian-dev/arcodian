@@ -98,3 +98,53 @@ export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",
   "Avalanche Fuji", "OP Sepolia", "Polygon Amoy", "Solana Devnet",
 ] as const;
+
+// --- Subdomain routing ------------------------------------------------------
+// One SPA is deployed to every docroot. The hostname decides the default view;
+// nav links that point at a different subdomain render as real anchors so they
+// open that subdomain (in a new tab). Localhost / preview hosts route in-SPA so
+// development keeps working without DNS.
+export const BASE_DOMAIN = "arcodian.fun";
+// Flip to "true" (VITE_SUBDOMAINS_LIVE) only once the swap/bridge/market/docs
+// aaPanel sites exist and receive the build. Until then nav links stay in-SPA so
+// the single live arcodian.fun docroot never ships a dead cross-subdomain link.
+export const SUBDOMAINS_LIVE = import.meta.env.VITE_SUBDOMAINS_LIVE === "true";
+// tab -> subdomain label. Home + fx have no subdomain (they live on the base host).
+export const SUBDOMAIN_FOR_TAB = {
+  screener: "market",
+  swap: "swap",
+  bridge: "bridge",
+  how: "docs",
+} as const;
+const TAB_FOR_SUBDOMAIN: Record<string, string> = {
+  market: "screener",
+  swap: "swap",
+  bridge: "bridge",
+  docs: "how",
+};
+function isBaseHostFamily(hostname: string): boolean {
+  return hostname === BASE_DOMAIN || hostname.endsWith(`.${BASE_DOMAIN}`);
+}
+// The leading label of the current host, or "" for the apex / non-arcodian hosts.
+export function currentSubdomain(hostname: string): string {
+  if (!isBaseHostFamily(hostname)) return "";
+  const rest = hostname.slice(0, hostname.length - BASE_DOMAIN.length).replace(/\.$/, "");
+  const label = rest.split(".").filter(Boolean).pop() || "";
+  return label === "www" ? "" : label;
+}
+// Default tab implied by a hostname (null = fall through to path routing).
+export function subdomainTab(hostname: string): string | null {
+  const label = currentSubdomain(hostname);
+  return label ? TAB_FOR_SUBDOMAIN[label] || null : null;
+}
+// Absolute URL for a nav tab when it lives on a *different* subdomain than the
+// current host; null means the tab is reachable in-SPA on the current host.
+export function navHref(tab: string, hostname: string, live: boolean = SUBDOMAINS_LIVE): string | null {
+  if (!live) return null; // subdomains not deployed yet: keep everything in-SPA
+  if (!isBaseHostFamily(hostname)) return null; // dev / preview: stay in-SPA
+  const target = (SUBDOMAIN_FOR_TAB as Record<string, string>)[tab];
+  const here = currentSubdomain(hostname);
+  if (!target) return here ? `https://${BASE_DOMAIN}/${tab === "screener" ? "market" : tab}` : null;
+  if (target === here) return null; // already on this subdomain
+  return `https://${target}.${BASE_DOMAIN}/`;
+}

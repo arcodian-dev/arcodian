@@ -154,4 +154,8 @@ export const FAQ_ITEMS = [
   ["What happens to liquidity after graduation?", "The remaining tokens and real USDC move into the canonical ARC DEX pair. All LP ownership tokens are minted to the burn address, so the creator and deployer cannot withdraw that liquidity."],
   ["Does a report automatically remove a coin?", "No. Reports are review signals only. They do not freeze contracts, move user funds, or automatically hide a permissionless market."],
   ["Are creator badges or Arena rankings paid?", "No. Reputation, missions, Arena standings, and badges are computed from indexed public activity and canonical onchain data."],
+  ["Can I launch a coin priced in EURC?", "Yes. Toggle the collateral to EURC when you create. The coin then trades against EURC on its own bonding curve (same 1% fee, same graduation logic), and the interface auto-detects EURC for every buy and sell. Prices display in € instead of $."],
+  ["What is the StableCoin FX desk?", "A dedicated page that swaps USDC and EURC directly through the on-chain Arc FX pool—a constant-product AMM with a 0.10% fee. It is stablecoin-only: no aggregator hop, no bridge, one visible rate quoted by the pool."],
+  ["Why do Swap, Bridge, Market and Docs open new tabs?", "Each runs on its own subdomain (swap./bridge./market./docs.arcodian.fun) so you can keep several workspaces open at once. It is the same non-custodial app on every subdomain—only the default view changes."],
+  ["Which wallets and networks are supported?", "Any EIP-1193 / EIP-6963 browser wallet, plus WalletConnect. Trading and FX run on Arc Testnet (chain 5042002); bridging additionally touches the supported Circle CCTP testnets. Your keys never leave your wallet."],
 ];

@@ -149,21 +149,110 @@ export function FaqPage({ openHow, openContracts, openCanary }: { openHow: () =>
   return <section className="faq-page"><TrustNav active="faq" openHow={openHow} openContracts={openContracts} openCanary={openCanary} /><header><p className="kicker">Plain answers</p><h1>Before you touch<br/><em>the market.</em></h1><p>Short answers about testnet status, pricing, fees, graduation, liquidity, and wallet safety.</p><button onClick={openHow}>Read the full mechanics →</button></header><div className="faq-list">{FAQ_ITEMS.map(([question,answer],index)=><details key={question} open={index===0}><summary><span>{String(index+1).padStart(2,"0")}</span>{question}<i>+</i></summary><p>{answer}</p></details>)}</div></section>;
 }
 
+const DOCS_SECTIONS = [
+  ["what", "What Arcodian is"],
+  ["lifecycle", "Coin lifecycle"],
+  ["fees", "Fees & graduation"],
+  ["eurc", "EURC launches"],
+  ["fx", "StableCoin FX"],
+  ["bridge", "Bridge"],
+  ["safety", "Safety & custody"],
+  ["verify", "Verify everything"],
+] as const;
+
 export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: { enterMarket: () => void; openContracts: () => void; openFaq: () => void; openCanary: () => void }) {
-  return <section className="economics-page">
+  return <section className="docs-page">
     <TrustNav active="how" openContracts={openContracts} openFaq={openFaq} openCanary={openCanary} />
-    <header><p className="kicker">The workings, in public</p><h1>One curve. One threshold.<br/><em>No hidden exit.</em></h1><p>Arcodian v5 is a permissionless Arc Testnet market system. The interface reads the same contracts used for pricing, fees, graduation, and liquidity.</p><button className="primary" onClick={enterMarket}>Open the market</button></header>
-    <div className="economics-flow">
-      <article><i>01</i><small>Opening state</small><h2>1,000 USDC starting FDV</h2><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></article>
-      <article><i>02</i><small>While trading</small><h2>1% curve fee</h2><p>Every curve Buy or Sell charges 1%. Buy fees are removed before reserve growth; quotes and minimum output are calculated onchain.</p></article>
-      <article><i>03</i><small>Graduation</small><h2>4,500 USDC net reserve</h2><p>At the threshold, the remaining tokens and real USDC move atomically into the canonical ARC DEX pair.</p></article>
-      <article><i>04</i><small>After graduation</small><h2>LP ownership burned</h2><p>All LP tokens are minted to the burn address. The underlying token and USDC remain tradable, but no creator or deployer can withdraw the liquidity.</p></article>
-    </div>
-    <div className="economics-ledger">
-      <div><small>ARC DEX total swap fee</small><strong>0.30%</strong><p>Applied to each post-graduation swap.</p></div>
-      <div><small>Protocol share</small><strong>0.05%</strong><p>Sent to the immutable treasury; the remainder stays in pool economics.</p></div>
-      <div><small>Expected graduation FDV</small><strong>≈30,250 USDC</strong><p>At the exact threshold; a final transaction can cross slightly above it.</p></div>
-    </div>
-    <aside><strong>Testnet notice</strong><p>Arcodian currently runs on Arc Testnet chain 5042002. Test USDC has no financial value. Contract addresses, pair reserves, activity, and LP burn proof remain independently inspectable through Arc Explorer.</p></aside>
+    <header className="docs-hero">
+      <div>
+        <p className="kicker">Documentation</p>
+        <h1>How Arcodian works,<br/><em>end to end.</em></h1>
+        <p>Arcodian is a permissionless market system on Arc Testnet. Every price, fee, and graduation is executed by public contracts—this page documents each rail and the exact numbers behind it. Nothing here is set from a dashboard.</p>
+        <div className="docs-hero-actions"><button className="primary" onClick={enterMarket}>Open the market</button><button onClick={openContracts}>See the contracts →</button></div>
+      </div>
+      <nav className="docs-toc" aria-label="On this page">
+        <small>On this page</small>
+        {DOCS_SECTIONS.map(([id, label], i) => <a key={id} href={`#docs-${id}`}><i>{String(i + 1).padStart(2, "0")}</i>{label}</a>)}
+      </nav>
+    </header>
+
+    <article id="docs-what" className="docs-section">
+      <div className="docs-section-head"><span>01</span><h2>What Arcodian is</h2></div>
+      <p>A launchpad and exchange built for Arc's USDC-native economy. Anyone can create a coin; it gets a live bonding-curve market the moment it launches. When a coin matures it graduates to a canonical AMM pair and its liquidity ownership is burned. The web app only ever reads contracts and asks your wallet to sign—it holds no keys and takes no custody.</p>
+      <div className="docs-cards">
+        <div><b>Permissionless</b><p>No allowlist, no approval queue. The same rule set applies to every creator and trader.</p></div>
+        <div><b>Readable</b><p>Creator, contract, holders, tape, and curve sit in one view. Quotes come from on-chain reserves.</p></div>
+        <div><b>Non-custodial</b><p>Each buy, sell, swap, or bridge is a wallet-signed transaction. Arcodian never receives your seed phrase.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-lifecycle" className="docs-section">
+      <div className="docs-section-head"><span>02</span><h2>Coin lifecycle</h2></div>
+      <p>A coin moves through four public states. There is no hidden mint, pause, or exit between them.</p>
+      <div className="economics-flow">
+        <div><i>01</i><small>Opening state</small><h3>1,000 USDC starting FDV</h3><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></div>
+        <div><i>02</i><small>While trading</small><h3>Open price discovery</h3><p>Buys and sells execute against the curve. Every quote and minimum-output is computed on-chain before you sign.</p></div>
+        <div><i>03</i><small>Graduation</small><h3>4,500 USDC net reserve</h3><p>At the threshold, remaining tokens and real collateral move atomically into the canonical ARC DEX pair.</p></div>
+        <div><i>04</i><small>After graduation</small><h3>LP ownership burned</h3><p>All LP tokens are minted to the burn address. The token and collateral stay tradable; nobody can withdraw the liquidity.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-fees" className="docs-section">
+      <div className="docs-section-head"><span>03</span><h2>Fees & graduation</h2></div>
+      <p>Two fee regimes, both charged atomically by the contracts—before and after graduation.</p>
+      <div className="economics-ledger">
+        <div><small>Bonding-curve fee</small><strong>1.00%</strong><p>Charged on every curve buy and sell. Buy fees are removed before reserve growth.</p></div>
+        <div><small>ARC DEX total swap fee</small><strong>0.30%</strong><p>Symmetric on buys and sells of the graduated pair.</p></div>
+        <div><small>Protocol share</small><strong>0.05%</strong><p>Accrues in-contract and is withdrawn by pull, so trading never halts on a treasury failure.</p></div>
+        <div><small>Graduation threshold</small><strong>4,500</strong><p>Net collateral reserve. A final transaction can cross slightly above it.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-eurc" className="docs-section">
+      <div className="docs-section-head"><span>04</span><h2>EURC launches</h2></div>
+      <p>Coins can be denominated in <b>EURC</b> instead of USDC. Pick the collateral with the USDC/EURC toggle when you create. The bonding curve, 1% fee, and graduation logic are identical; only the quote asset changes.</p>
+      <div className="docs-cards">
+        <div><b>Auto-detected</b><p>Choose EURC and every trade on that coin routes through EURC—approval, buy, and sell—without another switch.</p></div>
+        <div><b>Priced in €</b><p>Reserves, market cap, and the graduation bar display in euros. USDC coins are byte-identical to before.</p></div>
+        <div><b>Own pool at graduation</b><p>An EURC coin graduates into an EURC-denominated ARC DEX pair, with the same LP-burn guarantee.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-fx" className="docs-section">
+      <div className="docs-section-head"><span>05</span><h2>StableCoin FX</h2></div>
+      <p>The <b>StableCoin FX</b> desk swaps USDC and EURC directly through the on-chain Arc FX pool—a constant-product AMM. It is the fastest path between the two stablecoins: no aggregator, no bridge, one rate quoted by the pool.</p>
+      <div className="economics-ledger">
+        <div><small>Pool type</small><strong>Constant-product</strong><p>x·y=k AMM over the 6-decimal USDC and EURC interfaces.</p></div>
+        <div><small>Pool fee</small><strong>0.10%</strong><p>Lower than a curve trade—this is pure stablecoin conversion.</p></div>
+        <div><small>Protection</small><strong>Min-out + deadline</strong><p>Every swap enforces a minimum output and an expiry, wallet-signed.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-bridge" className="docs-section">
+      <div className="docs-section-head"><span>06</span><h2>Bridge</h2></div>
+      <p>Move test USDC in and out of Arc over official <b>Circle CCTP</b> rails. Every route starts or ends on Arc, and the destination mint needs a little gas on the destination chain.</p>
+      <div className="docs-cards">
+        <div><b>Burn → attest → mint</b><p>Circle burns on the source, attests, then mints on the destination. Arcodian only orchestrates the wallet signatures.</p></div>
+        <div><b>Recoverable</b><p>If a browser refresh interrupts a flow, the burn is confirmed once and only the pending mint step resumes—no double bridge.</p></div>
+        <div><b>Arc-anchored</b><p>Routes that neither start nor end on Arc are rejected before any transaction is built.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-safety" className="docs-section">
+      <div className="docs-section-head"><span>07</span><h2>Safety & custody</h2></div>
+      <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints, and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Mainnet paths stay fail-closed until every release check is signed off.</p>
+      <aside className="docs-notice"><strong>Testnet notice</strong><p>Arcodian currently runs on Arc Testnet chain 5042002. Test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through Arc Explorer.</p></aside>
+    </article>
+
+    <article id="docs-verify" className="docs-section">
+      <div className="docs-section-head"><span>08</span><h2>Verify everything</h2></div>
+      <p>Don't take the docs on faith. The Contracts page reads the live wiring straight from chain, the Canary console lets you run small-value signed tests, and the FAQ covers the edge cases.</p>
+      <div className="docs-links">
+        <button onClick={openContracts}><b>Contracts →</b><small>Live on-chain wiring proof</small></button>
+        <button onClick={openCanary}><b>Canary console →</b><small>Run signed release tests</small></button>
+        <button onClick={openFaq}><b>FAQ →</b><small>Plain answers to the edge cases</small></button>
+        <a href={ARC.explorer} target="_blank" rel="noreferrer"><b>Arc Explorer ↗</b><small>Inspect any address or transaction</small></a>
+      </div>
+    </article>
   </section>;
 }

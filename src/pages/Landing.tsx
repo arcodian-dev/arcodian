@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
 import { formatEther } from "ethers";
 import { imageUrl } from "../shared";
+import { navHref } from "../config";
 
-export default function LandingExperience({ enterMarket, chooseCoin }: { enterMarket: () => void; chooseCoin: (address: string) => void }) {
+const RAILS: Array<{ tab: string; glyph: string; title: string; copy: string; accent: string }> = [
+  { tab: "screener", glyph: "◫", title: "Market", copy: "Screen live curves, tape, and holders. Trade before graduation.", accent: "market" },
+  { tab: "swap", glyph: "⇌", title: "Swap", copy: "Move between Arc Testnet assets with every address visible first.", accent: "swap" },
+  { tab: "bridge", glyph: "⇄", title: "Bridge", copy: "Carry USDC in and out over official Circle CCTP rails.", accent: "bridge" },
+  { tab: "fx", glyph: "◎", title: "StableCoin FX", copy: "USDC ⇄ EURC at one on-chain rate. No aggregator hop.", accent: "fx" },
+];
+
+export default function LandingExperience({ enterMarket, chooseCoin, openTab }: { enterMarket: () => void; chooseCoin: (address: string) => void; openTab: (tab: string) => void }) {
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
   const [markets, setMarkets] = useState<Array<{ address: string; symbol: string; name: string; image: string; reserve: string; volume24h: string; progress: number }>>([]);
   useEffect(() => {
     fetch("/data/market-index.json", { cache: "no-store" }).then((response) => response.json()).then((index: { launches?: Array<Record<string, unknown>> }) => {
@@ -22,6 +31,26 @@ export default function LandingExperience({ enterMarket, chooseCoin }: { enterMa
       <article><b>01</b><h3>Born liquid</h3><p>A coin gets a market the moment it launches. Price discovery begins in the open.</p></article>
       <article><b>02</b><h3>No velvet rope</h3><p>Creator, contract, holders, tape, and curve sit in the same room for everyone.</p></article>
       <article><b>03</b><h3>Graduation means something</h3><p>At the threshold, liquidity moves to ARC DEX and LP ownership is burned.</p></article>
+    </section>
+    <section className="landing-rails" aria-label="Product rails">
+      <div className="landing-rails-head"><p className="kicker">Four rails, one economy</p><h2>Pick your lane.</h2></div>
+      <div className="rails-grid">
+        {RAILS.map((rail) => {
+          const href = navHref(rail.tab, host);
+          const inner = <>
+            <span className="rail-glyph" aria-hidden="true">{rail.glyph}</span>
+            <b>{rail.title}</b>
+            <p>{rail.copy}</p>
+            <em>Open <i aria-hidden="true">↗</i></em>
+            <span className="rail-shine" aria-hidden="true" />
+          </>;
+          return href ? (
+            <a key={rail.tab} className={`rail-card rail-${rail.accent}`} href={href} target="_blank" rel="noreferrer">{inner}</a>
+          ) : (
+            <button key={rail.tab} className={`rail-card rail-${rail.accent}`} onClick={() => (rail.tab === "screener" ? enterMarket() : openTab(rail.tab))}>{inner}</button>
+          );
+        })}
+      </div>
     </section>
     <section className="landing-live-window">
       <div className="landing-live-head"><div><p className="kicker">A window into the floor</p><h2>Markets moving now.</h2></div><button onClick={enterMarket}>Open full market →</button></div>

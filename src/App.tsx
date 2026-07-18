@@ -17,6 +17,8 @@ import {
   TOKENS,
   WALLETCONNECT_PROJECT_ID,
   V5_TESTNET_DEPLOY,
+  navHref,
+  subdomainTab,
 } from "./config";
 import { ARC_PUMP_SUITE_ABI } from "./generated/arcPumpSuite";
 import { displayAmount, getQuote, type Quote } from "./lifi";
@@ -35,7 +37,7 @@ const FaqPage = lazy(() => loadTrustCenter().then((m) => ({ default: m.FaqPage }
 const HowItWorks = lazy(() => loadTrustCenter().then((m) => ({ default: m.HowItWorks })));
 const CanaryConsole = lazy(() => loadTrustCenter().then((m) => ({ default: m.CanaryConsole })));
 
-type Tab = "home" | "screener" | "bridge" | "swap" | "profile" | "how" | "faq" | "contracts" | "canary";
+type Tab = "home" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -94,22 +96,26 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
+const ROUTE_TABS = ["screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts", "canary"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
-  if (!segment) return "home";
+  // A dedicated subdomain (market/swap/bridge/docs) picks the default view unless
+  // the path already points somewhere specific on that host.
+  const hostTab = subdomainTab(window.location.hostname) as Tab | null;
+  if (hostTab && !segment) return hostTab;
+  if (!segment) return hostTab || "home";
   if (segment === "tools" || segment === "resources") {
     window.history.replaceState({}, "", "/");
     return "screener";
   }
   if (segment === "market" || segment === "explore" || segment === "launch" || segment === "coin")
     return "screener";
+  if (segment === "docs") return "how";
   if (segment === "profil") return "profile";
-  return (["screener", "bridge", "swap", "profile", "how", "faq", "contracts", "canary"] as const).includes(
-    segment as "screener" | "bridge" | "swap" | "profile" | "how" | "faq" | "contracts" | "canary",
-  )
+  return (ROUTE_TABS as readonly string[]).includes(segment)
     ? (segment as Tab)
-    : "screener";
+    : hostTab || "screener";
 }
 
 export default function App() {
@@ -236,6 +242,7 @@ export default function App() {
   }, [activeProvider]);
 
   const isSwap = tab === "swap";
+  const host = typeof window !== "undefined" ? window.location.hostname : "";
   const selectedFrom = TOKENS.find((t) => t.address === fromToken) || TOKENS[0];
   const selectedTo = TOKENS.find((t) => t.address === toToken) || TOKENS[1];
   const bridgeFrom =
@@ -729,15 +736,25 @@ export default function App() {
           <span className="brand-name">ARCODIAN<small>ARC MARKETS</small></span>
         </button>
         <div className="nav-links">
-          {(["screener", "swap", "bridge"] as Tab[]).map((item) => (
-            <button
-              key={item}
-              className={tab === item ? "active" : ""}
-              onClick={() => chooseTab(item)}
-            >
-              {item === "screener" ? "market" : item}
-            </button>
-          ))}
+          {([
+            ["screener", "market"],
+            ["swap", "swap"],
+            ["bridge", "bridge"],
+            ["fx", "stablecoin FX"],
+            ["how", "docs"],
+          ] as Array<[Tab, string]>).map(([item, label]) => {
+            const href = navHref(item, host);
+            const active = tab === item || (item === "how" && (tab === "contracts" || tab === "faq" || tab === "canary"));
+            return href ? (
+              <a key={item} className={active ? "active" : ""} href={href} target="_blank" rel="noreferrer">
+                {label}
+              </a>
+            ) : (
+              <button key={item} className={active ? "active" : ""} onClick={() => chooseTab(item)}>
+                {label}
+              </button>
+            );
+          })}
         </div>
         <div className="wallet-area">
           {chainId && (
@@ -825,7 +842,7 @@ export default function App() {
         </section>
       )}
 
-      {tab === "home" && <LandingExperience enterMarket={() => chooseTab("screener")} chooseCoin={chooseCoin} />}
+      {tab === "home" && <LandingExperience enterMarket={() => chooseTab("screener")} chooseCoin={chooseCoin} openTab={(t) => chooseTab(t as Tab)} />}
 
       {tab === "home" ? null : tab === "faq" ? (
         <FaqPage openHow={() => chooseTab("how")} openContracts={() => chooseTab("contracts")} openCanary={() => chooseTab("canary")} />
@@ -850,6 +867,29 @@ export default function App() {
           connect={() => connect()}
           chooseCoin={chooseCoin}
         />
+      ) : tab === "fx" ? (
+        <section className="workspace workspace-fx">
+          <div className="workspace-copy">
+            <p className="kicker">StableCoin desk</p>
+            <h2>USDC ⇄ EURC,<br /><em>one on-chain rate.</em></h2>
+            <p>
+              Convert between the two Arc stablecoins through the canonical Arc FX
+              pool—a constant-product AMM you can read on-chain. No aggregator hop,
+              no custody, wallet-signed. The rate you see is the rate the pool quotes.
+            </p>
+            <div className="fx-facts">
+              <span><i>◎</i><small>Pool fee</small><b>0.10%</b></span>
+              <span><i>✓</i><small>Custody</small><b>Wallet-signed</b></span>
+              <span><i>⇄</i><small>Pair</small><b>USDC · EURC</b></span>
+              <span><i>◈</i><small>Network</small><b>Arc Testnet</b></span>
+            </div>
+          </div>
+          <div className="fx-stage">
+            <Suspense fallback={<div className="loading-board">Loading FX…</div>}>
+              <FxWidget account={account} activeProvider={activeProvider} onConnect={() => connect()} />
+            </Suspense>
+          </div>
+        </section>
       ) : (
         <section className={`workspace ${isSwap ? "workspace-swap" : "workspace-bridge"}`}>
           <div className="workspace-copy">
@@ -981,9 +1021,11 @@ export default function App() {
               )}
               {isSwap && <div className="fee-strip"><span>Execution rail</span><b>{swapRail === "circle" ? "Circle Swap · permissionless" : swapRail === "fallback" ? "Fallback aggregator" : "Circle-first routing"}</b><small>No Kit Key or secret is shipped to the browser. Fallback activates only when Circle has no safe route.</small></div>}
               {isSwap && (
-                <Suspense fallback={<div className="loading-board">Loading FX…</div>}>
-                  <FxWidget account={account} activeProvider={activeProvider} onConnect={() => connect()} />
-                </Suspense>
+                <a className="fx-crosslink" href={navHref("fx", host) || "/fx"} target={navHref("fx", host) ? "_blank" : undefined} rel="noreferrer" onClick={(e) => { if (!navHref("fx", host)) { e.preventDefault(); chooseTab("fx"); } }}>
+                  <b>Need USDC ⇄ EURC?</b>
+                  <small>Use the StableCoin FX desk — one on-chain rate, no aggregator hop.</small>
+                  <i aria-hidden="true">→</i>
+                </a>
               )}
               {circleSwapEstimate && (
                 <div className="quote circle-swap-estimate">
