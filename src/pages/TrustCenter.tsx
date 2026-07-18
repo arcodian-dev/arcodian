@@ -134,7 +134,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     ["Arcodian Suite v6", PUMP_SUITE_ADDRESS, "Deploys and permanently wires the canonical Launch Factory and ARC DEX stack. Protocol fees accrue in-contract and are withdrawn by pull, so trading can never halt on treasury failure."],
     ["Launch Factory v6", PUMP_FACTORY_ADDRESS, "Creates canonical coin and bonding-curve contracts with one public rule set."],
     ["ARC DEX Factory", ARC_DEX_FACTORY_ADDRESS, "Creates the post-graduation pair and sends LP ownership to the burn address."],
-    ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically; it cannot withdraw burned LP ownership."],
+    ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
   ];
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
