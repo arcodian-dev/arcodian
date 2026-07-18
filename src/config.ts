@@ -80,6 +80,13 @@ export const EURC_PUMP_SUITE_ADDRESS = "0x4C08f5bB5ea7c20A150C8D515Fb5F53F47636C
 export const EURC_PUMP_FACTORY_ADDRESS = "0x73471B058a26b62CD0f77d5409d83de5c5A502AC";
 export const EURC_DEX_FACTORY_ADDRESS = "0x70083bd737CF204fD5378CBF6c7fDf007383d289";
 export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimals
+// Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
+// (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
+// reserves from measured balances, so fee-on-transfer and rebasing tokens cannot
+// corrupt their accounting. Deployed 2026-07-18. Not yet consumed by the UI —
+// swap.arcodian.fun wiring is a separate plan.
+export const ARC_PAIR_FACTORY_ADDRESS = "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd";
+export const ARC_ROUTER_ADDRESS = "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166";
 export const FEE_TREASURY = "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";
 export const BRIDGE_FEE_BPS = 150;
 export const SWAP_FEE_BPS = 30;
