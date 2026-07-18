@@ -59,6 +59,11 @@ export const LEGACY_PUMP_FACTORY_ADDRESSES = [
 // and EURC). Powers the in-app FX widget. Deployed 2026-07-18.
 export const ARC_FX_POOL_ADDRESS = "0x09c2A629834a0fb0c559659214Cc1802bCE910FD";
 export const ARC_USDC_ERC20 = ARC.nativeToken; // USDC dual-interface ERC-20, 6 decimals
+// Atomic USDC -> EURC-curve buy router. Deployed 2026-07-18. Immutable and
+// ownerless: no owner, withdraw, pause or upgrade path, so the USDC allowance
+// users grant it cannot be used by anyone to move their funds. A failing leg
+// reverts the whole route, so a buyer is never stranded holding EURC.
+export const CROSS_BUY_ROUTER_ADDRESS = "0x218786BC01E6c401A5A7A514103a582D53C4a9C7";
 export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 // EURC-collateral pump suite (QUOTE_KIND=1). Launches priced/settled in EURC
 // (6 dec) instead of native USDC. Deployed 2026-07-18. Frontend create/trade

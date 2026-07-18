@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, PUMP_SUITE_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, PUMP_SUITE_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
-import { convert, currencyOf, trueCost, type Currency, type FxRate } from "../fx";
+import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import {
   arcProvider,
@@ -622,6 +622,7 @@ function TradingDesk({
   const [reserve, setReserve] = useState(asset.reserve);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
+  const [eurcBalance, setEurcBalance] = useState(0n);
   const [txHash, setTxHash] = useState("");
   const [tradeStage, setTradeStage] = useState<"idle" | "quote" | "approval" | "submitted" | "confirmed" | "error">("idle");
   const [posts, setPosts] = useState<CommunityPost[]>([]);
@@ -645,8 +646,22 @@ function TradingDesk({
   const currency = asset.currency || "USDC";
   const validAmount = Number(amount) > 0;
   const amountWei = validAmount ? safeEther(amount) : 0n;
+  // What the buyer actually spends. USDC is the chain's gas token and so the
+  // default holding; a EURC-quoted market only routes direct when the wallet
+  // already holds enough EURC to cover the trade.
+  const holdingCurrency: Currency = currencyOf(asset) === "USDC"
+    ? "USDC"
+    : eurcBalance > 0n && eurcBalance >= amountWei / 10n ** 12n
+      ? "EURC"
+      : "USDC";
+  // On the cross route the buyer types a USDC amount but the venue prices in
+  // EURC. Convert once, here, so every downstream quote is in the venue's
+  // currency. Direct routes pass through untouched.
+  const venueAmountWei = holdingCurrency === currencyOf(asset)
+    ? amountWei
+    : (amountWei * BigInt(Math.round(fxRate.eurcPerUsdc * 1_000_000))) / 1_000_000n;
   const x = asset.graduated ? reserve : asset.virtualReserve + reserve;
-  const buyInput = asset.graduated ? (amountWei * 9970n) / 10000n : (amountWei * 99n) / 100n;
+  const buyInput = asset.graduated ? (venueAmountWei * 9970n) / 10000n : (venueAmountWei * 99n) / 100n;
   const sellInput = asset.graduated ? (amountWei * 9975n) / 10000n : amountWei;
   const rawQuote = side === "buy"
     ? buyInput && inventory ? (inventory * buyInput) / (x + buyInput) : 0n
@@ -663,11 +678,8 @@ function TradingDesk({
   const venueFeeLabel = asset.graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
-  // Phase 1: the buyer always spends the asset's own quote currency, so every
-  // route reports `direct`. Task 7 replaces this with the wallet's real holding
-  // and lights up the cross-currency route.
-  const holdingCurrency: Currency = currencyOf(asset);
   const cost = trueCost(Number(amount) || 0, holdingCurrency, asset, fxRate);
+  const route = routeFor(holdingCurrency, asset);
 
   async function refresh() {
     try {
@@ -755,6 +767,15 @@ function TradingDesk({
     void token.balanceOf(account).then((value: bigint) => setBalance(value)).catch(() => undefined);
   }, [asset.address, account, activeProvider]);
 
+  // EURC holdings decide whether a EURC-quoted market routes direct or crosses
+  // from USDC. Failing to read it falls back to USDC, which is always routable.
+  useEffect(() => {
+    if (!account || !activeProvider || currencyOf(asset) !== "EURC") { setEurcBalance(0n); return; }
+    const provider = new BrowserProvider(activeProvider as never);
+    const eurc = new Contract(ARC_EURC_ADDRESS, ["function balanceOf(address) view returns(uint256)"], provider);
+    void eurc.balanceOf(account).then((value: bigint) => setEurcBalance(value)).catch(() => setEurcBalance(0n));
+  }, [asset.address, account, activeProvider]);
+
   async function trade() {
     if (!activeProvider) {
       connect();
@@ -805,8 +826,8 @@ function TradingDesk({
         ? freshReserve
         : asset.virtualReserve + freshReserve;
       const freshBuyInput = asset.graduated
-        ? (amountWei * 9970n) / 10000n
-        : (amountWei * 99n) / 100n;
+        ? (venueAmountWei * 9970n) / 10000n
+        : (venueAmountWei * 99n) / 100n;
       const freshSellInput = asset.graduated
         ? (amountWei * 9975n) / 10000n
         : amountWei;
@@ -846,7 +867,26 @@ function TradingDesk({
       const owner = await signer.getAddress();
       let tx;
       if (side === "buy") {
-        if (isEurc) {
+        if (route === "cross") {
+          // Atomic USDC -> EURC -> curve buy. If any leg fails the whole
+          // transaction reverts and the buyer keeps their USDC; they are never
+          // left holding EURC. See ArcCrossBuyRouter.
+          const usdcIn = amountWei / QSCALE;
+          if (usdcIn <= 0n) throw new Error("Amount too small for USDC (min 0.000001).");
+          const usdcErc20 = new Contract(ARC_USDC_ERC20, erc20Abi, signer);
+          const allowance = (await usdcErc20.allowance(owner, CROSS_BUY_ROUTER_ADDRESS)) as bigint;
+          if (allowance < usdcIn) {
+            setTradeStage("approval");
+            setStatus("Approve USDC spending in your wallet.");
+            await (await usdcErc20.approve(CROSS_BUY_ROUTER_ADDRESS, usdcIn)).wait();
+          }
+          const router = new Contract(
+            CROSS_BUY_ROUTER_ADDRESS,
+            ["function buyWithUsdc(address,uint256,uint256,uint64) returns(uint256)"],
+            signer,
+          );
+          tx = await router.buyWithUsdc(venueAddress, usdcIn, minOut, deadline);
+        } else if (isEurc) {
           // Priced in EURC: approve the 6-dec EURC input, then buy(quoteIn, minTokensOut, deadline).
           const quoteIn = amountWei / QSCALE;
           if (quoteIn <= 0n) throw new Error("Amount too small for EURC (min 0.000001).");
