@@ -33,8 +33,6 @@ export const CHAINS = [
   { id: ARC.id, name: ARC.name, appKit: "Arc_Testnet", symbol: "USDC", gasSymbol: "USDC", rpc: ARC.rpc, token: ARC.nativeToken },
 ] as const;
 
-export const LIFI_API = "https://li.quest/v1";
-export const INTEGRATOR = import.meta.env.VITE_LIFI_INTEGRATOR || "arc-markets";
 export const PUBLIC_ORIGIN = import.meta.env.VITE_PUBLIC_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
 export const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 export const FACTORY_ADDRESS = "0x40147884E6992cee1f7030d1263C692a4Cbae942";
@@ -55,20 +53,18 @@ export const LEGACY_PUMP_FACTORY_ADDRESSES = [
   "0x4925Cd48Cae870730286e058a3c9020f2892eb6A",
   "0x7D0b32E57D0e52da3aac5E18c761029E7b179113",
 ] as const;
-// USDC<->EURC FX pool (constant-product AMM over the 6-dec USDC ERC-20 interface
-// and EURC). Powers the in-app FX widget. Deployed 2026-07-18.
-// Permissionless USDC<->EURC AMM (ArcFxPoolV2). ERC-20 LP shares, 10 bps fee
+// Permissionless USDC<->EURC AMM (ArcFxPoolV2). Powers the FX widget. ERC-20 LP shares, 10 bps fee
 // split 8 LP / 2 protocol, no owner and no privileged withdrawal — a provider's
 // only exit is removeLiquidity, in proportion to their shares. Deployed
 // 2026-07-18, replacing the owner-only v1 pool
 // (0x09c2A629834a0fb0c559659214Cc1802bCE910FD, drained to zero on migration).
 export const ARC_FX_POOL_ADDRESS = "0x982D61ddCAb6169d82B3e37A4E4158f1982E5447";
 export const ARC_USDC_ERC20 = ARC.nativeToken; // USDC dual-interface ERC-20, 6 decimals
-// Atomic USDC -> EURC-curve buy router. Deployed 2026-07-18. Immutable and
-// ownerless: no owner, withdraw, pause or upgrade path, so the USDC allowance
-// users grant it cannot be used by anyone to move their funds. A failing leg
-// reverts the whole route, so a buyer is never stranded holding EURC.
-// Redeployed 2026-07-18 against ArcFxPoolV2 — the router is immutable and
+// Atomic USDC -> EURC-curve buy router. Immutable and ownerless: no owner,
+// withdraw, pause or upgrade path, so the USDC allowance users grant it cannot
+// be used by anyone to move their funds. A failing leg reverts the whole route,
+// so a buyer is never stranded holding EURC.
+// Deployed 2026-07-18 against ArcFxPoolV2 — the router is immutable and
 // hardcodes the pool address, so a new pool requires a new router. The prior
 // deployment (0x218786BC01E6c401A5A7A514103a582D53C4a9C7) pointed at the v1 pool.
 export const CROSS_BUY_ROUTER_ADDRESS = "0xF51DF463bb2Db8Fe1CfC5CCfB87D1b34B5AD9ef9";
@@ -83,8 +79,7 @@ export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimal
 // Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
 // reserves from measured balances, so fee-on-transfer and rebasing tokens cannot
-// corrupt their accounting. Deployed 2026-07-18. Not yet consumed by the UI —
-// swap.arcodian.fun wiring is a separate plan.
+// corrupt their accounting. Deployed 2026-07-18; powers swap.arcodian.fun.
 export const ARC_PAIR_FACTORY_ADDRESS = "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd";
 export const ARC_ROUTER_ADDRESS = "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166";
 export const FEE_TREASURY = "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";

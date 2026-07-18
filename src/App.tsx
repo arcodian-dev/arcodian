@@ -21,7 +21,6 @@ import {
   subdomainTab,
 } from "./config";
 import { ARC_PUMP_SUITE_ABI } from "./generated/arcPumpSuite";
-import { displayAmount, getQuote, type Quote } from "./lifi";
 import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
@@ -29,6 +28,9 @@ import { BrandMark, FAQ_ITEMS, short, type WalletOption } from "./shared";
 
 const Screener = lazy(() => import("./pages/Market"));
 const FxWidget = lazy(() => import("./components/FxWidget"));
+const SwapPanel = lazy(() => import("./components/SwapPanel"));
+const PoolsPanel = lazy(() => import("./components/PoolsPanel"));
+const CreatePairPanel = lazy(() => import("./components/CreatePairPanel"));
 const LiquidityPanel = lazy(() => import("./components/LiquidityPanel"));
 const Profile = lazy(() => import("./pages/Profile"));
 const LandingExperience = lazy(() => import("./pages/Landing"));
@@ -128,9 +130,6 @@ export default function App() {
   const [fromToken, setFromToken] = useState<string>(TOKENS[0].address);
   const [toToken, setToToken] = useState<string>(TOKENS[1].address);
   const [amount, setAmount] = useState("100");
-  const [quote, setQuote] = useState<Quote | null>(null);
-  const [circleSwapEstimate, setCircleSwapEstimate] = useState<CircleSwapEstimateView | null>(null);
-  const [swapRail, setSwapRail] = useState<"circle" | "fallback" | null>(null);
   const [bridgeEstimate, setBridgeEstimate] = useState<BridgeEstimateView | null>(null);
   const [bridgeRetryResult, setBridgeRetryResult] = useState<unknown>(null);
   const [bridgeRecoveryHash, setBridgeRecoveryHash] = useState("");
@@ -243,6 +242,7 @@ export default function App() {
   }, [activeProvider]);
 
   const isSwap = tab === "swap";
+  const [dexView, setDexView] = useState<"swap" | "pools" | "create">("swap");
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const selectedFrom = TOKENS.find((t) => t.address === fromToken) || TOKENS[0];
   const selectedTo = TOKENS.find((t) => t.address === toToken) || TOKENS[1];
@@ -252,13 +252,6 @@ export default function App() {
   const bridgePeers = CHAINS.filter((chain) => chain.id !== ARC.id);
   const bridgeFromArc = fromChain === ARC.id;
   const canQuote = Boolean(account && Number(amount) > 0 && (!isSwap || fromToken.toLowerCase() !== toToken.toLowerCase()));
-  const receive = useMemo(
-    () =>
-      quote
-        ? displayAmount(quote.estimate.toAmount, quote.action.toToken.decimals)
-        : "—",
-    [quote],
-  );
 
   async function connect(option?: WalletOption) {
     if (!option) {
@@ -292,7 +285,6 @@ export default function App() {
     setAccount("");
     setActiveProvider(null);
     setChainId(null);
-    setQuote(null);
     setStatus("");
     if (tab === "profile") chooseTab("screener");
   }
@@ -389,99 +381,7 @@ export default function App() {
 
   async function requestQuote() {
     if (!canQuote) return;
-    if (!isSwap) {
-      await estimateCircleBridge();
-      return;
-    }
-    setBusy(true);
-    setStatus("");
-    setQuote(null);
-    setCircleSwapEstimate(null);
-    setSwapRail(null);
-    try {
-      const { kit, params } = await circleSwapContext();
-      const estimate = await kit.estimateSwap(params as never);
-      setCircleSwapEstimate({
-        output: estimate.estimatedOutput.amount,
-        outputToken: sdkTokenLabel(estimate.estimatedOutput.token, selectedTo.symbol),
-        minimum: estimate.stopLimit.amount,
-        fees: (estimate.fees || []).map((fee) => ({ type: fee.type, token: sdkTokenLabel(fee.token, selectedFrom.symbol), amount: fee.amount })),
-      });
-      setSwapRail("circle");
-      setStatus("Circle Swap estimate ready. Review minimum output and fees before signing.");
-      return;
-    } catch (circleError) {
-      setStatus("Circle route is unavailable right now. Checking the fallback aggregator…");
-      try {
-      const next = await getQuote({
-        fromChain: isSwap ? ARC.id : fromChain,
-        toChain: isSwap ? ARC.id : toChain,
-        fromToken: isSwap ? fromToken : bridgeFrom.token,
-        toToken: isSwap ? toToken : bridgeTo.token,
-        fromAmount: parseUnits(
-          amount,
-          isSwap ? selectedFrom.decimals : ARC.erc20Decimals,
-        ).toString(),
-        fromAddress: account,
-      });
-      if (next.action.fromChainId !== ARC.id || next.transactionRequest?.chainId !== ARC.id)
-        throw new Error("Rejected a quote that does not execute on Arc Testnet.");
-      if (next.action.fromToken.address.toLowerCase() !== fromToken.toLowerCase() || next.action.toToken.address.toLowerCase() !== toToken.toLowerCase())
-        throw new Error("Rejected a quote with unexpected token addresses.");
-      setQuote(next);
-      setSwapRail("fallback");
-      setStatus("Fallback route ready. Circle Swap was unavailable for this pair.");
-      } catch (fallbackError) {
-        const circleMessage = friendlySdkError(circleError);
-        const fallbackMessage = friendlySdkError(fallbackError);
-        setStatus(`No safe swap route is available. Circle: ${circleMessage}. Fallback: ${fallbackMessage}.`);
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function circleSwapContext() {
-    if (!activeProvider || !account) throw new Error("Connect a wallet first.");
-    if (fromToken.toLowerCase() === toToken.toLowerCase()) throw new Error("Choose two different assets.");
-    const [{ AppKit }, { createViemAdapterFromProvider }] = await Promise.all(
-      [import("@circle-fin/app-kit"), import("@circle-fin/adapter-viem-v2")],
-    );
-    const adapter = await createViemAdapterFromProvider({ provider: activeProvider as never });
-    return {
-      kit: new AppKit(),
-      params: {
-        from: { adapter, chain: "Arc_Testnet" },
-        tokenIn: selectedFrom.symbol,
-        tokenOut: selectedTo.symbol,
-        amountIn: amount,
-        config: {
-          allowanceStrategy: "approve",
-          slippageBps: 50,
-          customFee: { percentageBps: SWAP_FEE_BPS, recipientAddress: FEE_TREASURY },
-        },
-      },
-    };
-  }
-
-  async function executeCircleSwap() {
-    if (!circleSwapEstimate) return;
-    setBusy(true);
-    setStatus("Opening Circle Swap. Approve the exact amount, then confirm execution in your wallet.");
-    try {
-      const { kit, params } = await circleSwapContext();
-      const result = await kit.swap({
-        ...params,
-        config: { ...params.config, stopLimit: circleSwapEstimate.minimum },
-      } as never);
-      setStatus(result.progress.status === "DONE" ? `Circle Swap confirmed: ${result.txHash}` : `Circle Swap submitted: ${result.txHash}. Confirmation is still pending.`);
-      setCircleSwapEstimate(null);
-      setSwapRail(null);
-    } catch (error) {
-      setStatus(friendlySdkError(error));
-    } finally {
-      setBusy(false);
-    }
+    await estimateCircleBridge();
   }
 
   async function circleBridgeContext() {
@@ -620,83 +520,10 @@ export default function App() {
     finally { setBusy(false); }
   }
 
-  async function execute() {
-    if (!activeProvider || !quote?.transactionRequest) return;
-    setBusy(true);
-    setStatus("Check the transaction carefully in your wallet.");
-    try {
-      const chainHex = `0x${quote.action.fromChainId.toString(16)}`;
-      try {
-        await activeProvider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: chainHex }],
-        });
-      } catch (switchError) {
-        const code = (switchError as { code?: number }).code;
-        if (code !== 4902 || quote.action.fromChainId !== ARC.id)
-          throw switchError;
-        await activeProvider.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: ARC.hexId,
-              chainName: ARC.name,
-              nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-              rpcUrls: [ARC.rpc],
-              blockExplorerUrls: [ARC.explorer],
-            },
-          ],
-        });
-      }
-      const provider = new BrowserProvider(activeProvider as never);
-      const signer = await provider.getSigner();
-      const approvalAddress = quote.estimate.approvalAddress;
-      const nativeLike = quote.action.fromToken.address.toLowerCase() ===
-        "0x0000000000000000000000000000000000000000";
-      if (approvalAddress && !nativeLike) {
-        const token = new Contract(
-          quote.action.fromToken.address,
-          [
-            "function allowance(address owner,address spender) view returns (uint256)",
-            "function approve(address spender,uint256 amount) returns (bool)",
-          ],
-          signer,
-        );
-        const owner = await signer.getAddress();
-        const allowance = (await token.allowance(
-          owner,
-          approvalAddress,
-        )) as bigint;
-        if (allowance < BigInt(quote.estimate.fromAmount)) {
-          setStatus("Approve the exact route amount in your wallet.");
-          const approval = await token.approve(
-            approvalAddress,
-            quote.estimate.fromAmount,
-          );
-          await approval.wait();
-          setStatus("Approval confirmed. Now confirm the route transaction.");
-        }
-      }
-      const tx = await signer.sendTransaction(quote.transactionRequest);
-      setStatus(`Submitted: ${tx.hash}`);
-      await tx.wait();
-      setStatus(`Swap confirmed: ${tx.hash}`);
-    } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Transaction rejected",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   function chooseTab(next: Tab) {
     setTab(next);
     setCoinAddress("");
     setProfileAddress("");
-    setQuote(null);
-    setCircleSwapEstimate(null);
-    setSwapRail(null);
     setBridgeEstimate(null);
     setBridgeRetryResult(null);
     setStatus("");
@@ -903,8 +730,37 @@ export default function App() {
             </Suspense>
           </div>
         </section>
+      ) : isSwap ? (
+        <section className="workspace workspace-swap">
+          <div className="workspace-copy">
+            <p className="kicker">Execution desk</p>
+            <h2>Trade any Arc token.</h2>
+            <p>
+              Permissionless pools on Arc. Paste a token&apos;s contract address to
+              trade it — the address is the only identity that matters.
+            </p>
+          </div>
+          <div className="panel">
+            <div className="dex-tabs">
+              {(["swap", "pools", "create"] as const).map((view) => (
+                <button
+                  key={view}
+                  className={dexView === view ? "active" : ""}
+                  onClick={() => setDexView(view)}
+                >
+                  {view === "swap" ? "Swap" : view === "pools" ? "Pools" : "Create pool"}
+                </button>
+              ))}
+            </div>
+            <Suspense fallback={<div className="loading-board">Loading…</div>}>
+              {dexView === "swap" && <SwapPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+              {dexView === "pools" && <PoolsPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+              {dexView === "create" && <CreatePairPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+            </Suspense>
+          </div>
+        </section>
       ) : (
-        <section className={`workspace ${isSwap ? "workspace-swap" : "workspace-bridge"}`}>
+        <section className="workspace workspace-bridge">
           <div className="workspace-copy">
             <p className="kicker">Execution desk</p>
             <h2>
@@ -930,28 +786,20 @@ export default function App() {
               <div className="execution-rail" aria-label={tab === "bridge" ? "Bridge execution stages" : "Swap execution stages"}>
                 {(tab === "bridge" ? ["Burn on source", "Circle attestation", "Mint on destination"] : ["Review route", "Approve exact amount", "Execute swap"]).map((stage, index) => <span key={stage}><i>{String(index + 1).padStart(2, "0")}</i><b>{stage}</b></span>)}
               </div>
-              {isSwap && (
-                <div className="swap-pair-hero" aria-hidden="true">
-                  <b>{selectedFrom.symbol}</b>
-                  <i>→</i>
-                  <b>{selectedTo.symbol}</b>
-                  <small>Arc Testnet pair · Circle-first routing · 0.5% slippage guard</small>
-                </div>
-              )}
               {tab === "bridge" ? (
                 <div className="chain-grid bridge-two-way">
                   <label>
                     From
-                    {bridgeFromArc ? <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div> : <select value={fromChain} onChange={(e) => { setFromChain(Number(e.target.value)); setQuote(null); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select>}
+                    {bridgeFromArc ? <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div> : <select value={fromChain} onChange={(e) => { setFromChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select>}
                   </label>
                   <button type="button" className="route-reverse" aria-label="Reverse bridge direction" onClick={() => {
                     if (bridgeFromArc) { setFromChain(toChain === ARC.id ? bridgePeers[0].id : toChain); setToChain(ARC.id); }
                     else { setToChain(fromChain); setFromChain(ARC.id); }
-                    setQuote(null); setBridgeEstimate(null); setBridgeRetryResult(null); setStatus("");
+ setBridgeEstimate(null); setBridgeRetryResult(null); setStatus("");
                   }}>⇄<small>Reverse</small></button>
                   <label>
                     To
-                    {bridgeFromArc ? <select value={toChain} onChange={(e) => { setToChain(Number(e.target.value)); setQuote(null); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select> : <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div>}
+                    {bridgeFromArc ? <select value={toChain} onChange={(e) => { setToChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select> : <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div>}
                   </label>
                 </div>
               ) : (
@@ -962,9 +810,6 @@ export default function App() {
                       value={fromToken}
                       onChange={(e) => {
                         setFromToken(e.target.value);
-                        setQuote(null);
-                        setCircleSwapEstimate(null);
-                        setSwapRail(null);
                       }}
                     >
                       {TOKENS.map((t) => (
@@ -981,9 +826,6 @@ export default function App() {
                       value={toToken}
                       onChange={(e) => {
                         setToToken(e.target.value);
-                        setQuote(null);
-                        setCircleSwapEstimate(null);
-                        setSwapRail(null);
                       }}
                     >
                       {TOKENS.map((t) => (
@@ -1002,14 +844,11 @@ export default function App() {
                   value={amount}
                   onChange={(e) => {
                     setAmount(e.target.value);
-                    setQuote(null);
-                    setCircleSwapEstimate(null);
-                    setSwapRail(null);
                     setBridgeEstimate(null);
                     setBridgeRetryResult(null);
                   }}
                 />
-                <strong>{isSwap ? selectedFrom.symbol : "USDC"}</strong>
+                <strong>USDC</strong>
               </label>
               <div className="fee-strip">
                 <span>{tab === "bridge" ? "Protocol fee" : "Route fees"}</span>
@@ -1023,45 +862,13 @@ export default function App() {
               <div className="workspace-assurance">
                 <span><i>✓</i><small>Network</small><b>{tab === "bridge" ? "Arc endpoint enforced" : "Arc Testnet only"}</b></span>
                 <span><i>✓</i><small>Custody</small><b>Wallet-signed only</b></span>
-                <span><i>✓</i><small>Protection</small><b>{quote || circleSwapEstimate ? "Minimum output locked" : bridgeEstimate ? "Bridge estimate reviewed" : "Quote before execution"}</b></span>
+                <span><i>✓</i><small>Protection</small><b>{bridgeEstimate ? "Bridge estimate reviewed" : "Quote before execution"}</b></span>
               </div>
               {tab === "bridge" && (
                 <div className="bridge-finality">
                   <span><small>Source finality</small><b>Single confirmation on Arc</b></span>
                   <span><small>Attestation</small><b>Circle CCTP · typically minutes</b></span>
                   <span><small>Destination mint</small><b>Needs destination gas</b></span>
-                </div>
-              )}
-              {isSwap && <div className="fee-strip"><span>Execution rail</span><b>{swapRail === "circle" ? "Circle Swap · permissionless" : swapRail === "fallback" ? "Fallback aggregator" : "Circle-first routing"}</b><small>No Kit Key or secret is shipped to the browser. Fallback activates only when Circle has no safe route.</small></div>}
-              {isSwap && (
-                <a className="fx-crosslink" href={navHref("fx", host) || "/fx"} target={navHref("fx", host) ? "_blank" : undefined} rel="noreferrer" onClick={(e) => { if (!navHref("fx", host)) { e.preventDefault(); chooseTab("fx"); } }}>
-                  <b>Need USDC ⇄ EURC?</b>
-                  <small>Use the StableCoin FX desk — one on-chain rate, no aggregator hop.</small>
-                  <i aria-hidden="true">→</i>
-                </a>
-              )}
-              {circleSwapEstimate && (
-                <div className="quote circle-swap-estimate">
-                  <span>Circle Swap estimate</span>
-                  <strong>{circleSwapEstimate.output} {circleSwapEstimate.outputToken}</strong>
-                  <small>Minimum {circleSwapEstimate.minimum} {circleSwapEstimate.outputToken} · slippage 0.5%</small>
-                  <small>{circleSwapEstimate.fees.length ? circleSwapEstimate.fees.map((fee) => `${fee.type}: ${fee.amount} ${fee.token}`).join(" · ") : "No additional fee returned by Circle"}</small>
-                </div>
-              )}
-              {quote && (
-                <div className="quote">
-                  <span>Expected receive</span>
-                  <strong>
-                    {receive} {quote.action.toToken.symbol}
-                  </strong>
-                  <small>
-                    Minimum{" "}
-                    {displayAmount(
-                      quote.estimate.toAmountMin,
-                      quote.action.toToken.decimals,
-                    )}{" "}
-                    · ≈ {quote.estimate.executionDuration}s · Arc Testnet route
-                  </small>
                 </div>
               )}
               {bridgeEstimate && (
@@ -1085,27 +892,13 @@ export default function App() {
                 <button className="primary" disabled={busy || !bridgeEstimate.destinationGas.ready} onClick={bridgeWithCircle}>
                   {busy ? "Waiting for Circle…" : bridgeEstimate.destinationGas.ready ? "Confirm bridge in wallet" : `Destination ${bridgeEstimate.destinationGas.symbol} required`}
                 </button>
-              ) : tab === "swap" && circleSwapEstimate ? (
-                <button className="primary" disabled={busy} onClick={executeCircleSwap}>
-                  {busy ? "Waiting for Circle…" : "Confirm Circle Swap"}
-                </button>
-              ) : !quote ? (
+              ) : (
                 <button
                   className="primary"
                   disabled={!canQuote || busy}
                   onClick={requestQuote}
                 >
-                  {busy
-                    ? isSwap
-                      ? "Finding route…"
-                      : "Estimating Circle route…"
-                    : isSwap
-                      ? "Review route"
-                      : "Review Circle estimate"}
-                </button>
-              ) : (
-                <button className="primary" disabled={busy} onClick={execute}>
-                  {busy ? "Waiting…" : "Confirm in wallet"}
+                  {busy ? "Estimating Circle route…" : "Review Circle estimate"}
                 </button>
               )}
               <p className="fine">
