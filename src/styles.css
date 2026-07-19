@@ -3039,3 +3039,56 @@ body::before { background-size:80px 80px; opacity:.45; }
   .dex-tiers > div { flex-direction: column; }
   .dex-summary span { flex-direction: column; align-items: flex-start; gap: 2px; }
 }
+
+/* --- Mobile browser pass -------------------------------------------------
+   Two problems, both only visible on a phone.
+
+   1. iOS Safari zooms the whole page whenever a focused form control renders
+      below 16px. Most inputs here inherit the browser default (~13px), and a
+      handful set 11-15px explicitly, so tapping almost any field yanked the
+      layout. The rules below raise every control to 16px on small screens
+      only; desktop sizing is untouched. Fields that already set a larger size
+      (.amount, .order-panel, .fx-input) win on specificity and stay as they
+      are.
+
+   2. Nothing constrained horizontal overflow, so one over-wide child let the
+      entire page slide sideways. Wide content should scroll inside its own
+      container, not drag the document with it.
+   ---------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  input, select, textarea,
+  .search input,
+  .launch-form input,
+  .canary-controls input,
+  .bridge-hash-recovery input,
+  .community-compose textarea,
+  .report-panel textarea {
+    font-size: 16px;
+  }
+
+  /* Touch targets: 44px is the smallest reliably tappable height. */
+  .dex-tabs button, .dex-cta, .dex-secondary,
+  .lp-cta, .lp-remove,
+  .dex-tiers button {
+    min-height: 44px;
+  }
+}
+
+/* --- Portfolio ---------------------------------------------------------- */
+.portfolio-positions { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.portfolio-positions li {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) auto;
+  align-items: center; gap: 12px; padding: 14px; border: 1px solid var(--hair);
+  border-radius: 12px;
+}
+.portfolio-positions li > div { display: grid; gap: 3px; min-width: 0; }
+.portfolio-positions b { font-size: 14px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.portfolio-positions small { font-size: 12px; opacity: .7; }
+.portfolio-positions button { padding: 9px 14px; font-size: 13px; }
+
+@media (max-width: 640px) {
+  .portfolio-positions li { grid-template-columns: 1fr; }
+  .portfolio-positions button { min-height: 44px; width: 100%; }
+}
+
+html, body { max-width: 100%; overflow-x: clip; }

@@ -31,6 +31,7 @@ const FxWidget = lazy(() => import("./components/FxWidget"));
 const SwapPanel = lazy(() => import("./components/SwapPanel"));
 const PoolsPanel = lazy(() => import("./components/PoolsPanel"));
 const CreatePairPanel = lazy(() => import("./components/CreatePairPanel"));
+const PortfolioPanel = lazy(() => import("./components/PortfolioPanel"));
 const LiquidityPanel = lazy(() => import("./components/LiquidityPanel"));
 const Profile = lazy(() => import("./pages/Profile"));
 const LandingExperience = lazy(() => import("./pages/Landing"));
@@ -242,7 +243,10 @@ export default function App() {
   }, [activeProvider]);
 
   const isSwap = tab === "swap";
-  const [dexView, setDexView] = useState<"swap" | "pools" | "create">("swap");
+  const [dexView, setDexView] = useState<"swap" | "pools" | "create" | "portfolio">("swap");
+  // Set when the portfolio hands a pool over to the Pools tab, so "Manage"
+  // lands on that pool instead of an empty address box.
+  const [focusPair, setFocusPair] = useState("");
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const selectedFrom = TOKENS.find((t) => t.address === fromToken) || TOKENS[0];
   const selectedTo = TOKENS.find((t) => t.address === toToken) || TOKENS[1];
@@ -742,20 +746,28 @@ export default function App() {
           </div>
           <div className="panel">
             <div className="dex-tabs">
-              {(["swap", "pools", "create"] as const).map((view) => (
+              {(["swap", "pools", "create", "portfolio"] as const).map((view) => (
                 <button
                   key={view}
                   className={dexView === view ? "active" : ""}
                   onClick={() => setDexView(view)}
                 >
-                  {view === "swap" ? "Swap" : view === "pools" ? "Pools" : "Create pool"}
+                  {view === "swap" ? "Swap" : view === "pools" ? "Pools"
+                    : view === "create" ? "Create pool" : "Portfolio"}
                 </button>
               ))}
             </div>
             <Suspense fallback={<div className="loading-board">Loading…</div>}>
               {dexView === "swap" && <SwapPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
-              {dexView === "pools" && <PoolsPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+              {dexView === "pools" && <PoolsPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} initialPair={focusPair} />}
               {dexView === "create" && <CreatePairPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+              {dexView === "portfolio" && (
+                <PortfolioPanel
+                  account={account}
+                  onConnect={() => connect()}
+                  onManagePool={(pair) => { setFocusPair(pair); setDexView("pools"); }}
+                />
+              )}
             </Suspense>
           </div>
         </section>

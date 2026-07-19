@@ -16,12 +16,14 @@ type Position = {
   sharePct: number;
 };
 
-export default function PoolsPanel({ account, activeProvider, onConnect }: {
+export default function PoolsPanel({ account, activeProvider, onConnect, initialPair = "" }: {
   account: string;
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   onConnect: () => void;
+  /** Pre-filled when the portfolio hands a specific pool over to manage. */
+  initialPair?: string;
 }) {
-  const [pairAddress, setPairAddress] = useState("");
+  const [pairAddress, setPairAddress] = useState(initialPair);
   const [position, setPosition] = useState<Position | null>(null);
   const [amount0, setAmount0] = useState("");
   const [amount1, setAmount1] = useState("");
