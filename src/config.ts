@@ -49,7 +49,7 @@ export const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJE
 // Deployed 2026-07-19.
 // ---------------------------------------------------------------------------
 export const ENGINE_VERSION = 8;
-export const PUMP_FACTORY_ADDRESS = "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d";
+export const PUMP_FACTORY_ADDRESS = "0x0876Df73010d4Cf830daFfCc6Ddc1cC852B1840B";
 
 /// Superseded deployments. Recorded so history stays readable and so nothing
 /// here can be mistaken for the live stack. Do not export these individually;
@@ -72,8 +72,19 @@ export const RETIRED_DEPLOYMENTS = {
   launchpad: { factory: "0x40147884E6992cee1f7030d1263C692a4Cbae942" },
   eurc: {
     suite: "0x4C08f5bB5ea7c20A150C8D515Fb5F53F47636C9d",
+    pumpFactory: "0x73471B058a26b62CD0f77d5409d83de5c5A502AC",
     dexFactory: "0x70083bd737CF204fD5378CBF6c7fDf007383d289",
-    note: "EURC suite still trades its historical markets; its pump factory is canonical below.",
+    retired: "2026-07-19",
+    note: "Graduated into a private EURC DEX. Superseded by the EURC v8 factory graduating into ArcPair.",
+  },
+  // The first hub-less graduation stack, live for one day. Nothing graduated on
+  // it and its pair registry stayed empty, so nothing needed migrating.
+  v8PreHub: {
+    pumpFactory: "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d",
+    pairFactory: "0x4067adb8499a2f4329B7eF285F9211cc882f4d37",
+    router: "0x3681d045a79A3290F3228575D99f26cB057b39d2",
+    retired: "2026-07-19",
+    note: "Its one-time authority slot was spent on the USDC factory, locking EURC out.",
   },
   pairFactoryV1: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
   routerV1: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
@@ -83,6 +94,10 @@ export const RETIRED_DEPLOYMENTS = {
 // Older engines stay live for their historical markets; their pump factories
 // index below so coins launched on them remain visible.
 export const LEGACY_PUMP_FACTORY_ADDRESSES = [
+  // The first V8 USDC factory, superseded the same day by the hub-backed one.
+  // It graduated into a pair registry whose authority slot was already spent,
+  // which left EURC no way in — see ARC_GRADUATION_HUB_ADDRESS.
+  "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d",
   // V7, superseded by V8 on 2026-07-19. Kept indexed rather than dropped: the
   // indexing ABI is identical, so listing it costs one line and coins launched
   // by testers stay visible instead of disappearing from the market.
@@ -113,10 +128,10 @@ export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 // EURC (6 dec) instead of native USDC. Deployed 2026-07-18. Create/trade wiring
 // is quote-kind-aware; native USDC remains the default engine.
 //
-// NOTE: this is still a v7-era suite and has NOT been moved to ArcPair
-// graduation. EURC launches graduate into the old EURC DEX. Migrating it is
-// the mirror of what v8 did for USDC and is not yet done.
-export const EURC_PUMP_FACTORY_ADDRESS = "0x73471B058a26b62CD0f77d5409d83de5c5A502AC";
+// Since 2026-07-19 EURC graduates into ArcPair, like USDC — the v7-era suite
+// (0x73471B058a26b62CD0f77d5409d83de5c5A502AC) graduated into a private EURC
+// DEX nothing else could route through, and is retired.
+export const EURC_PUMP_FACTORY_ADDRESS = "0xc95C0e4A098C97C5435397093CAbE0Bc2cBb677c";
 export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimals
 // Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
@@ -127,11 +142,22 @@ export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimal
 // stealable, since the pair address is fixed by (token, quote, tier) and could
 // be seeded at a bad ratio in advance. V1 (0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd)
 // is superseded; its registry was empty, so nothing was migrated.
-// Deployed 2026-07-19.
-export const ARC_PAIR_FACTORY_ADDRESS = "0x4067adb8499a2f4329B7eF285F9211cc882f4d37";
-// Router bound to the V2 factory. The prior router
-// (0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166) hardcoded V1.
-export const ARC_ROUTER_ADDRESS = "0x3681d045a79A3290F3228575D99f26cB057b39d2";
+//
+// This is the second V2 instance. The first
+// (0x4067adb8499a2f4329B7eF285F9211cc882f4d37) was sound but spent: its
+// one-time authority slot went to the USDC pump factory, so the EURC launchpad
+// could never register. Replaced while the registry still held zero pairs,
+// which is the only cheap moment to do it. Deployed 2026-07-19.
+export const ARC_PAIR_FACTORY_ADDRESS = "0xc1e7c3B9ADc079628A231636CB9c0d51478B0e87";
+// One graduation authority standing in front of both pump factories, so USDC
+// and EURC launches land in the same pool registry instead of two. Sealed at
+// deployment with exactly two members; membership can never change.
+export const ARC_GRADUATION_HUB_ADDRESS = "0x1709E8986B0b30B7FBaAd05971e6f8530742070A";
+// Router bound to the current factory. Each router hardcodes its factory, so a
+// factory change forces a new router; the prior ones were
+// 0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166 and
+// 0x3681d045a79A3290F3228575D99f26cB057b39d2.
+export const ARC_ROUTER_ADDRESS = "0x5B6AAF140D477C8b397332D25cA7D7F64DA2D463";
 export const FEE_TREASURY = "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";
 export const BRIDGE_FEE_BPS = 150;
 export const SWAP_FEE_BPS = 30;

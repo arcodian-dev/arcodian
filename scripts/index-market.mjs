@@ -4,7 +4,23 @@ import { dirname } from "node:path";
 
 const rpc = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network/";
 const output = process.env.INDEX_OUTPUT || new URL("../public/data/market-index.json", import.meta.url).pathname;
-const factories = (process.env.PUMP_FACTORIES || "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774@7,0x73471B058a26b62CD0f77d5409d83de5c5A502AC@7,0x454529204A0B0846Cc0dF37CFdFf3De8541B36e4@6,0xA26eD2d51264246f7dDF8EB33626e999E592c309,0x450883D80e46D866c81dd64CAbE216071b2DB651,0x4925Cd48Cae870730286e058a3c9020f2892eb6A,0x7D0b32E57D0e52da3aac5E18c761029E7b179113")
+// Canonical factories first, then every retired one. A factory missing from
+// this list is not "old", it is invisible — its coins vanish from the market.
+// The v8 USDC factory was missing here for a day after it went live, which is
+// why the canonical addresses now lead the list and are commented as such.
+const factories = (process.env.PUMP_FACTORIES ||
+  [
+    "0x0876Df73010d4Cf830daFfCc6Ddc1cC852B1840B@8", // canonical USDC (hub)
+    "0xc95C0e4A098C97C5435397093CAbE0Bc2cBb677c@8", // canonical EURC (hub)
+    "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d@8", // v8 USDC, pre-hub
+    "0x73471B058a26b62CD0f77d5409d83de5c5A502AC@7", // EURC, pre-hub
+    "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774@7",
+    "0x454529204A0B0846Cc0dF37CFdFf3De8541B36e4@6",
+    "0xA26eD2d51264246f7dDF8EB33626e999E592c309",
+    "0x450883D80e46D866c81dd64CAbE216071b2DB651",
+    "0x4925Cd48Cae870730286e058a3c9020f2892eb6A",
+    "0x7D0b32E57D0e52da3aac5E18c761029E7b179113",
+  ].join(","))
   .split(",")
   .filter(Boolean)
   .map((entry) => {
@@ -75,15 +91,18 @@ const groups = await Promise.all(factories.map(async ({ address: factoryAddress,
   const cachedMarkets = previous?.indexedBlock
     ? (previous.launches || []).filter((item) => item.factory.toLowerCase() === factoryAddress.toLowerCase())
     : [];
-  let seeds = cachedMarkets.map((item) => ({ address: item.address, curve: item.curve, previousMarket: item }));
-  if (!seeds.length) {
-    const count = Number(await factory.launchCount());
-    seeds = await Promise.all(Array.from({ length: count }, async (_, offset) => {
-      const id = offset + 1;
-      const [address, curve] = await Promise.all([factory.tokenByLaunch(id), factory.curveByLaunch(id)]);
-      return { address, curve, previousMarket: null };
-    }));
-  }
+  // Always ask the factory what exists. The cache is for skipping trade
+  // history already scanned, never for deciding which markets exist: seeding
+  // from the previous file alone meant a factory that already had one indexed
+  // launch never had its launchCount read again, so every coin launched after
+  // the first was invisible on the site forever.
+  const cachedByAddress = new Map(cachedMarkets.map((item) => [item.address.toLowerCase(), item]));
+  const count = Number(await factory.launchCount());
+  const seeds = await Promise.all(Array.from({ length: count }, async (_, offset) => {
+    const id = offset + 1;
+    const [address, curve] = await Promise.all([factory.tokenByLaunch(id), factory.curveByLaunch(id)]);
+    return { address, curve, previousMarket: cachedByAddress.get(address.toLowerCase()) || null };
+  }));
   return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
     const token = new Contract(address, tokenAbi, provider);
     const market = new Contract(curve, curveAbi, provider);

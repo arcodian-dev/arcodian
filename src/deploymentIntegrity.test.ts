@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARC_GRADUATION_HUB_ADDRESS,
   ARC_PAIR_FACTORY_ADDRESS, ARC_ROUTER_ADDRESS, ENGINE_VERSION,
   EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES,
   PUMP_FACTORY_ADDRESS, RETIRED_DEPLOYMENTS,
@@ -28,6 +29,7 @@ const CANONICAL = {
   ARC_PAIR_FACTORY_ADDRESS,
   ARC_ROUTER_ADDRESS,
   EURC_PUMP_FACTORY_ADDRESS,
+  ARC_GRADUATION_HUB_ADDRESS,
 };
 
 describe("canonical stack integrity", () => {
@@ -48,6 +50,28 @@ describe("canonical stack integrity", () => {
     const legacy = LEGACY_PUMP_FACTORY_ADDRESSES.map((a) => a.toLowerCase());
     expect(legacy).not.toContain(PUMP_FACTORY_ADDRESS.toLowerCase());
     expect(legacy).not.toContain(EURC_PUMP_FACTORY_ADDRESS.toLowerCase());
+  });
+
+  // LEGACY_PUMP_FACTORY_ADDRESSES is read with an ABI that assumes a native
+  // USDC quote (realNativeReserve / VIRTUAL_NATIVE). An EURC factory listed
+  // there would not fail loudly — it would render EURC reserves as USDC, at
+  // 1e12 the wrong scale. EURC factories belong only in the quote-kind-aware
+  // indexer, scripts/index-market.mjs.
+  it("never indexes an EURC pump factory through the native-quote path", () => {
+    const legacy = LEGACY_PUMP_FACTORY_ADDRESSES.map((a) => a.toLowerCase());
+    expect(legacy).not.toContain(RETIRED_DEPLOYMENTS.eurc.pumpFactory.toLowerCase());
+    expect(legacy).not.toContain(EURC_PUMP_FACTORY_ADDRESS.toLowerCase());
+  });
+
+  // Both launchpads must graduate into ONE registry, or liquidity and routing
+  // split in two. They can only do that through the hub.
+  it("points both pump factories at the same pair registry via the hub", () => {
+    expect(ARC_GRADUATION_HUB_ADDRESS.toLowerCase())
+      .not.toBe(RETIRED_DEPLOYMENTS.v8PreHub.pumpFactory.toLowerCase());
+    expect(ARC_PAIR_FACTORY_ADDRESS.toLowerCase())
+      .not.toBe(RETIRED_DEPLOYMENTS.v8PreHub.pairFactory.toLowerCase());
+    expect(ARC_ROUTER_ADDRESS.toLowerCase())
+      .not.toBe(RETIRED_DEPLOYMENTS.v8PreHub.router.toLowerCase());
   });
 
   it("keeps the retired v7 pump factory indexed so its coins stay visible", () => {
