@@ -35,22 +35,53 @@ export const CHAINS = [
 
 export const PUBLIC_ORIGIN = import.meta.env.VITE_PUBLIC_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
 export const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
-export const FACTORY_ADDRESS = "0x40147884E6992cee1f7030d1263C692a4Cbae942";
-// Canonical engine: ArcPumpSuiteV7 (V6 pull-fee vault + symmetric 30 bps
-// buy/sell DEX fee — fixes the V6 25 bps sell asymmetry).
-// Deployed 2026-07-18, tx 0xc856b982f9919434c33a40ff04ac6ac7f73974fa81348e305b5ecd854effba42.
-export const PUMP_SUITE_ADDRESS = "0x59D8eDf019053c7D8fE48f906258960c092893AD";
-// Canonical engine: ArcPumpFactoryV8. Same bonding curve as V7 — same virtual
-// reserve, same 100 bps symmetric fee — graduating into ArcPair instead of the
-// separate V7 DEX, so launched coins land in the pools the DEX and routing
-// already use. There is no "suite" contract in V8; the factory is the root.
+// ---------------------------------------------------------------------------
+// CANONICAL STACK — engine v8, Arc Testnet 5042002.
+//
+// Exactly one set of addresses is canonical at a time, and it is this one.
+// Anything retired lives in RETIRED_DEPLOYMENTS below as data, never as an
+// export, so a stale address cannot be imported by mistake at deploy time.
+//
+// Engine v8: same bonding curve as v7 — same virtual reserve, same 100 bps
+// symmetric fee — graduating into ArcPair instead of a DEX of its own, so
+// launched coins land in the pools the DEX and routing already use. There is
+// no "suite" contract in v8; the launch factory is the root of the stack.
 // Deployed 2026-07-19.
-export const PUMP_FACTORY_ADDRESS = "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d";
-export const ARC_DEX_FACTORY_ADDRESS = "0xbA3Fa6d96D9bD1564B68cbf15A6EaCB90d0aEFE7";
+// ---------------------------------------------------------------------------
 export const ENGINE_VERSION = 8;
-// V6 suite 0x8F4FAF89f3d6f2f4Ad535df7faF3B5787BA35020 / DEX 0xC933eCeb3Ca62f31E7DD1D2538e6cfE879c5bDdA
-// and V5 suite 0x6601aD6C8a32cB5e1217d1304457e2C9F8778094 stay live for their
-// historical markets; their pump factories index below.
+export const PUMP_FACTORY_ADDRESS = "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d";
+
+/// Superseded deployments. Recorded so history stays readable and so nothing
+/// here can be mistaken for the live stack. Do not export these individually;
+/// if one is needed again, promote it deliberately.
+export const RETIRED_DEPLOYMENTS = {
+  v7: {
+    suite: "0x59D8eDf019053c7D8fE48f906258960c092893AD",
+    pumpFactory: "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774",
+    dexFactory: "0xbA3Fa6d96D9bD1564B68cbf15A6EaCB90d0aEFE7",
+    retired: "2026-07-19",
+    note: "Graduated into its own DEX. Superseded by v8 graduating into ArcPair.",
+  },
+  v6: {
+    suite: "0x8F4FAF89f3d6f2f4Ad535df7faF3B5787BA35020",
+    dexFactory: "0xC933eCeb3Ca62f31E7DD1D2538e6cfE879c5bDdA",
+    retired: "2026-07-18",
+    note: "Asymmetric 25 bps sell fee; fixed in v7.",
+  },
+  v5: { suite: "0x6601aD6C8a32cB5e1217d1304457e2C9F8778094", retired: "2026-07-18" },
+  launchpad: { factory: "0x40147884E6992cee1f7030d1263C692a4Cbae942" },
+  eurc: {
+    suite: "0x4C08f5bB5ea7c20A150C8D515Fb5F53F47636C9d",
+    dexFactory: "0x70083bd737CF204fD5378CBF6c7fDf007383d289",
+    note: "EURC suite still trades its historical markets; its pump factory is canonical below.",
+  },
+  pairFactoryV1: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
+  routerV1: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
+  fxPoolV1: "0x09c2A629834a0fb0c559659214Cc1802bCE910FD",
+  crossBuyRouterV1: "0x218786BC01E6c401A5A7A514103a582D53C4a9C7",
+} as const;
+// Older engines stay live for their historical markets; their pump factories
+// index below so coins launched on them remain visible.
 export const LEGACY_PUMP_FACTORY_ADDRESSES = [
   // V7, superseded by V8 on 2026-07-19. Kept indexed rather than dropped: the
   // indexing ABI is identical, so listing it costs one line and coins launched
@@ -78,12 +109,14 @@ export const ARC_USDC_ERC20 = ARC.nativeToken; // USDC dual-interface ERC-20, 6 
 // deployment (0x218786BC01E6c401A5A7A514103a582D53C4a9C7) pointed at the v1 pool.
 export const CROSS_BUY_ROUTER_ADDRESS = "0xF51DF463bb2Db8Fe1CfC5CCfB87D1b34B5AD9ef9";
 export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
-// EURC-collateral pump suite (QUOTE_KIND=1). Launches priced/settled in EURC
-// (6 dec) instead of native USDC. Deployed 2026-07-18. Frontend create/trade
-// wiring is quote-kind-aware; USDC (native) remains the default engine (V7).
-export const EURC_PUMP_SUITE_ADDRESS = "0x4C08f5bB5ea7c20A150C8D515Fb5F53F47636C9d";
+// EURC-collateral pump factory (QUOTE_KIND=1). Launches priced and settled in
+// EURC (6 dec) instead of native USDC. Deployed 2026-07-18. Create/trade wiring
+// is quote-kind-aware; native USDC remains the default engine.
+//
+// NOTE: this is still a v7-era suite and has NOT been moved to ArcPair
+// graduation. EURC launches graduate into the old EURC DEX. Migrating it is
+// the mirror of what v8 did for USDC and is not yet done.
 export const EURC_PUMP_FACTORY_ADDRESS = "0x73471B058a26b62CD0f77d5409d83de5c5A502AC";
-export const EURC_DEX_FACTORY_ADDRESS = "0x70083bd737CF204fD5378CBF6c7fDf007383d289";
 export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimals
 // Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
@@ -142,7 +175,7 @@ export const BASE_DOMAIN = "arcodian.fun";
 // the single live arcodian.fun docroot never ships a dead cross-subdomain link.
 export const SUBDOMAINS_LIVE = import.meta.env.VITE_SUBDOMAINS_LIVE === "true";
 // tab -> subdomain label. Home + fx have no subdomain (they live on the base host).
-export const SUBDOMAIN_FOR_TAB = {
+const SUBDOMAIN_FOR_TAB = {
   screener: "market",
   swap: "swap",
   bridge: "bridge",
