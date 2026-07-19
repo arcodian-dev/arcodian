@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, PUMP_SUITE_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
@@ -1494,13 +1494,16 @@ function Launch({
   return (
     <div className="launch-state">
       <div className="factory-proof">
-        <span>● Arcodian v5 market engine live</span>
+        {/* Derived from ENGINE_VERSION rather than written by hand — this
+            label read "v5" through the whole of v6 and v7. V8 has no suite
+            contract, so the link points at the launch factory itself. */}
+        <span>● Arcodian v{ENGINE_VERSION} market engine live</span>
         <a
-          href={`${ARC.explorer}/address/${PUMP_SUITE_ADDRESS}`}
+          href={`${ARC.explorer}/address/${PUMP_FACTORY_ADDRESS}`}
           target="_blank"
           rel="noreferrer"
         >
-          {short(PUMP_SUITE_ADDRESS)} ↗
+          {short(PUMP_FACTORY_ADDRESS)} ↗
         </a>
       </div>
       <div className="studio-steps">

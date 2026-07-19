@@ -40,13 +40,22 @@ export const FACTORY_ADDRESS = "0x40147884E6992cee1f7030d1263C692a4Cbae942";
 // buy/sell DEX fee — fixes the V6 25 bps sell asymmetry).
 // Deployed 2026-07-18, tx 0xc856b982f9919434c33a40ff04ac6ac7f73974fa81348e305b5ecd854effba42.
 export const PUMP_SUITE_ADDRESS = "0x59D8eDf019053c7D8fE48f906258960c092893AD";
-export const PUMP_FACTORY_ADDRESS = "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774";
+// Canonical engine: ArcPumpFactoryV8. Same bonding curve as V7 — same virtual
+// reserve, same 100 bps symmetric fee — graduating into ArcPair instead of the
+// separate V7 DEX, so launched coins land in the pools the DEX and routing
+// already use. There is no "suite" contract in V8; the factory is the root.
+// Deployed 2026-07-19.
+export const PUMP_FACTORY_ADDRESS = "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d";
 export const ARC_DEX_FACTORY_ADDRESS = "0xbA3Fa6d96D9bD1564B68cbf15A6EaCB90d0aEFE7";
-export const ENGINE_VERSION = 7;
+export const ENGINE_VERSION = 8;
 // V6 suite 0x8F4FAF89f3d6f2f4Ad535df7faF3B5787BA35020 / DEX 0xC933eCeb3Ca62f31E7DD1D2538e6cfE879c5bDdA
 // and V5 suite 0x6601aD6C8a32cB5e1217d1304457e2C9F8778094 stay live for their
 // historical markets; their pump factories index below.
 export const LEGACY_PUMP_FACTORY_ADDRESSES = [
+  // V7, superseded by V8 on 2026-07-19. Kept indexed rather than dropped: the
+  // indexing ABI is identical, so listing it costs one line and coins launched
+  // by testers stay visible instead of disappearing from the market.
+  "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774",
   "0x454529204A0B0846Cc0dF37CFdFf3De8541B36e4",
   "0xA26eD2d51264246f7dDF8EB33626e999E592c309",
   "0x450883D80e46D866c81dd64CAbE216071b2DB651",
@@ -80,8 +89,16 @@ export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimal
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
 // reserves from measured balances, so fee-on-transfer and rebasing tokens cannot
 // corrupt their accounting. Deployed 2026-07-18; powers swap.arcodian.fun.
-export const ARC_PAIR_FACTORY_ADDRESS = "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd";
-export const ARC_ROUTER_ADDRESS = "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166";
+// ArcPairFactoryV2 — as V1, plus one rule: while a launchpad token's curve is
+// running, only that curve may open its pair. Without it graduation is
+// stealable, since the pair address is fixed by (token, quote, tier) and could
+// be seeded at a bad ratio in advance. V1 (0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd)
+// is superseded; its registry was empty, so nothing was migrated.
+// Deployed 2026-07-19.
+export const ARC_PAIR_FACTORY_ADDRESS = "0x4067adb8499a2f4329B7eF285F9211cc882f4d37";
+// Router bound to the V2 factory. The prior router
+// (0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166) hardcoded V1.
+export const ARC_ROUTER_ADDRESS = "0x3681d045a79A3290F3228575D99f26cB057b39d2";
 export const FEE_TREASURY = "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";
 export const BRIDGE_FEE_BPS = 150;
 export const SWAP_FEE_BPS = 30;

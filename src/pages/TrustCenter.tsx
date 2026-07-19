@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_DEX_FACTORY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS, PUMP_SUITE_ADDRESS } from "../config";
+import { ARC, ARC_PAIR_FACTORY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 
 function TrustNav({ active, openContracts, openHow, openFaq, openCanary }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
@@ -112,18 +112,23 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     const provider = arcProvider();
     void (async () => {
       try {
-        const suite = new Contract(PUMP_SUITE_ADDRESS, ["function pumpFactory() view returns(address)", "function dexFactory() view returns(address)", "function treasury() view returns(address)"], provider);
-        const pump = new Contract(PUMP_FACTORY_ADDRESS, ["function graduationThreshold() view returns(uint256)", "function treasury() view returns(address)", "function dexFactory() view returns(address)"], provider);
-        const dex = new Contract(ARC_DEX_FACTORY_ADDRESS, ["function owner() view returns(address)", "function treasury() view returns(address)"], provider);
-        const [suitePump, suiteDex, suiteTreasury, threshold, pumpTreasury, pumpDex, dexOwner, dexTreasury] = await Promise.all([suite.pumpFactory(), suite.dexFactory(), suite.treasury(), pump.graduationThreshold(), pump.treasury(), pump.dexFactory(), dex.owner(), dex.treasury()]);
+        // V8 has no suite contract — the launch factory is the root, and it
+        // graduates into ArcPairFactoryV2 rather than a DEX of its own. The
+        // old suite/DEX-owner checks described V7's shape and are gone with it.
+        const pump = new Contract(PUMP_FACTORY_ADDRESS, ["function graduationThreshold() view returns(uint256)", "function treasury() view returns(address)", "function pairFactory() view returns(address)"], provider);
+        const pairFactory = new Contract(ARC_PAIR_FACTORY_ADDRESS, ["function graduationAuthority() view returns(address)", "function treasury() view returns(address)"], provider);
+        const [threshold, pumpTreasury, pumpPairFactory, authority, pairTreasury] = await Promise.all([
+          pump.graduationThreshold(), pump.treasury(), pump.pairFactory(),
+          pairFactory.graduationAuthority(), pairFactory.treasury(),
+        ]);
         const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
         setChecks([
-          { label: "Suite → Launch Factory", value: short(suitePump), ok: same(suitePump, PUMP_FACTORY_ADDRESS) },
-          { label: "Suite → DEX", value: short(suiteDex), ok: same(suiteDex, ARC_DEX_FACTORY_ADDRESS) },
-          { label: "DEX owner lock", value: short(dexOwner), ok: same(dexOwner, PUMP_SUITE_ADDRESS) },
-          { label: "Treasury agreement", value: short(suiteTreasury), ok: [pumpTreasury, dexTreasury].every((value) => same(value, FEE_TREASURY)) && same(suiteTreasury, FEE_TREASURY) },
+          { label: "Launch Factory → Pair Factory", value: short(pumpPairFactory), ok: same(pumpPairFactory, ARC_PAIR_FACTORY_ADDRESS) },
+          // The pair reservation that makes graduation unstealable is only in
+          // force while the authority points back at this launch factory.
+          { label: "Graduation authority sealed", value: short(authority), ok: same(authority, PUMP_FACTORY_ADDRESS) },
+          { label: "Treasury agreement", value: short(pumpTreasury), ok: [pumpTreasury, pairTreasury].every((value) => same(value, FEE_TREASURY)) },
           { label: "Graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("4500") },
-          { label: "Launch Factory → DEX", value: short(pumpDex), ok: same(pumpDex, ARC_DEX_FACTORY_ADDRESS) },
         ]);
         setCheckedAt(new Date().toLocaleString());
       } catch { setChecks([]); }
@@ -131,9 +136,8 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     })();
   }, []);
   const addressCards = [
-    ["Arcodian Suite v6", PUMP_SUITE_ADDRESS, "Deploys and permanently wires the canonical Launch Factory and ARC DEX stack. Protocol fees accrue in-contract and are withdrawn by pull, so trading can never halt on treasury failure."],
-    ["Launch Factory v6", PUMP_FACTORY_ADDRESS, "Creates canonical coin and bonding-curve contracts with one public rule set."],
-    ["ARC DEX Factory", ARC_DEX_FACTORY_ADDRESS, "Creates the post-graduation pair and sends LP ownership to the burn address."],
+    ["Launch Factory v8", PUMP_FACTORY_ADDRESS, "Creates coin and bonding-curve contracts with one public rule set, and graduates them into the shared pair factory below."],
+    ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
     ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
   ];
   return <section className="contracts-page">
