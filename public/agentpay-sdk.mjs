@@ -11,6 +11,19 @@ export function createJob(signer,{provider,evaluator,expiry,descHash="0x"+"0".re
 export function submitJob(signer,jobId,deliverableHash){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.submit(jobId,/^0x[0-9a-fA-F]{64}$/.test(deliverableHash)?deliverableHash:id(deliverableHash));}
 export function evaluateJob(signer,jobId,approve,evidenceHash){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.evaluate(jobId,approve,/^0x[0-9a-fA-F]{64}$/.test(evidenceHash)?evidenceHash:id(evidenceHash));}
 export function reclaimExpired(signer,jobId){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.reclaimExpired(jobId);}
+
+// Phase C — Reputation + Validation (official ERC-8004 registries).
+export const ARC_REPUTATION={chainId:5042002,reputation:"0x8004B663056A597Dffe9eCcC1965A193B7388713",validation:"0x8004Cb1BF31DAf7788923b405b754f57acEB4272",feedUrl:"https://arcodian.fun/developers/reputation.json"};
+const REP_ABI=["function giveFeedback(uint256 agentId,uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash)"];
+const VAL_ABI=["function validationRequest(address validatorAddress,uint256 agentId,bytes32 dataHash)","function validationResponse(bytes32 dataHash,uint8 response)"];
+// Read the aggregated reputation for an agent (objective score + tiers + flags).
+export async function inspectReputation(agentId,feedUrl=ARC_REPUTATION.feedUrl){const res=await fetch(feedUrl);if(!res.ok)return null;const d=await res.json();return (d.agents||[]).find(a=>String(a.agentId)===String(agentId))||null;}
+// Advisory preflight — vet a provider before creating a job / setting a policy. Never touches ArcPay.
+export async function meetsPolicy(agentId,policy={},feedUrl=ARC_REPUTATION.feedUrl){const r=await inspectReputation(agentId,feedUrl);if(!r)return {ok:false,reasons:["no reputation indexed"]};const reasons=[];if(policy.minScore!=null&&r.score<policy.minScore)reasons.push(`score ${r.score} < ${policy.minScore}`);if(policy.minCompletedJobs!=null&&r.counts.completed<policy.minCompletedJobs)reasons.push(`completed ${r.counts.completed} < ${policy.minCompletedJobs}`);if(policy.maxDisputeRate!=null&&r.dimensions.disputeRate>policy.maxDisputeRate)reasons.push(`disputeRate ${r.dimensions.disputeRate.toFixed(2)} > ${policy.maxDisputeRate}`);return {ok:reasons.length===0,reasons};}
+// tx-builders (signer). Post evidence-backed feedback / request+submit independent validation.
+export function leaveFeedback(signer,{agentId,score,tag1="arcjob",tag2="",endpoint="",filehash="0x"+"0".repeat(64)}){const c=new Contract(ARC_REPUTATION.reputation,REP_ABI,signer);return c.giveFeedback(agentId,score,tag1,tag2,endpoint,/^0x[0-9a-fA-F]{64}$/.test(filehash)?filehash:id(filehash));}
+export function requestValidation(signer,{validator,agentId,dataHash}){const c=new Contract(ARC_REPUTATION.validation,VAL_ABI,signer);return c.validationRequest(validator,agentId,dataHash);}
+export function submitValidation(signer,{dataHash,response}){const c=new Contract(ARC_REPUTATION.validation,VAL_ABI,signer);return c.validationResponse(dataHash,response);}
 export const ARC_AGENT_PAY={chainId:5042002,factory:"0x27c722F643ea787f7425449AF8B03601B90815eD",arcPay:"0x5e3d1b63213b8608539116d1c6248a36819684b5"};
 const ABI=["function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)"];
 export async function inspectPolicy(provider,vault,agent,merchant){const c=new Contract(vault,ABI,provider);const [p,allowed,balance]=await Promise.all([c.policies(agent),c.merchantAllowed(agent,merchant),provider.getBalance(vault)]);return {enabled:p.enabled,allowed,balance,perPayment:p.perPayment,dailyLimit:p.dailyLimit,spentToday:p.spentToday,validUntil:Number(p.validUntil)};}
