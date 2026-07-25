@@ -23,8 +23,10 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
   const [pJobId,setPJobId]=useState("");const [pDeliverable,setPDeliverable]=useState("");
   const [eJobId,setEJobId]=useState("");const [eEvidence,setEEvidence]=useState("");
 
+  const [reps,setReps]=useState<Record<string,number>>({});
   const refresh=useCallback(async()=>{setFeed(await fetchJobsFeed());},[]);
   useEffect(()=>{void refresh();},[refresh,status]);
+  useEffect(()=>{fetch("/developers/reputation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{const m:Record<string,number>={};(d?.agents||[]).forEach((a:any)=>{if(a.agentId)m[String(a.agentId)]=a.score;});setReps(m);}).catch(()=>{});},[]);
 
   async function signer(){if(!activeProvider){connect();throw new Error("Connect wallet first");}if(chainId!==ARC.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:ARC.hexId}]});throw new Error("Network switched. Review and submit again.");}return new BrowserProvider(activeProvider).getSigner();}
   async function submit(label:string,fn:(c:Contract)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const c=new Contract(AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,s);const tx=await fn(c);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh();}catch(e){setStatus(e instanceof Error?e.message:"Action failed");}finally{setBusy(false);}}
@@ -68,7 +70,7 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
             <span>#{j.jobId}</span>
             <span>{formatEther(j.budget)} USDC</span>
             <span><i className={`jobs-chip st-${j.status.toLowerCase()}`}>{j.status}</i></span>
-            <span>{short(j.provider)}</span>
+            <span>{short(j.provider)}{j.providerAgentId&&j.providerAgentId!=="0"&&reps[j.providerAgentId]!=null&&<i className="jobs-rep" title={`Reputation ${reps[j.providerAgentId]}/100`}>★ {reps[j.providerAgentId]}</i>}</span>
             <span>{short(j.evaluator)}</span>
             <span>{j.expiry?new Date(j.expiry*1000).toLocaleDateString():"—"}</span>
           </a>)}

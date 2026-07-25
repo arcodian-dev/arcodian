@@ -16,6 +16,7 @@ a.jobs-row:hover{background:#102135}
 .jobs-head{color:#91a7bb;font:800 11px monospace;letter-spacing:.12em;background:#09182600}
 .jobs-head span{color:#6f8296}
 .jobs-empty{color:#91a7bb;padding:26px 4px}
+.jobs-rep{display:inline-block;margin-left:7px;font:800 10px monospace;color:#49dcc4;border:1px solid #49dcc455;border-radius:6px;padding:1px 6px;vertical-align:middle}
 
 .jobs-chip{display:inline-block;font:800 11px monospace;letter-spacing:.05em;padding:4px 10px;border-radius:999px;border:1px solid transparent}
 .st-funded{color:#12cbea;border-color:#12cbea55;background:#12cbea14}
