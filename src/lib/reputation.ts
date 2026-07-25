@@ -42,7 +42,10 @@ function isSelfReview(j: RepJob, r: Resolvers): boolean {
 }
 
 export function scoreProvider(provider: string, jobs: RepJob[], r: Resolvers): RepResult {
-  const terminal = jobs.filter(j => j.status === "Completed" || j.status === "Rejected" || j.status === "Expired");
+  // Oldest-first so duplicate-evidence detection keeps the FIRST use and flags later reuse (deterministic).
+  const terminal = jobs
+    .filter(j => j.status === "Completed" || j.status === "Rejected" || j.status === "Expired")
+    .sort((a, b) => (Number(a.jobId) - Number(b.jobId)) || a.jobId.localeCompare(b.jobId));
   const flags = new Set<RepFlag>();
   const excluded = new Set<string>();
 

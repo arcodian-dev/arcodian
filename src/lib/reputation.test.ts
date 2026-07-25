@@ -56,6 +56,16 @@ describe("risk flags", () => {
     const r = scoreProvider("0xP", [base({ jobId: "1", deliverableHash: "0xSAME" }), base({ jobId: "2", client: "0xC2", evaluator: "0xE2", deliverableHash: "0xSAME" })], noResolvers);
     expect(r.flags).toContain("duplicate_evidence"); expect(r.excludedJobIds).toContain("2");
   });
+  it("duplicate evidence keeps the earliest job regardless of input order", () => {
+    // newest-first input; job 1 (Completed) first-used the hash, job 2 (Rejected) reused it
+    const jobs = [
+      base({ jobId: "2", status: "Rejected", client: "0xC2", evaluator: "0xE2", deliverableHash: "0xSAME" }),
+      base({ jobId: "1", status: "Completed", deliverableHash: "0xSAME" }),
+    ];
+    const r = scoreProvider("0xP", jobs, noResolvers);
+    expect(r.excludedJobIds).toEqual(["2"]);
+    expect(r.counts.completed).toBe(1);
+  });
   it("concentration reduces confidence", () => {
     const jobs = Array.from({ length: 5 }, (_, i) => base({ jobId: String(i + 1), client: "0xSOLE", evaluator: "0xE" + i, deliverableHash: "0xd" + i, evidenceHash: "0xe" + i }));
     const r = scoreProvider("0xP", jobs, noResolvers);
