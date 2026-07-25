@@ -1,11 +1,14 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Capacitor } from "@capacitor/core";
 import {
   BrowserProvider,
   Contract,
   ContractFactory,
   JsonRpcProvider,
+  ZeroHash,
   formatEther,
   parseUnits,
+  zeroPadValue,
 } from "ethers";
 import {
   ARC,
@@ -24,10 +27,22 @@ import { ARC_PUMP_SUITE_ABI } from "./generated/arcPumpSuite";
 import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
+import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchCctpFee, savePendingClaim } from "./bridgeRecovery";
+import { canonicalRedirect, isWalletAppRoute } from "./routeIntegrity";
+
+// Circle CCTP v2 TokenMessenger — deterministic across all testnet chains.
+const TOKEN_MESSENGER_V2 = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA";
+const TOKEN_MESSENGER_ABI = [
+  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold) returns (uint64)",
+];
+const CCTP_USDC_ABI = [
+  "function approve(address,uint256) returns(bool)",
+  "function allowance(address,address) view returns(uint256)",
+];
 import { BrandMark, FAQ_ITEMS, short, type WalletOption } from "./shared";
 
 const Screener = lazy(() => import("./pages/Market"));
-const FxWidget = lazy(() => import("./components/FxWidget"));
+const FxDesk = lazy(() => import("./components/FxDesk"));
 const SwapPanel = lazy(() => import("./components/SwapPanel"));
 const PoolsPanel = lazy(() => import("./components/PoolsPanel"));
 const CreatePairPanel = lazy(() => import("./components/CreatePairPanel"));
@@ -40,8 +55,19 @@ const ContractsPage = lazy(() => loadTrustCenter().then((m) => ({ default: m.Con
 const FaqPage = lazy(() => loadTrustCenter().then((m) => ({ default: m.FaqPage })));
 const HowItWorks = lazy(() => loadTrustCenter().then((m) => ({ default: m.HowItWorks })));
 const CanaryConsole = lazy(() => loadTrustCenter().then((m) => ({ default: m.CanaryConsole })));
+const WalletPage = lazy(() => import("./pages/Wallet"));
+const ProductLanding = lazy(() => import("./pages/ProductLanding"));
+const ArcPayLanding = lazy(() => import("./pages/ArcPayLanding"));
+const LendApp = lazy(() => import("./pages/LendApp"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const Treasury = lazy(() => import("./pages/Treasury"));
+const AgentPay = lazy(() => import("./pages/AgentPay"));
+const Developers = lazy(() => import("./pages/Developers"));
+const BridgeClaim = lazy(() => import("./components/BridgeClaim"));
+const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
+const AgentProfile = lazy(() => import("./pages/AgentProfile"));
 
-type Tab = "home" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
+type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -100,7 +126,7 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
-const ROUTE_TABS = ["screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts", "canary"] as const;
+const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "analytics", "treasury", "developers", "screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -116,6 +142,15 @@ function initialTab(): Tab {
   if (segment === "market" || segment === "explore" || segment === "launch" || segment === "coin")
     return "screener";
   if (segment === "docs") return "how";
+  if (segment === "faq") {
+    window.history.replaceState({}, "", "/docs#docs-faq");
+    return "how";
+  }
+  // Canary is an internal release-testing console, not a public docs page.
+  if (segment === "canary") {
+    window.history.replaceState({}, "", "/docs");
+    return "how";
+  }
   if (segment === "profil") return "profile";
   return (ROUTE_TABS as readonly string[]).includes(segment)
     ? (segment as Tab)
@@ -139,6 +174,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [wallets, setWallets] = useState<WalletOption[]>([]);
   const [walletOpen, setWalletOpen] = useState(false);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [acknowledged, setAcknowledged] = useState(() => localStorage.getItem("arcodian-risk-ack-v1") === "accepted");
   const [mainnetDeployBusy, setMainnetDeployBusy] = useState(false);
   const [mainnetDeployStatus, setMainnetDeployStatus] = useState("");
@@ -398,14 +434,18 @@ export default function App() {
     const to = CHAINS.find((chain) => chain.id === toChain);
     if (!from || !to) throw new Error("Unsupported Circle bridge network");
     if (!isArcBridgeRoute(from.id, to.id, ARC.id)) throw new Error("Every Arcodian bridge route must start or end on Arc Testnet.");
-    const customFee = ((Number(amount) * BRIDGE_FEE_BPS) / 10_000).toFixed(6).replace(/\.?0+$/, "");
+    // NO customFee: routing the burn through the SDK fee-collector contract
+    // (approve → splitter → CCTP) was reverting after the approval, so the burn
+    // failed and nothing could be claimed. A plain CCTP burn approves the Circle
+    // TokenMessenger directly and always completes. (Protocol fees can be taken
+    // on other rails instead of inside the bridge burn.)
     return {
       kit: new AppKit(), adapter, from, to,
       params: {
         from: { adapter, chain: from.appKit },
         to: { adapter, chain: to.appKit },
         amount,
-        config: { ...CIRCLE_BRIDGE_EXECUTION, customFee: { value: customFee, recipientAddress: FEE_TREASURY } },
+        config: { ...CIRCLE_BRIDGE_EXECUTION },
       },
     };
   }
@@ -433,44 +473,75 @@ export default function App() {
     finally { setBusy(false); }
   }
 
+  // Direct CCTP v2 burn — no SDK, no fee-collector. Switches the wallet to the
+  // source chain, approves the Circle TokenMessenger, and burns (Fast Transfer
+  // with a Standard fallback so it never reverts on a fee/amount edge). The claim
+  // panel below then auto-switches to the destination and mints once attested.
   async function bridgeWithCircle() {
-    if (!activeProvider || fromChain === toChain) {
-      setStatus(
-        fromChain === toChain
-          ? "Choose two different networks."
-          : "Connect a wallet first.",
-      );
-      return;
+    if (!activeProvider) { setStatus("Connect a wallet first."); return; }
+    if (fromChain === toChain) { setStatus("Choose two different networks."); return; }
+    const from = CHAINS.find((chain) => chain.id === fromChain);
+    const to = CHAINS.find((chain) => chain.id === toChain);
+    if (!from || !to) { setStatus("Unsupported bridge network."); return; }
+    if (CCTP_DOMAIN[from.id] === undefined || CCTP_DOMAIN[to.id] === undefined) {
+      setStatus("This route is not supported by Circle CCTP."); return;
     }
-    if (!bridgeEstimate?.destinationGas.ready) {
-      setStatus(`Bridge blocked before burn: add destination ${bridgeEstimate?.destinationGas.symbol || "gas token"}, then review the estimate again.`);
-      return;
-    }
+    const value = parseUnits(amount || "0", 6); // CCTP USDC is 6-decimal
+    if (value <= 0n) { setStatus("Enter an amount to bridge."); return; }
+
     setBusy(true);
-    setStatus(
-      "Preparing official Circle CCTP bridge. Your wallet may request network switches and approvals.",
-    );
+    setStatus(`Switching to ${from.name}…`);
     try {
-      const { kit, params } = await circleBridgeContext();
-      const result = await kit.bridge(params);
-      if (result.state === "error") {
-        setBridgeRetryResult(result);
-        localStorage.setItem(`arcodian-bridge-recovery:${account.toLowerCase()}`, JSON.stringify(result));
-        throw new Error(circleBridgeFailure(result));
+      const sourceHex = `0x${fromChain.toString(16)}`;
+      try {
+        await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: sourceHex }] });
+      } catch (switchError) {
+        const code = (switchError as { code?: number })?.code;
+        if (code === 4902 && from.id === ARC.id) {
+          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: ARC.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC.rpc], blockExplorerUrls: [ARC.explorer] }] });
+        } else if (code === 4001) { setStatus("Network switch was rejected. Approve it to continue."); setBusy(false); return; }
+        else if (code === 4902) { setStatus(`Add ${from.name} to your wallet, then try again.`); setBusy(false); return; }
       }
-      if (result.state === "pending") {
-        setBridgeRetryResult(result);
-        localStorage.setItem(`arcodian-bridge-recovery:${account.toLowerCase()}`, JSON.stringify(result));
-        setStatus("Source transaction is confirmed. Circle attestation or relayed mint is still pending; do not submit another bridge.");
-      } else {
-        setBridgeRetryResult(null);
-        localStorage.removeItem(`arcodian-bridge-recovery:${account.toLowerCase()}`);
-        setStatus("Bridge completed through Circle CCTP. Destination USDC is ready.");
+      const signer = await new BrowserProvider(activeProvider as never).getSigner();
+      const owner = await signer.getAddress();
+
+      const usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
+      const allowance: bigint = await usdc.allowance(owner, TOKEN_MESSENGER_V2);
+      if (allowance < value) {
+        setStatus(`Approving USDC on ${from.name}…`);
+        const approval = await usdc.approve(TOKEN_MESSENGER_V2, value, { gasLimit: 120000n });
+        await approval.wait();
       }
+
+      const messenger = new Contract(TOKEN_MESSENGER_V2, TOKEN_MESSENGER_ABI, signer);
+      const fee = await fetchCctpFee(from.id, to.id);
+      const fastFee = value / 100n > 0n ? value / 100n : 1n; // 1% ceiling (cap only)
+      const attempts: Array<{ maxFee: bigint; threshold: number }> = [];
+      if ((fee?.threshold ?? 2000) === 1000) attempts.push({ maxFee: fastFee, threshold: 1000 });
+      attempts.push({ maxFee: 0n, threshold: 2000 });
+
+      setStatus(`Burning ${amount} USDC on ${from.name}…`);
+      let tx;
+      let lastError: unknown;
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          tx = await messenger.depositForBurn(value, CCTP_DOMAIN[to.id], zeroPadValue(owner, 32), from.token, ZeroHash, attempts[i].maxFee, attempts[i].threshold, { gasLimit: 300000n });
+          await tx.wait();
+          break;
+        } catch (burnError) {
+          lastError = burnError;
+          tx = undefined;
+          if (i < attempts.length - 1) setStatus("Fast transfer unavailable for this route — retrying with standard finality…");
+        }
+      }
+      if (!tx) throw lastError instanceof Error ? lastError : new Error("Burn failed on all transfer speeds");
+
+      savePendingClaim(owner, { burnHash: tx.hash, fromChainId: from.id, toChainId: to.id, amount: value.toString() });
+      setBridgeRecoveryHash(tx.hash);
+      setStatus(`Burned on ${from.name}. Circle is attesting — the claim panel below auto-switches to ${to.name} and mints your USDC once ready. Keep a little ${to.gasSymbol} on ${to.name} for the mint.`);
     } catch (error) {
-      setStatus(
-        friendlySdkError(error),
-      );
+      const message = error instanceof Error ? error.message : String(error);
+      setStatus(/exceeds allowance/i.test(message) ? "Approval didn't register — try the bridge again to re-approve." : message.slice(0, 180));
     } finally {
       setBusy(false);
     }
@@ -560,8 +631,53 @@ export default function App() {
     window.dispatchEvent(new Event("arcodian:open-create"));
   }
 
+  const productName = window.location.hostname.split(".")[0] as "wallet" | "lend";
+  const productHost = ["wallet", "lend"].includes(productName);
+  const walletOnlyExperience = Capacitor.isNativePlatform();
+  const redirect = canonicalRedirect(window.location.hostname, window.location.pathname);
+
+  if (redirect) {
+    window.location.replace(redirect);
+    return <div className="loading-board route-fallback">Opening Arcodian product…</div>;
+  }
+
+  if (walletOnlyExperience) {
+    return (
+      <main className="wallet-product-app">
+        <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian Wallet…</div>}>
+          <WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} />
+        </Suspense>
+        {walletOpen && (
+          <WalletModal
+            wallets={wallets}
+            close={() => setWalletOpen(false)}
+            connect={connect}
+            walletConnect={connectWalletConnect}
+          />
+        )}
+      </main>
+    );
+  }
+
+  const agentMatch = window.location.pathname.match(/^\/agent\/(\d+)/);
+  if (agentMatch) {
+    return (
+      <main className="agent-profile-app">
+        <Suspense fallback={<div className="loading-board route-fallback">Loading agent…</div>}>
+          <AgentProfile agentId={agentMatch[1]} />
+        </Suspense>
+      </main>
+    );
+  }
+
+  if (productHost) {
+    return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
+      {productName === "lend" ? <><LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
+    </Suspense>;
+  }
+
   return (
-    <main>
+    <main className={tab === "home" ? "app-home" : undefined}>
       <nav className="nav">
         <button className="brand" onClick={() => chooseTab("home")}>
           <BrandMark />
@@ -569,10 +685,11 @@ export default function App() {
         </button>
         <div className="nav-links">
           {([
+            ["wallet", "wallet"],
             ["screener", "market"],
             ["swap", "swap"],
             ["bridge", "bridge"],
-            ["fx", "stablecoin FX"],
+            ["arcpay", "pay"],
             ["how", "docs"],
           ] as Array<[Tab, string]>).map(([item, label]) => {
             const href = navHref(item, host);
@@ -587,6 +704,11 @@ export default function App() {
               </button>
             );
           })}
+          <a href="https://lend.arcodian.fun/" target="_blank" rel="noreferrer">lend</a>
+          <details className="nav-more">
+            <summary>more</summary>
+            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("agentpay")}>Agent Pay</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
+          </details>
         </div>
         <div className="wallet-area">
           {chainId && (
@@ -650,37 +772,31 @@ export default function App() {
           }}
         >
           <div className="hero-content">
-            <p className="kicker">Made for Arc · Markets are live</p>
+            <p className="kicker">The stablecoin financial operating system on Arc</p>
             <h1>
-              Small coins.
+              Money moves.
               <br />
-              <em>Open books.</em>
+              <em>One operating layer.</em>
             </h1>
             <p className="hero-copy">
-              Find an idea while it is still early—or put your own into motion.
-              Every price, trade, and graduation is visible onchain. Your wallet
-              stays yours.
+              Send, receive, swap, bridge, manage, and automate USDC and EURC
+              through one non-custodial wallet and payment platform on Arc.
             </p>
             <div className="hero-actions">
-              <button className="primary hero-primary" onClick={() => chooseTab("screener")}>Explore coins</button>
-              <button className="hero-secondary" onClick={() => chooseTab("screener")}>
-                Create coin
+              <button className="primary hero-primary" onClick={() => chooseTab("wallet")}>Open wallet</button>
+              <button className="hero-secondary" onClick={() => chooseTab("arcpay")}>
+                Explore Arc Pay
               </button>
             </div>
             <div className="proof">
               <span>No custody</span>
-              <span>Priced in USDC</span>
-              <span>One visible curve</span>
-              <span>Liquidity locked for good</span>
+              <span>USDC + EURC</span>
+              <span>Circle CCTP</span>
+              <span>Arc-native settlement</span>
             </div>
           </div>
-          <div className="orbit-stage" aria-hidden="true">
-            <div className="orbit-glow" />
-            <div className="orbit-ring ring-one"><i /></div>
-            <div className="orbit-ring ring-two"><i /></div>
-            <div className="brand-planet"><img src="/arcodian-mark.svg" alt="" /></div>
-            <span className="orbit-chip chip-market">THE TAPE IS LIVE<small>EVERY TRADE ONCHAIN</small></span>
-            <span className="orbit-chip chip-curve">NO BACK ROOM<small>ONE VISIBLE CURVE</small></span>
+          <div className="hero-logo-stage" aria-hidden="true">
+            <div className="hero-coin"><img src="/arcodian-mark.svg" alt="" /></div>
           </div>
         </section>
       )}
@@ -695,6 +811,18 @@ export default function App() {
         <ContractsPage openHow={() => chooseTab("how")} openFaq={() => chooseTab("faq")} openCanary={() => chooseTab("canary")} />
       ) : tab === "canary" ? (
         <CanaryConsole account={account} connect={() => connect()} openContracts={() => chooseTab("contracts")} openHow={() => chooseTab("how")} openFaq={() => chooseTab("faq")} openMarket={() => chooseTab("screener")} openSwap={() => chooseTab("swap")} openBridge={() => chooseTab("bridge")} />
+      ) : tab === "wallet" ? (
+        <WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} />
+      ) : tab === "arcpay" ? (
+        <ArcPayLanding account={account} activeProvider={activeProvider} connect={() => connect()} />
+      ) : tab === "analytics" ? (
+        <Analytics />
+      ) : tab === "treasury" ? (
+        <Treasury account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+      ) : tab === "agentpay" ? (
+        <AgentPay account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+      ) : tab === "developers" ? (
+        <Developers />
       ) : tab === "screener" ? (
         <Screener
           account={account}
@@ -716,12 +844,12 @@ export default function App() {
             <p className="kicker">StableCoin desk</p>
             <h2>USDC ⇄ EURC,<br /><em>one on-chain rate.</em></h2>
             <p>
-              Convert between the two Arc stablecoins through the canonical Arc FX
-              pool—a constant-product AMM you can read on-chain. No aggregator hop,
-              no custody, wallet-signed. The rate you see is the rate the pool quotes.
+              Convert between the two Arc stablecoins with automatic venue selection.
+              Arcodian&apos;s permissionless pool is always quoted; approved external
+              liquidity can compete for the order when it offers a better executable result.
             </p>
             <div className="fx-facts">
-              <span><i>◎</i><small>Pool fee</small><b>0.10%</b></span>
+              <span><i>◎</i><small>Routing</small><b>Best quote</b></span>
               <span><i>✓</i><small>Custody</small><b>Wallet-signed</b></span>
               <span><i>⇄</i><small>Pair</small><b>USDC · EURC</b></span>
               <span><i>◈</i><small>Network</small><b>Arc Testnet</b></span>
@@ -729,8 +857,7 @@ export default function App() {
           </div>
           <div className="fx-stage">
             <Suspense fallback={<div className="loading-board">Loading FX…</div>}>
-              <FxWidget account={account} activeProvider={activeProvider} onConnect={() => connect()} />
-              <LiquidityPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />
+              <FxDesk account={account} activeProvider={activeProvider} onConnect={() => connect()} />
             </Suspense>
           </div>
         </section>
@@ -788,9 +915,28 @@ export default function App() {
           </div>
 
           <div className="panel">
+            {tab === "bridge" ? (
+              <BridgeStudio
+                account={account}
+                activeProvider={activeProvider as never}
+                connect={() => connect()}
+                fromChain={fromChain}
+                toChain={toChain}
+                setFromChain={setFromChain}
+                setToChain={setToChain}
+                amount={amount}
+                setAmount={setAmount}
+                busy={busy}
+                status={status}
+                onBridge={bridgeWithCircle}
+                bridgeFromArc={bridgeFromArc}
+                bridgePeers={bridgePeers}
+                reloadSignal={bridgeRecoveryHash}
+              />
+            ) : (
             <>
               <div className="panel-head">
-                <span>{tab === "bridge" ? "Bridge" : "Swap"}</span>
+                <span>{tab === "bridge" ? "Arcodian Bridge" : "Arcodian Swap"}</span>
                 <small>
                   {tab === "bridge" ? "Circle CCTP" : "Testnet route preview"}
                 </small>
@@ -863,11 +1009,11 @@ export default function App() {
                 <strong>USDC</strong>
               </label>
               <div className="fee-strip">
-                <span>{tab === "bridge" ? "Protocol fee" : "Route fees"}</span>
-                <b>{tab === "bridge" ? "1.5% USDC" : "Shown in quote"}</b>
+                <span>{tab === "bridge" ? "Bridge fee" : "Route fees"}</span>
+                <b>{tab === "bridge" ? "Circle CCTP only" : "Shown in quote"}</b>
                 <small>
                   {tab === "bridge"
-                    ? `Atomic split inside the Circle route · Treasury ${short(FEE_TREASURY)}`
+                    ? "No extra Arcodian fee on the burn — you pay only Circle's tiny CCTP fee and destination gas."
                     : "Aggregator, liquidity, and gas costs are included in the reviewed quote."}
                 </small>
               </div>
@@ -882,6 +1028,27 @@ export default function App() {
                   <span><small>Attestation</small><b>Circle CCTP · typically minutes</b></span>
                   <span><small>Destination mint</small><b>Needs destination gas</b></span>
                 </div>
+              )}
+              {tab === "bridge" && toChain === ARC.id && (
+                <p className="bridge-faucet-hint">
+                  <b>First time on Arc?</b> USDC is the gas token here, so the claim (mint) needs a little
+                  USDC already on Arc. Grab test USDC from the{" "}
+                  <a href="https://faucet.circle.com/" target="_blank" rel="noreferrer">Circle faucet</a>{" "}
+                  (Arc Testnet · chain 5042002) first — it covers the mint gas and gives you a balance to trade.
+                </p>
+              )}
+              {tab === "bridge" && toChain !== ARC.id && (
+                <p className="bridge-faucet-hint">
+                  <b>Bridging out of Arc?</b> The mint happens on{" "}
+                  <b>{CHAIN_NAMES[toChain] || "the destination chain"}</b>, so you need a little{" "}
+                  <b>{CHAINS.find((c) => c.id === toChain)?.gasSymbol || "gas"}</b> there to claim. Get it from
+                  that network's testnet faucet first — otherwise the confirm step stays locked until destination gas is detected.
+                </p>
+              )}
+              {tab === "bridge" && (
+                <Suspense fallback={null}>
+                  <BridgeClaim account={account} activeProvider={activeProvider} onConnect={() => connect()} />
+                </Suspense>
               )}
               {bridgeEstimate && (
                 <div className="quote bridge-estimate">
@@ -900,9 +1067,9 @@ export default function App() {
                 <button className="primary" onClick={() => connect()}>
                   Connect wallet
                 </button>
-              ) : tab === "bridge" && bridgeEstimate ? (
-                <button className="primary" disabled={busy || !bridgeEstimate.destinationGas.ready} onClick={bridgeWithCircle}>
-                  {busy ? "Waiting for Circle…" : bridgeEstimate.destinationGas.ready ? "Confirm bridge in wallet" : `Destination ${bridgeEstimate.destinationGas.symbol} required`}
+              ) : tab === "bridge" ? (
+                <button className="primary" disabled={busy || !amount || fromChain === toChain} onClick={bridgeWithCircle}>
+                  {busy ? "Working…" : `Bridge to ${CHAIN_NAMES[toChain] || "destination"}`}
                 </button>
               ) : (
                 <button
@@ -918,6 +1085,7 @@ export default function App() {
                 wallet confirmation.
               </p>
             </>
+            )}
           </div>
         </section>
       )}
@@ -942,30 +1110,39 @@ export default function App() {
         </article>
         <article>
           <span>03</span>
-          <h3>Earn the orbit</h3>
+          <h3>Cross the threshold</h3>
           <p>
-            Start with the same rules as everyone else. At graduation, liquidity
-            moves to the DEX and its ownership is burned.
+            Same rules for everyone from the first block. At graduation, liquidity
+            moves to the DEX and its ownership is burned—no one can pull it back.
           </p>
         </article>
       </section>}
       <footer>
         <strong>ARCODIAN © 2026</strong>
         <span>Markets should show their workings.</span>
-        <button onClick={() => chooseTab("how")}>How it works</button>
-        <button onClick={() => chooseTab("contracts")}>Contracts</button>
-        <button onClick={() => chooseTab("faq")}>FAQ</button>
+        <button onClick={() => chooseTab("how")}>Docs, FAQ & Legal</button>
+        <button onClick={() => chooseTab("contracts")}>Trust Center</button>
         <a href={ARC.explorer} target="_blank" rel="noreferrer">
           Explorer ↗
         </a>
+        <div className="footer-socials">
+          <a href="https://x.com/Arcodiandotfun" target="_blank" rel="noreferrer" aria-label="Arcodian on X">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24h-6.66l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+          </a>
+          <a href="https://discord.gg/mUvcty8VAB" target="_blank" rel="noreferrer" aria-label="Arcodian on Discord">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M20.317 4.369a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.211.375-.444.865-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.1 13.1 0 0 1-1.872-.892.077.077 0 0 1-.008-.128c.126-.094.252-.192.372-.291a.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.061 0a.074.074 0 0 1 .078.009c.12.099.246.198.373.292a.077.077 0 0 1-.006.127c-.598.35-1.22.645-1.873.892a.076.076 0 0 0-.04.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.84 19.84 0 0 0 6.002-3.03.077.077 0 0 0 .032-.056c.5-5.177-.838-9.674-3.549-13.66a.06.06 0 0 0-.031-.028zM8.02 15.331c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.418 2.157-2.418 1.21 0 2.176 1.094 2.157 2.418 0 1.334-.956 2.419-2.157 2.419zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.176 1.094 2.157 2.418 0 1.334-.946 2.419-2.157 2.419z"/></svg>
+          </a>
+        </div>
       </footer>
       <nav className="mobile-dock" aria-label="Primary">
         <button className={tab === "home" ? "active" : ""} onClick={() => chooseTab("home")}><i aria-hidden="true">◉</i><span>Home</span></button>
+        <button onClick={() => { window.location.href = "https://wallet.arcodian.fun/"; }}><i aria-hidden="true">◈</i><span>Wallet</span></button>
+        <button className={tab === "arcpay" ? "active" : ""} onClick={() => chooseTab("arcpay")}><i aria-hidden="true">⌗</i><span>Arc Pay</span></button>
         <button className={tab === "screener" ? "active" : ""} onClick={() => chooseTab("screener")}><i aria-hidden="true">◫</i><span>Markets</span></button>
-        <button className="dock-create" onClick={openCreateStudio}><i aria-hidden="true">＋</i><span>Create</span></button>
         <button className={tab === "bridge" || tab === "swap" ? "active" : ""} onClick={() => chooseTab("bridge")}><i aria-hidden="true">⇄</i><span>Bridge</span></button>
-        <button className={tab === "profile" ? "active" : ""} onClick={() => (account ? chooseProfile(account) : connect())}><i aria-hidden="true">◐</i><span>Profile</span></button>
+        <button onClick={() => setMobileMoreOpen((value) => !value)}><i aria-hidden="true">•••</i><span>More</span></button>
       </nav>
+      {mobileMoreOpen && <aside className="mobile-more-menu" aria-label="More products"><button onClick={() => setMobileMoreOpen(false)}>Close ×</button><a href="https://lend.arcodian.fun/">Arc Lend</a><a href="/fx">Stablecoin FX</a><a href="/agentpay">Agent Pay</a><a href="/analytics">Public Analytics</a><a href="/treasury">Treasury Lite</a><a href="/developers">Developers</a><a href="/docs">Docs, FAQ & Legal</a><a href="/contracts">Trust Center</a><button onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
       {walletOpen && (
         <WalletModal
           wallets={wallets}
@@ -981,7 +1158,7 @@ export default function App() {
 
 function RiskAcknowledgement({ accept }: { accept: () => void }) {
   const [checked,setChecked]=useState(false); const [expanded,setExpanded]=useState(false);
-  return <div className="ack-backdrop"><section className="ack-modal" role="dialog" aria-modal="true" aria-labelledby="ack-title"><div className="ack-mark"><BrandMark/></div><p className="kicker">Before entering the orbit</p><h2 id="ack-title">Testnet markets carry real risk—even when the assets do not carry real value.</h2><div className="ack-points"><span><b>Arc Testnet only</b><small>Test USDC and test tokens have no financial value.</small></span><span><b>Permissionless tokens</b><small>Anyone can create one. Verify contracts and social links yourself.</small></span><span><b>Wallet-signed actions</b><small>Transactions are public, final, and initiated only after your confirmation.</small></span></div>{expanded&&<div className="ack-expanded">{FAQ_ITEMS.slice(0,4).map(([q,a])=><p key={q}><strong>{q}</strong><span>{a}</span></p>)}</div>}<button className="ack-more" onClick={()=>setExpanded(v=>!v)}>{expanded?"Hide quick FAQ":"Read quick FAQ"}</button><label className="ack-check"><input type="checkbox" checked={checked} onChange={event=>setChecked(event.target.checked)}/><span>I understand this is Arc Testnet, tokens are permissionless, and I am responsible for reviewing every wallet transaction.</span></label><button className="primary ack-enter" disabled={!checked} onClick={accept}>Agree & enter Arcodian</button><small className="ack-local">Saved only in this browser. No personal acceptance record is sent to the server.</small></section></div>;
+  return <div className="ack-backdrop"><section className="ack-modal" role="dialog" aria-modal="true" aria-labelledby="ack-title"><div className="ack-mark"><BrandMark/></div><p className="kicker">Before you enter</p><h2 id="ack-title">Testnet markets carry real risk—even when the assets do not carry real value.</h2><div className="ack-points"><span><b>Arc Testnet only</b><small>Test USDC and test tokens have no financial value.</small></span><span><b>Permissionless tokens</b><small>Anyone can create one. Verify contracts and social links yourself.</small></span><span><b>Wallet-signed actions</b><small>Transactions are public, final, and initiated only after your confirmation.</small></span></div>{expanded&&<div className="ack-expanded">{FAQ_ITEMS.slice(0,4).map(([q,a])=><p key={q}><strong>{q}</strong><span>{a}</span></p>)}</div>}<button className="ack-more" onClick={()=>setExpanded(v=>!v)}>{expanded?"Hide quick FAQ":"Read quick FAQ"}</button><label className="ack-check"><input type="checkbox" checked={checked} onChange={event=>setChecked(event.target.checked)}/><span>I understand this is Arc Testnet, tokens are permissionless, and I am responsible for reviewing every wallet transaction.</span></label><button className="primary ack-enter" disabled={!checked} onClick={accept}>Agree & enter Arcodian</button><small className="ack-local">Saved only in this browser. No personal acceptance record is sent to the server.</small></section></div>;
 }
 
 function WalletModal({
