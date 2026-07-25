@@ -30,7 +30,7 @@ export const PAIR_ABI = [
   "function totalSupply() view returns (uint256)",
 ];
 
-export type TokenMeta = { address: string; symbol: string; name: string; decimals: number };
+export type TokenMeta = { address: string; symbol: string; name: string; decimals: number; pair?: string };
 
 /** Read a token's identity from the chain. Never trust a symbol supplied elsewhere. */
 export async function readToken(runner: ContractRunner, address: string): Promise<TokenMeta> {

@@ -9,6 +9,9 @@ describe("subdomain routing", () => {
     expect(subdomainTab("swap.arcodian.fun")).toBe("swap");
     expect(subdomainTab("bridge.arcodian.fun")).toBe("bridge");
     expect(subdomainTab("docs.arcodian.fun")).toBe("how");
+    expect(subdomainTab("wallet.arcodian.fun")).toBe("wallet");
+    expect(subdomainTab("pay.arcodian.fun")).toBeNull();
+    expect(subdomainTab("lend.arcodian.fun")).toBe("wallet");
     expect(subdomainTab("localhost")).toBeNull();
   });
 
@@ -23,6 +26,7 @@ describe("subdomain routing", () => {
     const live = true;
     // From the apex: subdomain tabs open their subdomain, fx/home stay in-SPA.
     expect(navHref("swap", "arcodian.fun", live)).toBe("https://swap.arcodian.fun/");
+    expect(navHref("wallet", "arcodian.fun", live)).toBe("https://wallet.arcodian.fun/");
     expect(navHref("screener", "arcodian.fun", live)).toBe("https://market.arcodian.fun/");
     expect(navHref("how", "arcodian.fun", live)).toBe("https://docs.arcodian.fun/");
     expect(navHref("fx", "arcodian.fun", live)).toBeNull();

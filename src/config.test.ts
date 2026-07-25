@@ -5,10 +5,10 @@ describe("official Arc Testnet configuration", () => {
   it("uses the official chain and RPC", () => {
     expect(ARC.id).toBe(5042002);
     expect(ARC.hexId).toBe("0x4cef52");
-    expect(ARC.rpc).toBe("https://rpc.testnet.arc.network/");
-    expect(ARC.rpcs).toContain("https://rpc.blockdaemon.testnet.arc.io");
-    expect(ARC.rpcs).toContain("https://rpc.drpc.testnet.arc.io");
-    expect(ARC.rpcs).toContain("https://rpc.quicknode.testnet.arc.io");
+    // Browser reads go through the same-origin proxy (api/rpc.php), which rotates
+    // across the public Arc RPCs server-side to avoid per-browser 429 rate limits.
+    expect(ARC.rpc).toBe("https://arcodian.fun/api/rpc.php");
+    expect(ARC.rpcs).toContain("https://arcodian.fun/api/rpc.php");
     expect(ARC.nativeDecimals).toBe(18);
     expect(ARC.erc20Decimals).toBe(6);
   });

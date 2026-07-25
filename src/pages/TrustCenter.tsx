@@ -1,15 +1,13 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_PAIR_FACTORY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS } from "../config";
+import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 
-function TrustNav({ active, openContracts, openHow, openFaq, openCanary }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
+function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
   return <nav className="trust-nav" aria-label="Trust Center sections">
     <span><small>Arcodian</small><b>Trust Center</b></span>
     <button className={active === "contracts" ? "active" : ""} onClick={openContracts}>Contracts</button>
-    <button className={active === "how" ? "active" : ""} onClick={openHow}>Mechanics</button>
-    <button className={active === "faq" ? "active" : ""} onClick={openFaq}>FAQ</button>
-    <button className={active === "canary" ? "active" : ""} onClick={openCanary}>Canary</button>
+    <button className={active === "how" || active === "faq" ? "active" : ""} onClick={openHow}>Docs, FAQ & Legal</button>
   </nav>;
 }
 
@@ -136,9 +134,12 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     })();
   }, []);
   const addressCards = [
-    ["Launch Factory v8", PUMP_FACTORY_ADDRESS, "Creates coin and bonding-curve contracts with one public rule set, and graduates them into the shared pair factory below."],
+    ["Launch Factory v9", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
     ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
     ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
+    ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
+    ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than one hour fails closed."] as const] : []),
+    ...(ARC_LEND_COLLATERAL_ADDRESS ? [["Arc Lend collateral · EURC", ARC_LEND_COLLATERAL_ADDRESS, "The canonical Circle EURC token accepted as collateral in the isolated Arc Lend market (6 decimals)."] as const] : []),
   ];
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
@@ -155,13 +156,20 @@ export function FaqPage({ openHow, openContracts, openCanary }: { openHow: () =>
 
 const DOCS_SECTIONS = [
   ["what", "What Arcodian is"],
-  ["lifecycle", "Coin lifecycle"],
+  ["wallet", "Wallet"],
+  ["pay", "Arc Pay"],
+  ["lend", "Arc Lend"],
+  ["bridge", "Bridge"],
+  ["fx", "StableCoin FX"],
+  ["lifecycle", "Launchpad & lifecycle"],
   ["fees", "Fees & graduation"],
   ["eurc", "EURC launches"],
-  ["fx", "StableCoin FX"],
-  ["bridge", "Bridge"],
+  ["roadmap", "Roadmap"],
   ["safety", "Safety & custody"],
   ["verify", "Verify everything"],
+  ["readiness", "Mainnet readiness"],
+  ["faq", "FAQ"],
+  ["legal", "Terms & refunds"],
 ] as const;
 
 export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: { enterMarket: () => void; openContracts: () => void; openFaq: () => void; openCanary: () => void }) {
@@ -171,7 +179,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div>
         <p className="kicker">Documentation</p>
         <h1>How Arcodian works,<br/><em>end to end.</em></h1>
-        <p>Arcodian is a permissionless market system on Arc Testnet. Every price, fee, and graduation is executed by public contracts—this page documents each rail and the exact numbers behind it. Nothing here is set from a dashboard.</p>
+        <p>Arcodian is a USDC-native money app and market system on Arc Testnet: a self-custody wallet, exact-value payments, isolated lending, cross-chain bridging, stablecoin FX, and a permissionless launchpad. Every balance, price, fee, and graduation is executed by public contracts—this page documents each rail and the exact numbers behind it. Nothing here is set from a dashboard.</p>
         <div className="docs-hero-actions"><button className="primary" onClick={enterMarket}>Open the market</button><button onClick={openContracts}>See the contracts →</button></div>
       </div>
       <nav className="docs-toc" aria-label="On this page">
@@ -182,17 +190,69 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-what" className="docs-section">
       <div className="docs-section-head"><span>01</span><h2>What Arcodian is</h2></div>
-      <p>A launchpad and exchange built for Arc's USDC-native economy. Anyone can create a coin; it gets a live bonding-curve market the moment it launches. When a coin matures it graduates to a canonical AMM pair and its liquidity ownership is burned. The web app only ever reads contracts and asks your wallet to sign—it holds no keys and takes no custody.</p>
+      <p>One non-custodial app for Arc's USDC economy. Hold and send USDC, get paid with a single exact-value invoice, put idle USDC to work in an isolated lending market, bridge across chains over Circle CCTP, convert USDC⇄EURC, and launch or trade coins on a live bonding curve. The web app and the Android wallet only ever read contracts and ask your wallet to sign—they hold no keys and take no custody.</p>
       <div className="docs-cards">
-        <div><b>Permissionless</b><p>No allowlist, no approval queue. The same rule set applies to every creator and trader.</p></div>
-        <div><b>Readable</b><p>Creator, contract, holders, tape, and curve sit in one view. Quotes come from on-chain reserves.</p></div>
-        <div><b>Non-custodial</b><p>Each buy, sell, swap, or bridge is a wallet-signed transaction. Arcodian never receives your seed phrase.</p></div>
+        <div><b>Non-custodial</b><p>Keys live on your device or in your own wallet. Every action is a signature you approve—Arcodian never receives your seed phrase.</p></div>
+        <div><b>USDC-native</b><p>USDC is the gas and the unit of account on Arc. Balances, fees, and payments are all denominated in it—no wrapped placeholder token.</p></div>
+        <div><b>Verifiable</b><p>Contracts, reserves, invoices, and LP-burn proof are inspectable on Arc Explorer. The docs quote numbers; the chain confirms them.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-wallet" className="docs-section">
+      <div className="docs-section-head"><span>02</span><h2>Wallet</h2></div>
+      <p>A self-custody wallet for Arc—on the web and as a native Android app. It creates or imports a seed on-device, signs Arc transactions directly, and reaches every other product (Pay, Lend, Bridge, Swap) without handing control to a third party.</p>
+      <div className="docs-cards">
+        <div><b>On-device keys</b><p>The Android app stores the seed in the platform secure vault; the web wallet signs through your connected wallet. Raw key material is never written to localStorage or sent to a server.</p></div>
+        <div><b>Multi-chain by design</b><p>The same address works on Arc plus Ethereum, Arbitrum, Base, and Optimism testnets. The wallet auto-switches network for every bridge approval and claim.</p></div>
+        <div><b>Everything in one place</b><p>Send, receive, bridge, swap, pay an invoice, and supply or borrow—each is a wallet-signed transaction with the amount shown before you confirm.</p></div>
+      </div>
+      <aside className="docs-notice"><strong>Get the app</strong><p>The Arcodian testnet wallet ships as a downloadable Android APK from the wallet page. It is a debug/testnet build—install it only to exercise Arc Testnet flows, never with mainnet value.</p></aside>
+    </article>
+
+    <article id="docs-pay" className="docs-section">
+      <div className="docs-section-head"><span>03</span><h2>Arc Pay</h2></div>
+      <p><b>Arc Pay</b> turns a request into one exact-value, on-chain settlement. A merchant creates an invoice for a fixed USDC amount; the payer settles it in a single signed transaction that must match the amount to the cent. No streaming, no partial states, no custody in between.</p>
+      <div className="economics-ledger">
+        <div><small>Protocol fee</small><strong>0.30%</strong><p>Taken atomically on settlement; 99.70% reaches the merchant in the same transaction.</p></div>
+        <div><small>Replay safety</small><strong>One-shot</strong><p>Each invoice settles exactly once. A second attempt on a paid or expired invoice reverts.</p></div>
+        <div><small>Invoice expiry</small><strong>≤ 30 days</strong><p>Invoices carry an expiry (max 30 days) and an optional expected-payer lock. Refunds are merchant-funded and gross.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-lend" className="docs-section">
+      <div className="docs-section-head"><span>04</span><h2>Arc Lend</h2></div>
+      <p><b>Arc Lend</b> is an isolated money market: supply native USDC to earn borrower interest, or post EURC as collateral and borrow USDC against it. One collateral, one contract, one oracle—risk from any other asset can never spill into this market.</p>
+      <div className="economics-ledger">
+        <div><small>Max LTV</small><strong>70%</strong><p>Borrow up to 70% of collateral value. Liquidation opens at an 80% threshold with a 5% liquidator bonus.</p></div>
+        <div><small>Interest reserve</small><strong>10%</strong><p>A tenth of accrued interest is retained as a protocol reserve; the rest compounds to suppliers via a borrow index.</p></div>
+        <div><small>Oracle freshness</small><strong>≤ 3,600s</strong><p>Prices older than one hour fail closed—new borrows and risk-increasing actions revert until the oracle is refreshed.</p></div>
+      </div>
+      <aside className="docs-notice"><strong>Pyth canary</strong><p>The live market uses conservative 100 / 50 USDC caps and the official Pyth EUR/USD feed through an Arc adapter. A dedicated permissionless keeper updates Pyth and syncs the market; stale prices fail closed.</p></aside>
+    </article>
+
+    <article id="docs-bridge" className="docs-section">
+      <div className="docs-section-head"><span>05</span><h2>Bridge</h2></div>
+      <p>Move test USDC between Arc and other chains over official <b>Circle CCTP</b> rails—burn-and-mint, not a third-party bridge. It runs standalone and inside the wallet, which switches networks for you on both the burn and the mint.</p>
+      <div className="docs-cards">
+        <div><b>Burn → attest → mint</b><p>Circle burns on the source chain, issues an attestation, then mints the same USDC on the destination. Arcodian only orchestrates the two wallet signatures.</p></div>
+        <div><b>Five networks</b><p>Arc, Ethereum, Arbitrum, Base, and Optimism testnets (plus Avalanche and Polygon). Each CCTP domain is wired to the deterministic v2 messenger address.</p></div>
+        <div><b>Recoverable</b><p>If a refresh interrupts a flow, the burn is recorded once and only the pending mint resumes—no double bridge. The destination mint needs a little gas on the destination chain.</p></div>
+      </div>
+    </article>
+
+    <article id="docs-fx" className="docs-section">
+      <div className="docs-section-head"><span>06</span><h2>StableCoin FX</h2></div>
+      <p>The <b>StableCoin FX</b> desk smart-routes USDC and EURC. Arcodian&apos;s on-chain pool competes with configured external venues, while strict target allowlisting prevents an aggregator response from redirecting approvals or transactions to an untrusted contract.</p>
+      <div className="economics-ledger">
+        <div><small>Pool type</small><strong>Constant-product</strong><p>x·y=k AMM over the 6-decimal USDC and EURC interfaces.</p></div>
+        <div><small>Pool fee</small><strong>0.10%</strong><p>Lower than a curve trade—this is pure stablecoin conversion.</p></div>
+        <div><small>Protection</small><strong>Min-out + deadline</strong><p>Every swap enforces a minimum output and an expiry, wallet-signed.</p></div>
       </div>
     </article>
 
     <article id="docs-lifecycle" className="docs-section">
-      <div className="docs-section-head"><span>02</span><h2>Coin lifecycle</h2></div>
-      <p>A coin moves through four public states. There is no hidden mint, pause, or exit between them.</p>
+      <div className="docs-section-head"><span>07</span><h2>Launchpad & lifecycle</h2></div>
+      <p>The launchpad is permissionless: anyone can create a coin and it gets a live bonding-curve market immediately. A coin then moves through four public states—there is no hidden mint, pause, or exit between them.</p>
       <div className="economics-flow">
         <div><i>01</i><small>Opening state</small><h3>1,000 USDC starting FDV</h3><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></div>
         <div><i>02</i><small>While trading</small><h3>Open price discovery</h3><p>Buys and sells execute against the curve. Every quote and minimum-output is computed on-chain before you sign.</p></div>
@@ -202,7 +262,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-fees" className="docs-section">
-      <div className="docs-section-head"><span>03</span><h2>Fees & graduation</h2></div>
+      <div className="docs-section-head"><span>08</span><h2>Fees & graduation</h2></div>
       <p>Two fee regimes, both charged atomically by the contracts—before and after graduation.</p>
       <div className="economics-ledger">
         <div><small>Bonding-curve fee</small><strong>1.00%</strong><p>Charged on every curve buy and sell. Buy fees are removed before reserve growth.</p></div>
@@ -213,7 +273,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-eurc" className="docs-section">
-      <div className="docs-section-head"><span>04</span><h2>EURC launches</h2></div>
+      <div className="docs-section-head"><span>09</span><h2>EURC launches</h2></div>
       <p>Coins can be denominated in <b>EURC</b> instead of USDC. Pick the collateral with the USDC/EURC toggle when you create. The bonding curve, 1% fee, and graduation logic are identical; only the quote asset changes.</p>
       <div className="docs-cards">
         <div><b>Auto-detected</b><p>Choose EURC and every trade on that coin routes through EURC—approval, buy, and sell—without another switch.</p></div>
@@ -222,41 +282,62 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       </div>
     </article>
 
-    <article id="docs-fx" className="docs-section">
-      <div className="docs-section-head"><span>05</span><h2>StableCoin FX</h2></div>
-      <p>The <b>StableCoin FX</b> desk swaps USDC and EURC directly through the on-chain Arc FX pool—a constant-product AMM. It is the fastest path between the two stablecoins: no aggregator, no bridge, one rate quoted by the pool.</p>
-      <div className="economics-ledger">
-        <div><small>Pool type</small><strong>Constant-product</strong><p>x·y=k AMM over the 6-decimal USDC and EURC interfaces.</p></div>
-        <div><small>Pool fee</small><strong>0.10%</strong><p>Lower than a curve trade—this is pure stablecoin conversion.</p></div>
-        <div><small>Protection</small><strong>Min-out + deadline</strong><p>Every swap enforces a minimum output and an expiry, wallet-signed.</p></div>
-      </div>
-    </article>
-
-    <article id="docs-bridge" className="docs-section">
-      <div className="docs-section-head"><span>06</span><h2>Bridge</h2></div>
-      <p>Move test USDC in and out of Arc over official <b>Circle CCTP</b> rails. Every route starts or ends on Arc, and the destination mint needs a little gas on the destination chain.</p>
-      <div className="docs-cards">
-        <div><b>Burn → attest → mint</b><p>Circle burns on the source, attests, then mints on the destination. Arcodian only orchestrates the wallet signatures.</p></div>
-        <div><b>Recoverable</b><p>If a browser refresh interrupts a flow, the burn is confirmed once and only the pending mint step resumes—no double bridge.</p></div>
-        <div><b>Arc-anchored</b><p>Routes that neither start nor end on Arc are rejected before any transaction is built.</p></div>
+    <article id="docs-roadmap" className="docs-section">
+      <div className="docs-section-head"><span>10</span><h2>Roadmap</h2></div>
+      <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface—the first two are already live on testnet.</p>
+      <div className="economics-flow">
+        <div><i>01</i><small>Live · testnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live. Next: recurring requests, payment links, and merchant webhooks.</p></div>
+        <div><i>02</i><small>Live · testnet</small><h3>Stablecoin FX</h3><p>USDC⇄EURC desk is live. Next: deeper pools and best-execution routing across more Arc stablecoins.</p></div>
+        <div><i>03</i><small>Planned</small><h3>E-commerce</h3><p>A checkout SDK and hosted pay pages so any store can accept exact USDC/EURC settlement with an order lifecycle.</p></div>
+        <div><i>04</i><small>Planned</small><h3>Agentic economy</h3><p>Programmable, policy-scoped wallets so autonomous agents can pay, get paid, and settle on Arc under spending limits.</p></div>
       </div>
     </article>
 
     <article id="docs-safety" className="docs-section">
-      <div className="docs-section-head"><span>07</span><h2>Safety & custody</h2></div>
+      <div className="docs-section-head"><span>11</span><h2>Safety & custody</h2></div>
       <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints, and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Mainnet paths stay fail-closed until every release check is signed off.</p>
       <aside className="docs-notice"><strong>Testnet notice</strong><p>Arcodian currently runs on Arc Testnet chain 5042002. Test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through Arc Explorer.</p></aside>
     </article>
 
     <article id="docs-verify" className="docs-section">
-      <div className="docs-section-head"><span>08</span><h2>Verify everything</h2></div>
-      <p>Don't take the docs on faith. The Contracts page reads the live wiring straight from chain, the Canary console lets you run small-value signed tests, and the FAQ covers the edge cases.</p>
+      <div className="docs-section-head"><span>12</span><h2>Verify everything</h2></div>
+      <p>Don't take the docs on faith. The Contracts page reads the live wiring straight from chain, the FAQ covers the edge cases, and Arc Explorer lets you inspect any address or transaction yourself.</p>
       <div className="docs-links">
         <button onClick={openContracts}><b>Contracts →</b><small>Live on-chain wiring proof</small></button>
-        <button onClick={openCanary}><b>Canary console →</b><small>Run signed release tests</small></button>
-        <button onClick={openFaq}><b>FAQ →</b><small>Plain answers to the edge cases</small></button>
+        <a href="#docs-faq"><b>FAQ ↓</b><small>Plain answers to the edge cases</small></a>
         <a href={ARC.explorer} target="_blank" rel="noreferrer"><b>Arc Explorer ↗</b><small>Inspect any address or transaction</small></a>
       </div>
+    </article>
+
+    <article id="docs-readiness" className="docs-section readiness-section">
+      <div className="docs-section-head"><span>13</span><h2>Mainnet readiness</h2></div>
+      <p><b>Current decision: NO-GO.</b> Testnet functionality is broad and monitored, but operational and governance gates remain open. No mainnet deployment path is enabled in the frontend.</p>
+      <div className="readiness-grid">
+        <div className="blocked"><small>BLOCKER</small><b>Official mainnet registry</b><p>Final Arc mainnet chain ID, RPC, explorer, USDC, EURC, Pyth, and CCTP addresses are not configured and independently verified.</p></div>
+        <div className="warning"><small>CANARY LIVE</small><b>Multisig + timelock</b><p>A 2-of-2 governance canary and 24-hour timelock now control the governed Lend market. All three governed contracts are source-verified; final mainnet signers and legacy fee-recipient migration still require approval.</p></div>
+        <div className="blocked"><small>BLOCKER</small><b>Independent audit</b><p>Internal tests and invariants are not a substitute for an independent audit with all critical/high findings resolved.</p></div>
+        <div className="ready"><small>VERIFIED</small><b>Separated risk controls</b><p>Guardian can pause and lower caps immediately but cannot override oracle, raise caps, withdraw reserves, or replace itself. Increases require 24h timelock plus 48h market delay.</p></div>
+        <div className="warning"><small>HARDEN</small><b>Indexer redundancy</b><p>Monitoring and keepers are healthy but run on one host. Add a second independent reader/alert path and keeper failover.</p></div>
+        <div className="ready"><small>VERIFIED</small><b>Testnet controls</b><p>Pyth freshness/confidence guards, granular pause, bounded canary caps, bad-debt accounting, live E2E, monitoring, and negative controls are active.</p></div>
+      </div>
+      <p className="readiness-links"><a href="/developers">Open Developer Portal ↗</a><a href="/contracts">Inspect live contracts ↗</a></p>
+      <details className="machine-resources"><summary>Machine-readable resources +</summary><div><a href="/developers/mainnet-readiness.json">Readiness report</a><a href="/developers/contracts.json">Contract registry</a><a href="/developers/legacy-migration.json">Migration manifest</a></div></details>
+    </article>
+
+    <article id="docs-faq" className="docs-section">
+      <div className="docs-section-head"><span>14</span><h2>Frequently asked questions</h2></div>
+      <div className="faq-list docs-faq-list">{FAQ_ITEMS.map(([question,answer],index)=><details key={question} open={index===0}><summary><span>{String(index+1).padStart(2,"0")}</span>{question}<i>+</i></summary><p>{answer}</p></details>)}</div>
+    </article>
+
+    <article id="docs-legal" className="docs-section">
+      <div className="docs-section-head"><span>15</span><h2>Terms, risk & refunds</h2></div>
+      <p>Arcodian is currently a testnet interface. Test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing.</p>
+      <div className="docs-cards">
+        <div><b>Self-custody</b><p>Arcodian does not hold recovery phrases or sign on a user&apos;s behalf. Blockchain transactions are public and normally irreversible.</p></div>
+        <div><b>Payments & refunds</b><p>Arc Pay refunds are new merchant-funded transactions returning the gross amount. The original protocol fee and network costs are not reversed.</p></div>
+        <div><b>Testnet status</b><p>No product is represented as audited, insured, guaranteed, or mainnet-ready. Availability may change while canary controls are tested.</p></div>
+      </div>
+      <div className="docs-links"><a href="/terms.html"><b>Full Terms ↗</b><small>Canonical legal text</small></a><a href="/refund-policy.html"><b>Refund Policy ↗</b><small>Eligibility and process</small></a><a href="mailto:support@arcodian.fun"><b>Support ↗</b><small>support@arcodian.fun</small></a></div>
     </article>
   </section>;
 }

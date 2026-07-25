@@ -1,0 +1,4 @@
+import { getAddress } from "ethers";
+export const TREASURY_ADDRESS="0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";
+export const TREASURY_TRANSFER_CAP_USD=25;
+export function validateTreasuryTransfer(recipient:string,amount:string,treasury=TREASURY_ADDRESS){let address="";try{address=getAddress(recipient.trim())}catch{return {ok:false,error:"Invalid recipient address",address:""}}const value=Number(amount);if(!Number.isFinite(value)||value<=0)return {ok:false,error:"Amount must be greater than zero",address};if(address.toLowerCase()===treasury.toLowerCase())return {ok:false,error:"Treasury cannot transfer to itself",address};if(value>TREASURY_TRANSFER_CAP_USD)return {ok:false,error:`Treasury Lite policy cap is ${TREASURY_TRANSFER_CAP_USD} per transfer`,address};return {ok:true,error:"",address,value,confirmation:address.slice(-6).toUpperCase()}}

@@ -34,7 +34,7 @@ const CANONICAL = {
 
 describe("canonical stack integrity", () => {
   it("declares the engine version the rest of the app reports", () => {
-    expect(ENGINE_VERSION).toBe(8);
+    expect(ENGINE_VERSION).toBe(9);
   });
 
   it("has no canonical address that is also marked retired", () => {
@@ -74,9 +74,8 @@ describe("canonical stack integrity", () => {
       .not.toBe(RETIRED_DEPLOYMENTS.v8PreHub.router.toLowerCase());
   });
 
-  it("keeps the retired v7 pump factory indexed so its coins stay visible", () => {
-    const legacy = LEGACY_PUMP_FACTORY_ADDRESSES.map((a) => a.toLowerCase());
-    expect(legacy).toContain(RETIRED_DEPLOYMENTS.v7.pumpFactory.toLowerCase());
+  it("keeps retired testnet factories out of canonical market surfaces", () => {
+    expect(LEGACY_PUMP_FACTORY_ADDRESSES).toHaveLength(0);
   });
 
   it("lists no legacy factory twice", () => {

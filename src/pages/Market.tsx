@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS, V5_TESTNET_DEPLOY } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
+import { isFreshMarketIndex } from "../marketData";
 import {
   arcProvider,
   communitySigningMessage,
@@ -50,7 +51,7 @@ export default function Screener({
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
   const [arenaHistory, setArenaHistory] = useState<ArenaWinner[]>([]);
-  const [moderation, setModeration] = useState<Array<{ token: string; count: number; categories: Record<string, number>; lastReportedAt: number }>>([]);
+  const marketIndexStamp = useRef("");
   const [arenaNow, setArenaNow] = useState(() => Date.now());
   const [watchlist, setWatchlist] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("arcodian-watchlist") || "[]")); }
@@ -85,17 +86,13 @@ export default function Screener({
     return () => window.removeEventListener("arcodian:open-create", open);
   }, []);
   useEffect(() => {
-    if (account.toLowerCase() !== V5_TESTNET_DEPLOY.deployer) { setModeration([]); return; }
-    fetch("/api/report.php?summary=1", { cache: "no-store" }).then((response) => response.ok ? response.json() : Promise.reject()).then((payload: { tokens?: Array<{ token: string; count: number; categories: Record<string, number>; lastReportedAt: number }> }) => setModeration(payload.tokens || [])).catch(() => setModeration([]));
-  }, [account]);
-  useEffect(() => {
     const provider = arcProvider();
     (async () => {
       try {
         const response = await fetch("/data/market-index.json", { cache: "no-store" });
         if (response.ok) {
           const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
-          if (Array.isArray(index.launches)) {
+          if (Array.isArray(index.launches) && isFreshMarketIndex(index.indexedAt)) {
             setArenaHistory(index.arena?.history || []);
             setLaunches(index.launches.map((item) => {
               const reserve = BigInt(item.reserve), virtualReserve = BigInt(item.virtualReserve), threshold = BigInt(item.threshold), inventory = BigInt(item.inventory);
@@ -189,6 +186,33 @@ export default function Screener({
     return () => {
       provider.destroy();
     };
+  }, []);
+  useEffect(() => {
+    let stopped = false;
+    let busy = false;
+    const pollMarket = async () => {
+      if (stopped || busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        const response = await fetch(`/data/market-index.json?t=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) return;
+        const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
+        if (!Array.isArray(index.launches) || !isFreshMarketIndex(index.indexedAt) || index.indexedAt === marketIndexStamp.current) return;
+        marketIndexStamp.current = index.indexedAt;
+        setArenaHistory(index.arena?.history || []);
+        setLaunches(index.launches.map((item) => {
+          const reserve = BigInt(item.reserve), virtualReserve = BigInt(item.virtualReserve), threshold = BigInt(item.threshold), inventory = BigInt(item.inventory);
+          return { ...item, reserve, virtualReserve, threshold, inventory, type: item.graduated ? "Graduated" : "Meme", risk: item.graduated ? "DEX live" : "Curve", progress: item.graduated ? 100 : Number((reserve * 10000n) / threshold) / 100 };
+        }));
+      } catch { /* Keep the last valid market snapshot. */ }
+      finally { busy = false; }
+    };
+    const onVisibility = () => { if (document.visibilityState === "visible") void pollMarket(); };
+    const timer = window.setInterval(() => { void pollMarket(); }, 3_000);
+    window.addEventListener("focus", pollMarket);
+    document.addEventListener("visibilitychange", onVisibility);
+    void pollMarket();
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("focus", pollMarket); document.removeEventListener("visibilitychange", onVisibility); };
   }, []);
   const selected = coinAddress
     ? launches.find(
@@ -344,7 +368,7 @@ export default function Screener({
           <b>LIVE</b> Arc Testnet
         </span>
         <span>{launches.length} launches</span>
-        <span>4,500 USDC v5 graduation</span>
+        <span>4,500 USDC canonical graduation</span>
         <span>LP permanently burned</span>
       </div>
       <div className="board-head">
@@ -417,10 +441,6 @@ export default function Screener({
       </section>
       </div>}
       {marketView === "markets" && <div className="markets-workspace">
-      {account.toLowerCase() === V5_TESTNET_DEPLOY.deployer && <section className="moderation-dashboard">
-        <div><p className="kicker">Moderation desk</p><h3>Reports without a blacklist button.</h3><span>Reports are review signals. They never alter contracts, freeze trading, or hide a canonical market automatically.</span></div>
-        {moderation.length ? <div className="moderation-list">{moderation.map((item) => <button key={item.token} onClick={() => chooseCoin(item.token)}><b>{item.count}</b><span><strong>{short(item.token)}</strong><small>{Object.entries(item.categories).map(([name,count]) => `${name} ${count}`).join(" · ")}</small></span><em>Review ↗</em></button>)}</div> : <div className="orbit-awaiting"><strong>No reports pending</strong><span>Structured community reports will appear here.</span></div>}
-      </section>}
       <div className="search">
         <span>⌕</span>
         <input
@@ -475,7 +495,7 @@ export default function Screener({
               <span className={`mt-num ${(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}`}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</span>
               <span className="mt-num">{item.holderCount || 0}</span>
               <span className="mt-progress"><i><em style={{ width: `${Math.min(100, item.progress)}%` }} /></i><b>{item.progress.toFixed(1)}%</b></span>
-              <span className={`mt-status ${item.graduated ? "dex" : "curve"}`}>{item.risk}</span>
+              <span className={`mt-status ${item.graduated ? "dex" : "curve"}`}>{item.graduated ? "Arcodian DEX" : item.risk}</span>
               <button className={watchlist.has(item.address.toLowerCase()) ? "mt-watch active" : "mt-watch"} aria-label={`Toggle ${item.symbol} watchlist`} onClick={(event) => { event.stopPropagation(); toggleWatch(item.address); }}>{watchlist.has(item.address.toLowerCase()) ? "★" : "☆"}</button>
             </div>
           ) : (
@@ -620,6 +640,8 @@ function TradingDesk({
   const [balance, setBalance] = useState(0n);
   const [inventory, setInventory] = useState(asset.inventory);
   const [reserve, setReserve] = useState(asset.reserve);
+  const [graduated, setGraduated] = useState(asset.graduated);
+  const [pair, setPair] = useState(asset.pair || "");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [eurcBalance, setEurcBalance] = useState(0n);
@@ -643,6 +665,7 @@ function TradingDesk({
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
   const [tapeHealth, setTapeHealth] = useState<"live" | "delayed" | "offline">("delayed");
   const optimisticTapeUntil = useRef(0);
+  const liveAsset = { ...asset, graduated, pair };
   const currency = asset.currency || "USDC";
   const validAmount = Number(amount) > 0;
   const amountWei = validAmount ? safeEther(amount) : 0n;
@@ -660,13 +683,13 @@ function TradingDesk({
   const venueAmountWei = holdingCurrency === currencyOf(asset)
     ? amountWei
     : (amountWei * BigInt(Math.round(fxRate.eurcPerUsdc * 1_000_000))) / 1_000_000n;
-  const x = asset.graduated ? reserve : asset.virtualReserve + reserve;
-  const buyInput = asset.graduated ? (venueAmountWei * 9970n) / 10000n : (venueAmountWei * 99n) / 100n;
-  const sellInput = asset.graduated ? (amountWei * 9975n) / 10000n : amountWei;
+  const x = graduated ? reserve : asset.virtualReserve + reserve;
+  const buyInput = graduated ? (venueAmountWei * 9970n) / 10000n : (venueAmountWei * 99n) / 100n;
+  const sellInput = graduated ? (amountWei * 9975n) / 10000n : amountWei;
   const rawQuote = side === "buy"
     ? buyInput && inventory ? (inventory * buyInput) / (x + buyInput) : 0n
     : sellInput && inventory
-      ? asset.graduated
+      ? graduated
         ? ((x * sellInput) / (inventory + sellInput) * 9995n) / 10000n
         : ((x - (x * inventory) / (inventory + sellInput)) * 99n) / 100n
       : 0n;
@@ -675,11 +698,72 @@ function TradingDesk({
     ? (quote * BigInt(Math.floor((100 - Number(slippage || 0)) * 100))) / 10000n
     : 0n;
   const insufficientBalance = side === "sell" && amountWei > balance;
-  const venueFeeLabel = asset.graduated
+  const venueFeeLabel = graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
-  const cost = trueCost(Number(amount) || 0, holdingCurrency, asset, fxRate);
-  const route = routeFor(holdingCurrency, asset);
+  const cost = trueCost(Number(amount) || 0, holdingCurrency, liveAsset, fxRate);
+  const route = routeFor(holdingCurrency, liveAsset);
+
+  async function refreshOnchain(provider: BrowserProvider | ReturnType<typeof arcProvider>) {
+    const isEurc = asset.quoteKind === 1;
+    // Both ArcPair quote assets use 6 decimals. Curve USDC reserves are native
+    // 18-dec values, but after graduation reserve0/reserve1 are ERC-20 units.
+    // Normalize every pair quote reserve to the terminal's 18-dec convention.
+    const pairScale = 10n ** 12n;
+    const curveState = new Contract(
+      asset.curve,
+      ["function graduated() view returns(bool)", "function pair() view returns(address)"],
+      provider,
+    );
+    const [nextGraduated, nextPair] = await Promise.all([
+      curveState.graduated() as Promise<boolean>,
+      curveState.pair() as Promise<string>,
+    ]);
+    const nextVenue = nextGraduated && nextPair !== "0x0000000000000000000000000000000000000000"
+      ? nextPair
+      : asset.curve;
+    const token = new Contract(asset.address, ["function balanceOf(address) view returns(uint256)"], provider);
+    let nextReserve: bigint;
+    let nextInventory: bigint;
+    if (nextGraduated) {
+      const venue = new Contract(nextVenue, ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)"], provider);
+      const [token0, reserve0, reserve1] = await Promise.all([
+        venue.token0() as Promise<string>, venue.reserve0() as Promise<bigint>, venue.reserve1() as Promise<bigint>,
+      ]);
+      const tokenIs0 = token0.toLowerCase() === asset.address.toLowerCase();
+      nextInventory = tokenIs0 ? reserve0 : reserve1;
+      nextReserve = (tokenIs0 ? reserve1 : reserve0) * pairScale;
+    } else {
+      const nextReserveFn = isEurc ? "realQuoteReserve" : "realNativeReserve";
+      const venue = new Contract(nextVenue, [`function ${nextReserveFn}() view returns(uint256)`], provider);
+      [nextReserve, nextInventory] = await Promise.all([
+        venue[nextReserveFn]() as Promise<bigint>, token.balanceOf(nextVenue) as Promise<bigint>,
+      ]);
+      if (isEurc) nextReserve *= pairScale;
+    }
+    setGraduated(nextGraduated);
+    setPair(nextGraduated ? nextPair : "");
+    setReserve(nextReserve);
+    setInventory(nextInventory);
+  }
+
+  useEffect(() => {
+    const provider = arcProvider();
+    let stopped = false;
+    let busy = false;
+    const poll = async () => {
+      if (stopped || busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try { await refreshOnchain(provider); } catch { /* The live tape remains available during an RPC retry. */ }
+      finally { busy = false; }
+    };
+    void poll();
+    // Direct venue state is the terminal's source of truth. One-second cadence
+    // keeps reserve/price/graduation responsive without allowing overlapping RPC
+    // calls when a provider is briefly slow.
+    const timer = window.setInterval(() => { void poll(); }, 1_000);
+    return () => { stopped = true; window.clearInterval(timer); provider.destroy(); };
+  }, [asset.address, asset.curve, asset.quoteKind]);
 
   async function refresh() {
     try {
@@ -692,11 +776,13 @@ function TradingDesk({
           trades?: Array<{ side: "BUY" | "SELL"; user: string; native: string; tokens: string }>;
         }>;
       };
+      if (!isFreshMarketIndex(index.indexedAt)) throw new Error("INDEX_STALE");
       const market = index.launches?.find((item) => item.address.toLowerCase() === asset.address.toLowerCase());
       if (!market) throw new Error("MARKET_NOT_INDEXED");
       const trades = market.trades || [];
-      setInventory(BigInt(market.inventory));
-      setReserve(BigInt(market.reserve));
+      // Reserve and inventory are polled directly from the active venue above.
+      // The minute-scale index is history/holder data only and must never roll
+      // a fresher onchain quote backwards between trades.
       setTapeHealth(index.indexedAt && Date.now() - Date.parse(index.indexedAt) <= 30_000 ? "live" : "delayed");
       if (account) {
         const mine = trades.filter((event) => event.user.toLowerCase() === account.toLowerCase());
@@ -756,7 +842,9 @@ function TradingDesk({
       finally { loadingTape = false; }
     };
     void loadTape();
-    const timer = window.setInterval(() => { void loadTape(); }, 1_000);
+    // Tape is a small static snapshot served locally; poll slightly faster than
+    // the chain state so a newly indexed trade reaches the chart immediately.
+    const timer = window.setInterval(() => { void loadTape(); }, 750);
     return () => window.clearInterval(timer);
   }, [asset.address]);
 
@@ -801,7 +889,7 @@ function TradingDesk({
       });
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
-      const venueAddress = asset.graduated && asset.pair ? asset.pair : asset.curve;
+      const venueAddress = graduated && pair ? pair : asset.curve;
       const tokenReader = new Contract(
         asset.address,
         ["function balanceOf(address) view returns(uint256)"],
@@ -809,34 +897,49 @@ function TradingDesk({
       );
       const isEurc = asset.quoteKind === 1;
       const QSCALE = 10n ** 12n; // EURC 6-dec <-> normalized 18-dec
-      const reserveFn = asset.graduated
-        ? (isEurc ? "quoteReserve" : "nativeReserve")
-        : (isEurc ? "realQuoteReserve" : "realNativeReserve");
-      const venueReader = new Contract(
-        venueAddress,
-        [`function ${reserveFn}() view returns(uint256)`],
-        provider,
-      );
-      const [freshInventory, rawReserve] = await Promise.all([
-        tokenReader.balanceOf(venueAddress) as Promise<bigint>,
-        venueReader[reserveFn]() as Promise<bigint>,
-      ]);
-      const freshReserve = isEurc ? (rawReserve as bigint) * QSCALE : (rawReserve as bigint);
-      const freshX = asset.graduated
+      let freshInventory: bigint;
+      let freshReserve: bigint;
+      let pairReader: Contract | null = null;
+      let pairZeroForOne = false;
+      if (graduated) {
+        pairReader = new Contract(venueAddress, ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)", "function quote(bool,uint256) view returns(uint256)", "function swap(bool,uint256,uint256,uint64) returns(uint256)"], signer);
+        const [token0, reserve0, reserve1] = await Promise.all([
+          pairReader.token0() as Promise<string>, pairReader.reserve0() as Promise<bigint>, pairReader.reserve1() as Promise<bigint>,
+        ]);
+        const tokenIs0 = token0.toLowerCase() === asset.address.toLowerCase();
+        freshInventory = tokenIs0 ? reserve0 : reserve1;
+        freshReserve = (tokenIs0 ? reserve1 : reserve0) * QSCALE;
+        const inputToken = side === "buy" ? (isEurc ? ARC_EURC_ADDRESS : ARC_USDC_ERC20) : asset.address;
+        pairZeroForOne = token0.toLowerCase() === inputToken.toLowerCase();
+      } else {
+        const reserveFn = isEurc ? "realQuoteReserve" : "realNativeReserve";
+        const venueReader = new Contract(venueAddress, [`function ${reserveFn}() view returns(uint256)`], provider);
+        [freshInventory, freshReserve] = await Promise.all([
+          tokenReader.balanceOf(venueAddress) as Promise<bigint>, venueReader[reserveFn]() as Promise<bigint>,
+        ]);
+        if (isEurc) freshReserve *= QSCALE;
+      }
+      const freshX = graduated
         ? freshReserve
         : asset.virtualReserve + freshReserve;
-      const freshBuyInput = asset.graduated
+      const freshBuyInput = graduated
         ? (venueAmountWei * 9970n) / 10000n
         : (venueAmountWei * 99n) / 100n;
-      const freshSellInput = asset.graduated
+      const freshSellInput = graduated
         ? (amountWei * 9975n) / 10000n
         : amountWei;
-      const freshRawQuote = side === "buy"
+      const pairInput = side === "buy" ? venueAmountWei / QSCALE : amountWei;
+      const pairOutput = graduated && pairReader
+        ? await pairReader.quote(pairZeroForOne, pairInput) as bigint
+        : 0n;
+      const freshRawQuote = graduated
+        ? (side === "buy" ? pairOutput : pairOutput * QSCALE)
+        : side === "buy"
         ? freshBuyInput && freshInventory
           ? (freshInventory * freshBuyInput) / (freshX + freshBuyInput)
           : 0n
         : freshSellInput && freshInventory
-          ? asset.graduated
+          ? graduated
             ? (((freshX * freshSellInput) / (freshInventory + freshSellInput)) * 9995n) / 10000n
             : ((freshX - (freshX * freshInventory) / (freshInventory + freshSellInput)) * 99n) / 100n
           : 0n;
@@ -866,7 +969,21 @@ function TradingDesk({
       ];
       const owner = await signer.getAddress();
       let tx;
-      if (side === "buy") {
+      if (graduated) {
+        if (!pairReader) throw new Error("NO_LIQUIDITY");
+        if (route === "manual") throw new Error("Switch to the pair quote currency before trading this graduated market.");
+        const inputTokenAddress = side === "buy" ? (isEurc ? ARC_EURC_ADDRESS : ARC_USDC_ERC20) : asset.address;
+        const pairAmountIn = side === "buy" ? amountWei / QSCALE : amountWei;
+        const pairMinOut = side === "buy" ? minOut : minOut / QSCALE;
+        const inputToken = new Contract(inputTokenAddress, erc20Abi, signer);
+        const allowance = await inputToken.allowance(owner, venueAddress) as bigint;
+        if (allowance < pairAmountIn) {
+          setTradeStage("approval");
+          setStatus(`Approve ${side === "buy" ? currency : asset.symbol} spending in your wallet.`);
+          await (await inputToken.approve(venueAddress, pairAmountIn)).wait();
+        }
+        tx = await pairReader.swap(pairZeroForOne, pairAmountIn, pairMinOut, deadline);
+      } else if (side === "buy") {
         if (route === "cross") {
           // Atomic USDC -> EURC -> curve buy. If any leg fails the whole
           // transaction reverts and the buyer keeps their USDC; they are never
@@ -916,19 +1033,16 @@ function TradingDesk({
       }
       setTradeStage("submitted");
       setTxHash(tx.hash);
-      writeActivity({ id: tx.hash, account, kind: side === "buy" ? "BUY" : "SELL", status: "submitted", title: `${side === "buy" ? "Buy" : "Sell"} ${asset.symbol}`, detail: `${amount} ${side === "buy" ? currency : asset.symbol} · ${asset.graduated ? "ARC DEX" : "Bonding curve"}`, txHash: tx.hash, chainIn: "Arc_Testnet", chainOut: "Arc_Testnet", rail: "arc", createdAt: Date.now(), updatedAt: Date.now() });
+      writeActivity({ id: tx.hash, account, kind: side === "buy" ? "BUY" : "SELL", status: "submitted", title: `${side === "buy" ? "Buy" : "Sell"} ${asset.symbol}`, detail: `${amount} ${side === "buy" ? currency : asset.symbol} · ${graduated ? "ARC DEX" : "Bonding curve"}`, txHash: tx.hash, chainIn: "Arc_Testnet", chainOut: "Arc_Testnet", rail: "arc", createdAt: Date.now(), updatedAt: Date.now() });
       setStatus("Transaction submitted. Waiting for Arc confirmation…");
       await tx.wait();
       patchActivity(tx.hash, { status: "completed", detail: `${side === "buy" ? "Buy" : "Sell"} confirmed on Arc Testnet` });
       optimisticTapeUntil.current = Date.now() + 15_000;
       setLiveTrades((current) => [{ side: (side === "buy" ? "BUY" : "SELL") as "BUY" | "SELL", amount: amountWei, tokens: freshQuote }, ...current].slice(0, 12));
-      const [confirmedInventory, confirmedReserve, confirmedBalance] = await Promise.all([
-        tokenReader.balanceOf(venueAddress) as Promise<bigint>,
-        (asset.graduated ? venueReader.nativeReserve() : venueReader.realNativeReserve()) as Promise<bigint>,
-        tokenReader.balanceOf(account) as Promise<bigint>,
-      ]);
-      setInventory(confirmedInventory);
-      setReserve(confirmedReserve);
+      const confirmedSide: "BUY" | "SELL" = side === "buy" ? "BUY" : "SELL";
+      setChartTrades((current) => [...current, { side: confirmedSide, block: Number.MAX_SAFE_INTEGER, timestamp: Math.floor(Date.now() / 1000), tx: tx.hash, user: account, native: amountWei.toString(), tokens: freshQuote.toString() }].slice(-500));
+      const confirmedBalance = await tokenReader.balanceOf(account) as bigint;
+      await refreshOnchain(provider);
       setBalance(confirmedBalance);
       setTradeStage("confirmed");
       setStatus("Trade confirmed on Arc Testnet.");
@@ -955,10 +1069,10 @@ function TradingDesk({
       setBusy(false);
     }
   }
-  const pct = asset.graduated ? 100 : Math.min(100, Number((reserve * 10000n) / asset.threshold) / 100);
-  const positionInput = asset.graduated ? (balance * 9975n) / 10000n : balance;
+  const pct = graduated ? 100 : Math.min(100, Number((reserve * 10000n) / asset.threshold) / 100);
+  const positionInput = graduated ? (balance * 9975n) / 10000n : balance;
   const sellValue = balance && inventory
-    ? asset.graduated
+    ? graduated
       ? (((x * positionInput) / (inventory + positionInput)) * 9995n) / 10000n
       : ((x - (x * inventory) / (inventory + balance)) * 99n) / 100n
     : 0n;
@@ -966,6 +1080,9 @@ function TradingDesk({
   const marketCap = inventory
     ? (x * 1_000_000_000_000_000_000_000_000_000n) / inventory
     : 0n;
+  // Constant-product pairs hold equal value on both sides. `reserve` is the
+  // normalized quote side, so Dexscreener-style pool liquidity is 2x quote.
+  const dexLiquidity = graduated ? reserve * 2n : reserve;
   const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: Number(BigInt(trade.native)) / Math.max(1, Number(BigInt(trade.tokens))), volume: Number(formatEther(BigInt(trade.native))) }));
   const candleMap = new Map<number, Array<{price:number;volume:number}>>();
   for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
@@ -1059,7 +1176,13 @@ function TradingDesk({
         <div className="trade-identity">
           <img src={asset.image ? imageUrl(asset.image) : ""} alt="" />
           <div>
-            <p className="kicker">{asset.graduated ? "Graduated · trading on ARC DEX" : "Bonding curve market"} · Engine v{asset.engineVersion || 5}</p>
+            <p className="kicker">{graduated ? "Graduated · trading on ARC DEX" : "Bonding curve market"} · Engine v{asset.engineVersion || 5}</p>
+            <div className="venue-badges">
+              {graduated && pair && <span className="live">● Arcodian DEX Live</span>}
+              {asset.uniswapPool
+                ? <a className="live" href={`${ARC.explorer}/address/${asset.uniswapPool}`} target="_blank" rel="noreferrer">● Uniswap Live ↗</a>
+                : graduated && <span className="pending">Uniswap · awaiting official Arc deployment</span>}
+            </div>
             <h3>
               {asset.name} <span>${asset.symbol}</span>
             </h3>
@@ -1078,14 +1201,30 @@ function TradingDesk({
             )}
           </div>
         </div>
-        {asset.graduated && asset.pair && (
-          <div className="graduation-proof">
-            <div><small>Graduation proof</small><strong>Liquidity is live on ARC DEX</strong><p>The bonding curve is permanently closed. Trades route to the canonical pair.</p></div>
-            <span><small>DEX pair</small><a href={`${ARC.explorer}/address/${asset.pair}`} target="_blank" rel="noreferrer">{short(asset.pair)} ↗</a></span>
-            <span><small>LP ownership</small><b>{asset.lpSupply && asset.lpSupply === asset.lpBurned ? "100% burned" : "Verify onchain"}</b></span>
-            <span><small>Liquidity</small><b>{Number(formatEther(reserve)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b></span>
+        <div className="terminal-ticker" aria-label="Live market snapshot">
+          <span className="terminal-symbol"><i className={tapeHealth === "live" ? "live" : ""} />{asset.symbol} / {currency}<small>{graduated ? "ARCODIAN DEX" : "BONDING CURVE"}</small></span>
+          <span><small>Last price</small><b>{priceLabel(lastPrice)} {currency}</b></span>
+          <span className={(asset.priceChange24h || 0) >= 0 ? "positive" : "negative"}><small>24h change</small><b>{(asset.priceChange24h || 0) >= 0 ? "+" : ""}{(asset.priceChange24h || 0).toFixed(2)}%</b></span>
+          <span><small>Market cap</small><b>{Number(formatEther(marketCap)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
+          <span><small>DEX liquidity</small><b>{Number(formatEther(dexLiquidity)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
+          <span className="terminal-network"><small>Feed</small><b>{tapeHealth === "live" ? "LIVE · 750ms" : tapeHealth.toUpperCase()}</b></span>
+        </div>
+        <div className={`market-lifecycle ${graduated && pair ? "dex" : "curve"}`}>
+          <div>
+            <small>{graduated && pair ? "Market lifecycle · Phase 02" : "Market lifecycle · Phase 01"}</small>
+            <strong>{graduated && pair ? "Trading live on Arcodian DEX" : "Price discovery on bonding curve"}</strong>
+            <p>{graduated && pair ? "Curve complete. Liquidity is permanent and every trade routes through the canonical pair." : `${asset.progress.toFixed(2)}% funded · graduates automatically at ${Number(formatEther(asset.threshold)).toLocaleString()} ${currency}.`}</p>
           </div>
-        )}
+          {graduated && pair ? <>
+            <span><small>Canonical pair</small><a href={`${ARC.explorer}/address/${pair}`} target="_blank" rel="noreferrer">{short(pair)} ↗</a></span>
+            <span><small>LP status</small><b>{asset.lpSupply && asset.lpSupply === asset.lpBurned ? "Burned permanently" : "Verify onchain"}</b></span>
+            <span><small>DEX liquidity</small><b>{Number(formatEther(dexLiquidity)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b></span>
+          </> : <>
+            <span><small>Raised</small><b>{Number(formatEther(reserve)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
+            <span><small>Remaining</small><b>{Number(formatEther(asset.threshold > reserve ? asset.threshold - reserve : 0n)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
+            <span className="lifecycle-progress"><small>Graduation</small><b>{asset.progress.toFixed(2)}%</b><i><em style={{width:`${Math.min(100,asset.progress)}%`}}/></i></span>
+          </>}
+        </div>
         <div className="trade-layout">
           <div className={`chart-panel ${chartFullscreen ? "chart-fullscreen" : ""}`}>
             <div className="chart-head">
@@ -1127,12 +1266,10 @@ function TradingDesk({
                 </b>
               </span>
               <span>
-                <small>Raised / target</small>
-                <b>
-                  {Number(formatEther(reserve)).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })}{" "}
-                  / {Number(formatEther(asset.threshold)).toLocaleString()}
+                <small>{graduated ? "DEX liquidity" : "Raised / target"}</small>
+                <b>{graduated
+                  ? `${Number(formatEther(dexLiquidity)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
+                  : `${Number(formatEther(reserve)).toLocaleString(undefined, { maximumFractionDigits: 4 })} / ${Number(formatEther(asset.threshold)).toLocaleString()}`}
                 </b>
               </span>
               <span>
@@ -1247,6 +1384,11 @@ function TradingDesk({
               />
               <strong>{side === "buy" ? "USDC" : asset.symbol}</strong>
             </label>
+            <div className="trade-presets" aria-label={side === "buy" ? "Quick buy amounts" : "Quick sell percentages"}>
+              {side === "buy"
+                ? ["25", "100", "500", "1000"].map((value) => <button key={value} onClick={() => { setAmount(value); setTradeStage("idle"); setStatus(""); }}>{value} USDC</button>)
+                : [["25%", 25n], ["50%", 50n], ["75%", 75n], ["MAX", 100n]].map(([label, percentage]) => <button key={String(label)} onClick={() => { setAmount(formatEther((balance * BigInt(percentage)) / 100n)); setTradeStage("idle"); setStatus(""); }}>{String(label)}</button>)}
+            </div>
             {side === "sell" && (
               <button
                 className="max-button"
@@ -1349,6 +1491,8 @@ function Launch({
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
+  const identityReady = Boolean(name.trim() && /^[A-Za-z0-9]{2,10}$/.test(symbol));
+  const launchReady = identityReady && /^https:\/\//.test(image);
 
   async function uploadImage(file: File) {
     setBusy(true);
@@ -1470,16 +1614,18 @@ function Launch({
         const QSCALE = 10n ** 12n;
         const curve = new Contract(curveAddress, [
           isEurc ? "function realQuoteReserve() view returns(uint256)" : "function realNativeReserve() view returns(uint256)",
-          isEurc ? "function VIRTUAL_QUOTE() view returns(uint256)" : "function VIRTUAL_NATIVE() view returns(uint256)",
           "function graduationThreshold() view returns(uint256)", "function graduated() view returns(bool)"], provider);
         const token = new Contract(tokenAddress, ["function balanceOf(address) view returns(uint256)"], provider);
-        const [rawReserve, rawVirtual, rawThreshold, graduated, inventory] = await Promise.all([
+        const [rawReserve, rawThreshold, graduated, inventory] = await Promise.all([
           isEurc ? curve.realQuoteReserve() : curve.realNativeReserve(),
-          isEurc ? curve.VIRTUAL_QUOTE() : curve.VIRTUAL_NATIVE(),
           curve.graduationThreshold(), curve.graduated(), token.balanceOf(curveAddress)]);
         // Normalize EURC's 6-dec collateral to the 18-dec magnitudes the UI expects.
         const scale = isEurc ? QSCALE : 1n;
-        const reserve = (rawReserve as bigint) * scale, virtualReserve = (rawVirtual as bigint) * scale, threshold = (rawThreshold as bigint) * scale;
+        // Canonical v9 fixes the virtual reserve at 1,000 quote units. Do not
+        // call the legacy VIRTUAL_* getter here: v9 keeps its selector as a
+        // reverting compatibility stub, which previously made a successful
+        // create look failed during post-confirmation hydration.
+        const reserve = (rawReserve as bigint) * scale, virtualReserve = 1_000n * 10n ** 18n, threshold = (rawThreshold as bigint) * scale;
         onCreated?.({ symbol: symbol.toUpperCase(), name: name.trim(), type: "Meme", risk: "Curve", address: tokenAddress, curve: curveAddress, image, creator: account, quoteKind: isEurc ? 1 : 0, currency: quoteChoice, progress: graduated ? 100 : Number((reserve * 10000n) / threshold) / 100, reserve, virtualReserve, threshold, inventory, graduated, tradeCount: 0, holderCount: 0, volume: "0", volume1h: "0", volume24h: "0", priceChange24h: 0, topHolders: [], trades: [] });
       }
     } catch (error) {
@@ -1511,13 +1657,14 @@ function Launch({
         <span className={launchStep >= 2 ? "active" : ""}><i>02</i><b>Media</b><small>Permanent image</small></span>
         <span className={launchStep >= 3 ? "active" : ""}><i>03</i><b>Review</b><small>Wallet launch</small></span>
       </div>
-      <p className="kicker">Create meme coin</p>
-      <h3>Fair launch. Bonding curve. Permanent liquidity.</h3>
-      <p>
-        Arcodian v5 creates exactly 1,000,000,000 tokens with public image metadata,
-        applies the enforced USDC treasury fee atomically, and graduates at
-        4,500 testnet USDC into ARC DEX near a 30,250 USDC FDV.
-      </p>
+      <div className="launch-hero">
+        <div>
+          <p className="kicker">Launch studio · Arc testnet</p>
+          <h3>Build the coin.<br/><em>We handle the market.</em></h3>
+          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 4,500 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
+        </div>
+        <span className="launch-network"><i/> Canonical v{ENGINE_VERSION}</span>
+      </div>
       <div className="pump-flow">
         <span>
           <b>1</b> Fixed 1B supply
@@ -1534,8 +1681,9 @@ function Launch({
       </div>
       <div className="launch-studio-workspace">
       <div className="launch-form">
+        <div className="launch-section-title"><span>01</span><div><b>Token identity</b><small>Name your market</small></div><i className={identityReady ? "done" : ""}>{identityReady ? "✓" : "Required"}</i></div>
         <label>
-          Token name
+          <span>Token name <i>Required</i></span>
           <input
             value={name}
             maxLength={40}
@@ -1544,7 +1692,7 @@ function Launch({
           />
         </label>
         <label>
-          Symbol
+          <span>Symbol <i>2–10 characters</i></span>
           <input
             value={symbol}
             maxLength={10}
@@ -1555,23 +1703,27 @@ function Launch({
           />
         </label>
         <label>
-          Priced in
+          <span>Quote asset <i>Trading currency</i></span>
           <div className="quote-toggle" role="group" aria-label="Quote asset">
             <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
             <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
           </div>
           <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 4,500 {quoteChoice}.</small>
         </label>
+        <div className="launch-section-title launch-section-social"><span>02</span><div><b>Community</b><small>Optional discovery links</small></div></div>
         <label>
-          X / Twitter <small>optional</small>
+          <span>X / Twitter <i>Optional</i></span>
           <input value={twitter} maxLength={120} onChange={(event) => setTwitter(event.target.value)} placeholder="@arcodian or x.com/arcodian" />
         </label>
         <label>
-          Discord <small>optional</small>
+          <span>Discord <i>Optional</i></span>
           <input value={discord} maxLength={120} onChange={(event) => setDiscord(event.target.value)} placeholder="discord.gg/your-community" />
         </label>
-        <label className="image-field">
-          Token image · PNG/JPG/WebP/GIF
+        <div className="launch-section-title launch-section-media"><span>03</span><div><b>Token artwork</b><small>Square image · stored publicly</small></div><i className={image ? "done" : ""}>{image ? "✓" : "Required"}</i></div>
+        <label className={`image-field ${image ? "has-image" : ""}`}>
+          <span className="upload-icon">{image ? "✓" : "↑"}</span>
+          <b>{image ? "Artwork ready" : "Upload token artwork"}</b>
+          <small>PNG, JPG, WebP or GIF · auto-cropped to 512 × 512</small>
           <input
             type="file"
             accept="image/png,image/jpeg,image/webp,image/gif"
@@ -1590,37 +1742,28 @@ function Launch({
         )}
       </div>
       <aside className="launch-live-preview">
-        <p className="kicker">Live preview</p>
+        <div className="preview-head"><p className="kicker">Market preview</p><span>Testnet</span></div>
         <div className="preview-token-art">{image ? <img src={imageUrl(image)} alt="" /> : <b>{symbol?.[0]?.toUpperCase() || "A"}</b>}</div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
-        <div className="preview-market-data"><span><small>Supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>4,500 {quoteChoice}</b></span></div>
+        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>4,500 {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
+        <div className="launch-readiness"><b>{launchReady ? "Ready to launch" : "Complete required fields"}</b><div><i className={identityReady ? "done" : ""}/><i className={image ? "done" : ""}/><i className={launchReady ? "done" : ""}/></div></div>
         <small className="preview-note">This is a visual preview. Contract addresses are created only after wallet confirmation.</small>
       </aside>
       </div>
-      <div className="uni-gate">
-        <strong>Uniswap v3/v4 route</strong>
-        <small>
-          Adapter-ready, but neither official v3 nor v4 deployment is currently
-          listed for Arc. ARC DEX remains the verified graduation venue; no
-          unofficial Uniswap address is used.
-        </small>
-      </div>
       {status && <p className="status">{status}</p>}
+      <div className="launch-submit">
       {!account ? (
         <button className="primary" onClick={connect}>
           Connect creator wallet
         </button>
       ) : (
-        <button className="primary" disabled={busy} onClick={createPumpLaunch}>
-          {busy ? "Working…" : "Create fixed-1B launch"}
+        <button className="primary" disabled={busy || !launchReady} onClick={createPumpLaunch}>
+          {busy ? "Creating on Arc Testnet…" : launchReady ? "Review & create coin →" : "Complete required fields"}
         </button>
       )}
-      <p className="fine">
-        Images auto-crop to square, resize to 512px, convert to WebP, and their
-        public URL is stored onchain. Existing Arc Torch remains indexed from
-        the legacy launch system.
-      </p>
+      <small>Wallet-signed · non-custodial · testnet assets only</small>
+      </div>
     </div>
   );
 }

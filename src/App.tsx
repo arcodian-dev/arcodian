@@ -66,7 +66,6 @@ const Developers = lazy(() => import("./pages/Developers"));
 const BridgeClaim = lazy(() => import("./components/BridgeClaim"));
 const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
 const AgentProfile = lazy(() => import("./pages/AgentProfile"));
-const KitchenSink = lazy(() => import("./pages/KitchenSink"));
 
 type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
 
@@ -660,9 +659,6 @@ export default function App() {
     );
   }
 
-  if (window.location.pathname.startsWith("/kitchensink")) {
-    return <Suspense fallback={<div className="loading-board route-fallback">Loading…</div>}><KitchenSink /></Suspense>;
-  }
   const agentMatch = window.location.pathname.match(/^\/agent\/(\d+)/);
   if (agentMatch) {
     return (

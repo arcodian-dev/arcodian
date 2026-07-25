@@ -13,6 +13,7 @@ export type LaunchAsset = {
   address: string;
   curve: string;
   pair?: string;
+  uniswapPool?: string;
   lpSupply?: string;
   lpBurned?: string;
   image: string;
@@ -155,7 +156,7 @@ export const FAQ_ITEMS = [
   ["Does a report automatically remove a coin?", "No. Reports are review signals only. They do not freeze contracts, move user funds, or automatically hide a permissionless market."],
   ["Are creator badges or Arena rankings paid?", "No. Reputation, missions, Arena standings, and badges are computed from indexed public activity and canonical onchain data."],
   ["Can I launch a coin priced in EURC?", "Yes. Toggle the collateral to EURC when you create. The coin then trades against EURC on its own bonding curve (same 1% fee, same graduation logic), and the interface auto-detects EURC for every buy and sell. Prices display in € instead of $."],
-  ["What is the StableCoin FX desk?", "A dedicated page that swaps USDC and EURC directly through the on-chain Arc FX pool—a constant-product AMM with a 0.10% fee. It is stablecoin-only: no aggregator hop, no bridge, one visible rate quoted by the pool."],
+  ["What is the StableCoin FX desk?", "A smart-routed USDC/EURC desk. It compares Arcodian's permissionless on-chain pool with configured, allowlisted external liquidity and executes the best valid quote. If no external route is available, the Arcodian pool remains the transparent fallback."],
   ["Why do Swap, Bridge, Market and Docs open new tabs?", "Each runs on its own subdomain (swap./bridge./market./docs.arcodian.fun) so you can keep several workspaces open at once. It is the same non-custodial app on every subdomain—only the default view changes."],
   ["Which wallets and networks are supported?", "Any EIP-1193 / EIP-6963 browser wallet, plus WalletConnect. Trading and FX run on Arc Testnet (chain 5042002); bridging additionally touches the supported Circle CCTP testnets. Your keys never leave your wallet."],
 ];
