@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "network": { "name": "Arc Testnet", "chainId": 5042002, "rpc": "https://rpc.testnet.arc.network/", "explorer": "https://testnet.arcscan.app" },
+  "contracts": {
+    "usdc": "0x3600000000000000000000000000000000000000",
+    "eurc": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+    "arcPay": "0x5E3d1B63213B8608539116D1C6248A36819684b5",
+    "agentPayFactory": "0x27c722F643ea787f7425449AF8B03601B90815eD",
+    "agentPayInternal": "0xBEB0D78FD10474eb9Ef27D24600bACe9A1F13026",
+    "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
+    "agentPassport": "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf",
+    "agentPayFactoryV3": "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5",
+    "arcLendPythMarket": "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
+    "arcLendPythAdapter": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
+    "governanceMultisig": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
+    "governanceTimelock": "0x4e15d1f1211d3Ce6Cf24f4E10c159C485cf8AaCD",
+    "pyth": "0x2880aB155794e7179c9eE2e38200202908C17B43",
+    "fxPool": "0x982D61ddCAb6169d82B3e37A4E4158f1982E5447",
+    "cctpTokenMessengerV2": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+    "cctpMessageTransmitterV2": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275"
+  },
+  "feeds": { "pythEurUsd": "0xa995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b" },
+  "verification": {
+    "governanceMultisig": "verified",
+    "governanceTimelock": "verified",
+    "arcLendPythMarket": "verified",
+    "agentPassport": "verified",
+    "agentPayFactoryV3": "verified"
+  },
+  "migrationManifest": "/developers/legacy-migration.json"
+}

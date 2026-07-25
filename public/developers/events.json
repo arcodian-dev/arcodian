@@ -1,0 +1,35 @@
+{
+  "arcPay": [
+    "InvoicePaid(bytes32 indexed invoiceId,address indexed payer,address indexed merchant,uint256 grossAmount,uint256 merchantAmount,uint256 protocolFee,bytes32 memoHash)",
+    "PaymentRefunded(bytes32 indexed invoiceId,address indexed merchant,address indexed payer,uint256 amount)",
+    "ProtocolFeesWithdrawn(address indexed treasury,uint256 amount)"
+  ],
+  "agentPay": [
+    "Funded(address indexed from,uint256 amount)",
+    "Withdrawn(address indexed to,uint256 amount)",
+    "AgentPolicySet(address indexed agent,uint256 perPayment,uint256 dailyLimit,uint64 validUntil,bool enabled)",
+    "MerchantPermission(address indexed agent,address indexed merchant,bool allowed)",
+    "AgentInvoicePaid(address indexed agent,bytes32 indexed invoiceId,address indexed merchant,uint256 amount,uint256 spentToday)"
+  ],
+  "agentPayFactory": ["VaultCreated(address indexed owner,address indexed vault,uint256 initialFunding)"],
+  "agentPassport": [
+    "WalletBound(uint256 indexed agentId,address indexed oldWallet,address indexed newWallet,address owner)",
+    "WalletUnbound(uint256 indexed agentId,address indexed oldWallet,address owner)"
+  ],
+  "agentPayV3": [
+    "Funded(address indexed from,uint256 amount)",
+    "Withdrawn(address indexed to,uint256 amount)",
+    "AgentPolicySet(uint256 indexed agentId,uint256 perPayment,uint256 dailyLimit,uint64 validUntil,bool enabled)",
+    "MerchantPermission(uint256 indexed agentId,address indexed merchant,bool allowed)",
+    "AgentInvoicePaid(uint256 indexed agentId,address indexed agentWallet,bytes32 indexed invoiceId,address merchant,uint256 amount,uint256 spentToday)"
+  ],
+  "agentPayFactoryV3": ["VaultCreated(address indexed owner,address indexed vault,uint256 initialFunding)"],
+  "arcLend": [
+    "Supplied(address indexed user,uint256 assets,uint256 shares)",
+    "Borrowed(address indexed user,uint256 amount)",
+    "Repaid(address indexed user,uint256 amount)",
+    "Liquidated(address indexed user,address indexed liquidator,uint256 repaid,uint256 collateralSeized)",
+    "OracleSynced(uint256 price,uint64 updatedAt)",
+    "BadDebtRecorded(address indexed user,uint256 amount)"
+  ]
+}
