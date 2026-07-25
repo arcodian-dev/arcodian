@@ -160,7 +160,6 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     () => [...launches].sort((a, b) => (b.volume > a.volume ? 1 : b.volume < a.volume ? -1 : b.tradeCount - a.tradeCount)),
     [launches],
   );
-  const orbiting = ranked.slice(0, 2);
   const active = RAILS.find((item) => item.key === rail) || RAILS[0];
   const activeHref = navHref(active.tab, host);
 
@@ -177,39 +176,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     if (tab === "screener") enterMarket(); else openTab(tab);
   }
 
-  return <div className="lp">
-
-    <section className="lp-hero">
-      <div className="lp-hero-copy">
-        <span className="lp-badge"><i aria-hidden="true" />ARC TESTNET</span>
-        <h1>Onchain markets,<br /><span>in orbit.</span></h1>
-        <p>
-          The command center for Arc. Watch coins the moment they launch, trade
-          on pools anyone can join, and move USDC across chains — from one console,
-          with the machinery visible the whole way.
-        </p>
-        <div className="lp-hero-cta">
-          <button type="button" className="lp-btn-primary" onClick={enterMarket}>Explore the market</button>
-          <button type="button" className="lp-btn-ghost" onClick={enterMarket}>Launch a coin</button>
-        </div>
-        <div className="lp-hero-stats">
-          {(totals ? statTiles.slice(0, 3) : []).map((tile) => (
-            <div key={tile.label}><b>{tile.value}</b><small>{tile.label}</small></div>
-          ))}
-          {!totals && !failed && <div><b>—</b><small>Reading the chain…</small></div>}
-        </div>
-      </div>
-
-      <div className="lp-orbit" aria-hidden="true">
-        <div className="lp-ring lp-ring-inner">
-          {orbiting[0] && <span className="lp-chip">{orbiting[0].symbol} <i>{orbiting[0].progress.toFixed(1)}%</i></span>}
-        </div>
-        <div className="lp-ring lp-ring-outer">
-          {orbiting[1] && <span className="lp-chip">{orbiting[1].symbol} <i>{orbiting[1].progress.toFixed(1)}%</i></span>}
-        </div>
-        <div className="lp-planet"><span /></div>
-      </div>
-    </section>
+  return <div className="lp lp-embedded">
 
     {ranked.length > 0 && (
       <div className="lp-ticker" aria-hidden="true">

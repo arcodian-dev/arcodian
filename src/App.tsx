@@ -1091,32 +1091,6 @@ export default function App() {
       )}
       </Suspense>
 
-      {tab === "home" && <section className="cards">
-        <article>
-          <span>01</span>
-          <h3>Notice it early</h3>
-          <p>
-            Sort the noise. Read the creator, contract, holders, curve, and live
-            tape before you touch the buy button.
-          </p>
-        </article>
-        <article>
-          <span>02</span>
-          <h3>Know the price</h3>
-          <p>
-            Quotes come from the curve—not a number typed into a dashboard.
-            Review the outcome, then sign it from your own wallet.
-          </p>
-        </article>
-        <article>
-          <span>03</span>
-          <h3>Cross the threshold</h3>
-          <p>
-            Same rules for everyone from the first block. At graduation, liquidity
-            moves to the DEX and its ownership is burned—no one can pull it back.
-          </p>
-        </article>
-      </section>}
       <footer>
         <strong>ARCODIAN © 2026</strong>
         <span>Markets should show their workings.</span>
