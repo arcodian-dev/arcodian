@@ -24,6 +24,13 @@
     "AgentInvoicePaid(uint256 indexed agentId,address indexed agentWallet,bytes32 indexed invoiceId,address merchant,uint256 amount,uint256 spentToday)"
   ],
   "agentPayFactoryV3": ["VaultCreated(address indexed owner,address indexed vault,uint256 initialFunding)"],
+  "agentJobs": [
+    "JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 budget,uint64 expiry,bytes32 descHash,uint256 providerAgentId)",
+    "JobSubmitted(uint256 indexed jobId,bytes32 deliverableHash)",
+    "JobCompleted(uint256 indexed jobId,address indexed provider,uint256 budget,uint256 providerAgentId,bytes32 evidenceHash)",
+    "JobRejected(uint256 indexed jobId,address indexed client,uint256 budget,bytes32 evidenceHash)",
+    "JobExpired(uint256 indexed jobId,address indexed client,uint256 budget)"
+  ],
   "arcLend": [
     "Supplied(address indexed user,uint256 assets,uint256 shares)",
     "Borrowed(address indexed user,uint256 amount)",

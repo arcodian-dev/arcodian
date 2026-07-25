@@ -1,4 +1,16 @@
 import {Contract,id,parseEther} from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
+export const ARC_AGENT_JOBS={chainId:5042002,address:"0x3ceb2eb2fdf41396e20cc55b9096933d208ba8a6",feedUrl:"https://arcodian.fun/developers/jobs.json"};
+const JOBS_STATUS=["None","Funded","Submitted","Completed","Rejected","Expired"];
+const JOBS_ABI=["function createJob(address provider,address evaluator,uint64 expiry,bytes32 descHash,uint256 providerAgentId) payable returns(uint256)","function submit(uint256,bytes32)","function evaluate(uint256,bool,bytes32)","function reclaimExpired(uint256)","function jobs(uint256) view returns(address client,address provider,address evaluator,uint128 budget,uint64 expiry,uint8 status,bytes32 descHash,bytes32 deliverableHash,uint256 providerAgentId)","function jobCount() view returns(uint256)"];
+// Read a single job's on-chain state (decoded, with a human status label).
+export async function inspectJob(provider,jobId){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,provider);const j=await c.jobs(jobId);return {jobId:String(jobId),client:j.client,provider:j.provider,evaluator:j.evaluator,budget:j.budget,expiry:Number(j.expiry),status:JOBS_STATUS[Number(j.status)]||"Unknown",descHash:j.descHash,deliverableHash:j.deliverableHash,providerAgentId:j.providerAgentId.toString()};}
+// Fetch the indexed public job feed.
+export async function listJobsFromFeed(feedUrl=ARC_AGENT_JOBS.feedUrl){const res=await fetch(feedUrl);if(!res.ok)return [];const d=await res.json();return Array.isArray(d)?d:(d.jobs||[]);}
+// tx-builders (signer required). budgetEth is a decimal string of native USDC.
+export function createJob(signer,{provider,evaluator,expiry,descHash="0x"+"0".repeat(64),providerAgentId=0,budgetEth}){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.createJob(provider,evaluator,expiry,descHash,providerAgentId,{value:parseEther(String(budgetEth))});}
+export function submitJob(signer,jobId,deliverableHash){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.submit(jobId,/^0x[0-9a-fA-F]{64}$/.test(deliverableHash)?deliverableHash:id(deliverableHash));}
+export function evaluateJob(signer,jobId,approve,evidenceHash){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.evaluate(jobId,approve,/^0x[0-9a-fA-F]{64}$/.test(evidenceHash)?evidenceHash:id(evidenceHash));}
+export function reclaimExpired(signer,jobId){const c=new Contract(ARC_AGENT_JOBS.address,JOBS_ABI,signer);return c.reclaimExpired(jobId);}
 export const ARC_AGENT_PAY={chainId:5042002,factory:"0x27c722F643ea787f7425449AF8B03601B90815eD",arcPay:"0x5e3d1b63213b8608539116d1c6248a36819684b5"};
 const ABI=["function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)"];
 export async function inspectPolicy(provider,vault,agent,merchant){const c=new Contract(vault,ABI,provider);const [p,allowed,balance]=await Promise.all([c.policies(agent),c.merchantAllowed(agent,merchant),provider.getBalance(vault)]);return {enabled:p.enabled,allowed,balance,perPayment:p.perPayment,dailyLimit:p.dailyLimit,spentToday:p.spentToday,validUntil:Number(p.validUntil)};}
