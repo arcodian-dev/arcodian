@@ -1,0 +1,61 @@
+/* Agent Jobs — inherits the dark agent-pay palette (bg #07111d, panel #0c1b2a,
+   border #20364a, text #eaf4ff, muted #91a7bb, accent #49dcc4). */
+.jobs-page h1{max-width:12ch}
+.jobs-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
+.jobs-tabs button{border:1px solid #20364a;border-radius:999px;padding:9px 16px;background:#0c1b2a;color:#91a7bb;font-weight:700;cursor:pointer}
+.jobs-tabs button.active{border-color:#49dcc4;background:#49dcc4;color:#07111d}
+
+.jobs-filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
+.jobs-filters button{border:1px solid #20364a;border-radius:8px;padding:6px 12px;background:#071522;color:#91a7bb;font:700 12px monospace;cursor:pointer}
+.jobs-filters button.active{border-color:#49dcc4;color:#49dcc4}
+
+.jobs-table{border:1px solid #20364a;border-radius:16px;overflow:hidden;background:#0c1b2a}
+.jobs-row{display:grid;grid-template-columns:.7fr 1.1fr 1fr 1.2fr 1.2fr 1fr;align-items:center;gap:10px;padding:14px 18px;color:#eaf4ff;text-decoration:none;border-top:1px solid #16283a}
+.jobs-row:first-child{border-top:0}
+a.jobs-row:hover{background:#102135}
+.jobs-head{color:#91a7bb;font:800 11px monospace;letter-spacing:.12em;background:#09182600}
+.jobs-head span{color:#6f8296}
+.jobs-empty{color:#91a7bb;padding:26px 4px}
+
+.jobs-chip{display:inline-block;font:800 11px monospace;letter-spacing:.05em;padding:4px 10px;border-radius:999px;border:1px solid transparent}
+.st-funded{color:#12cbea;border-color:#12cbea55;background:#12cbea14}
+.st-submitted{color:#f0b64c;border-color:#f0b64c55;background:#f0b64c14}
+.st-completed{color:#4bd486;border-color:#4bd48655;background:#4bd48614}
+.st-rejected{color:#ff8a8a;border-color:#ff8a8a55;background:#ff8a8a14}
+.st-expired{color:#91a7bb;border-color:#91a7bb44;background:#91a7bb12}
+.st-none{color:#91a7bb}
+
+.jobs-form{margin-top:8px;padding:22px;border:1px solid #20364a;border-radius:16px;background:#0c1b2a;display:grid;gap:12px;max-width:760px}
+.jobs-form>p{color:#49dcc4;font:800 11px monospace;letter-spacing:.16em}
+.jobs-form h2{margin:0}
+.jobs-form>span{color:#91a7bb}
+.jobs-form label{display:grid;gap:6px;color:#91a7bb}
+.jobs-form input{border:1px solid #284158;border-radius:10px;padding:11px;background:#071522;color:#eaf4ff}
+.jobs-form button{border:1px solid #49dcc4;border-radius:10px;padding:12px;background:#49dcc4;color:#07111d;font-weight:800;cursor:pointer}
+.jobs-form button:disabled{opacity:.4;cursor:not-allowed}
+.jobs-mine{display:flex;gap:8px;flex-wrap:wrap}
+.jobs-mine button{border:1px solid #284158;border-radius:8px;padding:7px 12px;background:#071522;color:#49dcc4;font:700 12px monospace}
+.jobs-decision{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.jobs-decision button.danger,.jobs-form button.danger{background:#0c1b2a;border-color:#ff8a8a;color:#ff8a8a}
+
+/* Detail page */
+.job-detail dl{grid-template-columns:190px 1fr}
+.job-steps{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:20px 0 6px}
+.job-step{display:inline-flex;align-items:center;gap:7px;color:#6f8296;font:700 13px monospace}
+.job-step i{font-style:normal}
+.job-step.done{color:#4bd486}
+.job-step.active{color:#49dcc4}
+.st-terminal-rejected .job-step.done:last-child{color:#ff8a8a}
+.st-terminal-expired .job-step.done:last-child{color:#91a7bb}
+.job-expired-tag{color:#91a7bb;font:800 10px monospace;border:1px solid #91a7bb44;border-radius:6px;padding:2px 6px;margin-left:8px}
+.job-reclaim{margin-top:18px;padding:16px 18px;border:1px dashed #3a5a72;border-radius:12px;display:grid;gap:8px;background:#0c1b2a}
+.job-reclaim b{color:#eaf4ff}
+.job-reclaim span{color:#91a7bb}
+.job-reclaim button{border:1px solid #49dcc4;border-radius:10px;padding:11px;background:#49dcc4;color:#07111d;font-weight:800;cursor:pointer;justify-self:start;padding-inline:20px}
+.job-reclaim button:disabled{opacity:.4}
+
+@media(max-width:850px){
+  .jobs-row{grid-template-columns:.6fr 1fr 1fr;gap:8px}
+  .jobs-row span:nth-child(4),.jobs-row span:nth-child(5),.jobs-row span:nth-child(6){display:none}
+  .jobs-decision{grid-template-columns:1fr}
+}

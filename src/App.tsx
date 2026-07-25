@@ -62,12 +62,14 @@ const LendApp = lazy(() => import("./pages/LendApp"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Treasury = lazy(() => import("./pages/Treasury"));
 const AgentPay = lazy(() => import("./pages/AgentPay"));
+const Jobs = lazy(() => import("./pages/Jobs"));
+const JobDetail = lazy(() => import("./pages/JobDetail"));
 const Developers = lazy(() => import("./pages/Developers"));
 const BridgeClaim = lazy(() => import("./components/BridgeClaim"));
 const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
 const AgentProfile = lazy(() => import("./pages/AgentProfile"));
 
-type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
+type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "jobs" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -126,7 +128,7 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
-const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "analytics", "treasury", "developers", "screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts"] as const;
+const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -670,6 +672,17 @@ export default function App() {
     );
   }
 
+  const jobMatch = window.location.pathname.match(/^\/job\/(\d+)/);
+  if (jobMatch) {
+    return (
+      <main className="agent-profile-app">
+        <Suspense fallback={<div className="loading-board route-fallback">Loading job…</div>}>
+          <JobDetail jobId={jobMatch[1]} account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+        </Suspense>
+      </main>
+    );
+  }
+
   if (productHost) {
     return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
       {productName === "lend" ? <><LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
@@ -707,7 +720,7 @@ export default function App() {
           <a href="https://lend.arcodian.fun/" target="_blank" rel="noreferrer">lend</a>
           <details className="nav-more">
             <summary>more</summary>
-            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("agentpay")}>Agent Pay</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
+            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("agentpay")}>Agent Pay</button><button onClick={() => chooseTab("jobs")}>Agent Jobs</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
           </details>
         </div>
         <div className="wallet-area">
@@ -821,6 +834,8 @@ export default function App() {
         <Treasury account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
       ) : tab === "agentpay" ? (
         <AgentPay account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+      ) : tab === "jobs" ? (
+        <Jobs account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
       ) : tab === "developers" ? (
         <Developers />
       ) : tab === "screener" ? (
