@@ -39,4 +39,51 @@ contract ArcAgentJobs {
 
     modifier lock(){if(unlocked!=1)revert Reentrancy();unlocked=2;_;unlocked=1;}
     constructor(IArcPayAgent arcPay_){if(address(arcPay_)==address(0))revert Invalid();arcPay=arcPay_;}
+
+    function createJob(address provider,address evaluator,uint64 expiry,bytes32 descHash,uint256 providerAgentId) external payable returns(uint256 jobId){
+        if(provider==address(0)||evaluator==address(0))revert Invalid();
+        if(msg.value==0||msg.value>type(uint128).max)revert Invalid();
+        if(expiry<=block.timestamp||expiry>block.timestamp+MAX_EXPIRY)revert Invalid();
+        jobId=++jobCount;
+        jobs[jobId]=Job(msg.sender,provider,evaluator,uint128(msg.value),expiry,Status.Funded,descHash,bytes32(0),providerAgentId);
+        emit JobCreated(jobId,msg.sender,provider,evaluator,msg.value,expiry,descHash,providerAgentId);
+    }
+
+    function submit(uint256 jobId,bytes32 deliverableHash) external {
+        Job storage j=jobs[jobId];
+        if(msg.sender!=j.provider)revert NotProvider();
+        if(j.status!=Status.Funded)revert BadState();
+        if(block.timestamp>j.expiry)revert Expired();
+        j.deliverableHash=deliverableHash; j.status=Status.Submitted;
+        emit JobSubmitted(jobId,deliverableHash);
+    }
+
+    function evaluate(uint256 jobId,bool approve,bytes32 evidenceHash) external lock {
+        Job storage j=jobs[jobId];
+        if(msg.sender!=j.evaluator)revert NotEvaluator();
+        if(j.status!=Status.Submitted)revert BadState();
+        uint256 budget=j.budget;
+        if(approve){
+            j.status=Status.Completed;
+            bytes32 invoiceId=keccak256(abi.encodePacked("arcjob",jobId));
+            arcPay.pay{value:budget}(invoiceId,payable(j.provider),budget,uint64(block.timestamp+SETTLE_WINDOW),address(this),evidenceHash);
+            emit JobCompleted(jobId,j.provider,budget,j.providerAgentId,evidenceHash);
+        } else {
+            j.status=Status.Rejected;
+            (bool ok,)=j.client.call{value:budget}("");
+            if(!ok)revert TransferFailed();
+            emit JobRejected(jobId,j.client,budget,evidenceHash);
+        }
+    }
+
+    function reclaimExpired(uint256 jobId) external lock {
+        Job storage j=jobs[jobId];
+        if(j.status!=Status.Funded&&j.status!=Status.Submitted)revert BadState();
+        if(block.timestamp<=j.expiry)revert NotYetExpired();
+        uint256 budget=j.budget;
+        j.status=Status.Expired;
+        (bool ok,)=j.client.call{value:budget}("");
+        if(!ok)revert TransferFailed();
+        emit JobExpired(jobId,j.client,budget);
+    }
 }
