@@ -16,3 +16,4 @@ contracts/cache/
 .DS_Store
 *.log
 public/developers/agents.json.state.json
+public/developers/jobs.json.state.json
