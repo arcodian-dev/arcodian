@@ -31,6 +31,18 @@
     "JobRejected(uint256 indexed jobId,address indexed client,uint256 budget,bytes32 evidenceHash)",
     "JobExpired(uint256 indexed jobId,address indexed client,uint256 budget)"
   ],
+  "reputationRegistry": [
+    "read: getClients(uint256 agentId) returns(address[])",
+    "read: getLastIndex(uint256 agentId,address client) returns(uint64)",
+    "read: readFeedback(uint256 agentId,address client,uint64 index) returns(uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash,bool isRevoked)",
+    "write: giveFeedback(uint256 agentId,uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash)"
+  ],
+  "validationRegistry": [
+    "read: getAgentValidations(uint256 agentId) returns(bytes32[])",
+    "read: getValidationStatus(bytes32 dataHash) returns(address validator,uint256 agentId,uint8 response,uint256 lastUpdate)",
+    "write: validationRequest(address validatorAddress,uint256 agentId,bytes32 dataHash)",
+    "write: validationResponse(bytes32 dataHash,uint8 response)"
+  ],
   "arcLend": [
     "Supplied(address indexed user,uint256 assets,uint256 shares)",
     "Borrowed(address indexed user,uint256 amount)",

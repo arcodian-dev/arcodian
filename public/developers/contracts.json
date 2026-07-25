@@ -11,6 +11,8 @@
     "agentPassport": "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf",
     "agentPayFactoryV3": "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5",
     "agentJobs": "0x3ceb2EB2fDf41396E20CC55b9096933D208Ba8a6",
+    "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+    "validationRegistry": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
     "arcLendPythMarket": "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
     "arcLendPythAdapter": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
     "governanceMultisig": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
