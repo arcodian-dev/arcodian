@@ -29,6 +29,8 @@ async function main(){
   const tip=await provider.getBlockNumber();
   const prev=loadState();
   const jobs=prev?.jobs||{};
+  const tsCache=new Map();
+  const blockTs=async bn=>{if(tsCache.has(bn))return tsCache.get(bn);const b=await provider.getBlock(bn);const t=Number(b.timestamp);tsCache.set(bn,t);return t;};
   let start=prev?prev.indexedBlock+1:Math.max(DEPLOY_BLOCK,tip-MAX_CATCHUP);
   for(let from=start;from<=tip;from+=CHUNK){
     const to=Math.min(tip,from+CHUNK-1);
@@ -43,9 +45,9 @@ async function main(){
         j.client=e.args.client;j.provider=e.args.provider;j.evaluator=e.args.evaluator;
         j.budget=e.args.budget.toString();j.expiry=Number(e.args.expiry);
         j.descHash=e.args.descHash;j.providerAgentId=e.args.providerAgentId.toString();
-        j.status="Funded";j.createdBlock=l.blockNumber;
+        j.status="Funded";j.createdBlock=l.blockNumber;j.createdAt=await blockTs(l.blockNumber);
       } else if(e.name==="JobSubmitted"){
-        j.deliverableHash=e.args.deliverableHash;j.status="Submitted";
+        j.deliverableHash=e.args.deliverableHash;j.status="Submitted";j.submittedBlock=l.blockNumber;j.submittedAt=await blockTs(l.blockNumber);
       } else if(e.name==="JobCompleted"){
         j.evidenceHash=e.args.evidenceHash;j.settleTx=l.transactionHash;j.status="Completed";
       } else if(e.name==="JobRejected"){
