@@ -1,6 +1,7 @@
-import { Contract, TypedDataEncoder, getAddress, keccak256, toUtf8Bytes } from "ethers";
+import { Contract, TypedDataEncoder, getAddress, keccak256, toUtf8Bytes, verifyMessage } from "ethers";
 import { CHAIN_CONFIGS } from "@circle-fin/x402-batching/client";
 import type { Ctx } from "../sources.ts";
+import type { NanopaymentIntent, NanopaymentLedger } from "../nanopayment-ledger.ts";
 import { AGENT_PASSPORT_ABI, AGENT_PASSPORT_ADDRESS, AGENT_PAY_V3_VAULT_ABI } from "./_config.ts";
 
 const gateway = CHAIN_CONFIGS.arcTestnet;
@@ -127,10 +128,26 @@ export async function quoteNanopayment(
 
 export async function buildNanopaymentAuthorization(input: {
   paymentRequired: string; agentId: string; vault: string; serviceId: string; requestHash: string; now?: number;
-}, ctx: Ctx, readers?: Parameters<typeof quoteNanopayment>[2]) {
+}, ctx: Ctx, readers?: Parameters<typeof quoteNanopayment>[2], ledger?: NanopaymentLedger) {
   const quote = await quoteNanopayment(input, ctx, readers);
   if (!quote.ok) throw new Error(`policy rejected: ${quote.reasons.join(", ")}`);
   const now = input.now ?? Math.floor(Date.now() / 1000);
+  if (ledger) {
+    const existing = await ledger.get(quote.idempotencyKey);
+    if (existing) {
+      if (existing.boundWallet !== quote.boundWallet || existing.amount !== quote.amount || existing.payTo !== quote.payTo ||
+          existing.requestHash !== quote.requestHash || existing.serviceId !== quote.serviceId) {
+        throw new Error("idempotency conflict");
+      }
+      const validBefore = Number((existing.typedData as any)?.message?.validBefore ?? 0);
+      if (existing.status !== "settled" && validBefore <= now) throw new Error("stored authorization expired; use a new requestHash");
+      return {
+        ...quote, typedData: existing.typedData, authorizationDigest: existing.authorizationDigest,
+        ledgerStatus: existing.status, idempotentReplay: true, receipt: existing.receipt ?? null,
+        next: existing.status === "settled" ? "Return the stored receipt; do not submit another payment." : "Reuse this exact authorization; do not create a new nonce.",
+      };
+    }
+  }
   const validBefore = now + quote.parsed.requirements.maxTimeoutSeconds;
   const message = {
     from: quote.boundWallet,
@@ -145,16 +162,45 @@ export async function buildNanopaymentAuthorization(input: {
     { name: "from", type: "address" }, { name: "to", type: "address" }, { name: "value", type: "uint256" },
     { name: "validAfter", type: "uint256" }, { name: "validBefore", type: "uint256" }, { name: "nonce", type: "bytes32" },
   ] };
-  return {
+  const authorization = {
     ...quote, typedData: { domain, types, primaryType: "TransferWithAuthorization", message },
     authorizationDigest: TypedDataEncoder.hash(domain, types, message),
     next: "Sign typedData with boundWallet; retry the same resource with the resulting Gateway PAYMENT-SIGNATURE. Never send the private key to Arcodian MCP.",
   };
+  if (!ledger) return authorization;
+  const record: NanopaymentIntent = {
+    idempotencyKey: quote.idempotencyKey, createdAt: new Date(now * 1000).toISOString(),
+    authorizationDigest: authorization.authorizationDigest, boundWallet: quote.boundWallet,
+    agentId: quote.agentId, vault: quote.vault, serviceId: quote.serviceId,
+    requestHash: quote.requestHash, amount: quote.amount, payTo: quote.payTo,
+    asset: quote.asset, network: ARC_X402.network, typedData: authorization.typedData,
+    status: "pending",
+  };
+  const stored = await ledger.put(record);
+  return {
+    ...authorization,
+    typedData: stored.intent.typedData,
+    authorizationDigest: stored.intent.authorizationDigest,
+    ledgerStatus: stored.intent.status,
+    idempotentReplay: stored.reused,
+    receipt: stored.intent.receipt ?? null,
+  };
 }
 
-export function verifyNanopaymentReceipt(input: {
-  paymentResponse: string; payer: string; idempotencyKey: string; amount: string; payTo: string; network?: string; transaction?: string;
+export function enrichedReceiptStatement(proof: {
+  transaction: string; network: string; payer: string; amount: string; payTo: string;
+  idempotencyKey: string; requestHash: string; serviceId: string; authorizationDigest: string;
 }) {
+  return [
+    "arcodian-x402-receipt-v1", proof.transaction, proof.network, proof.payer.toLowerCase(),
+    proof.amount, proof.payTo.toLowerCase(), proof.idempotencyKey.toLowerCase(),
+    proof.requestHash.toLowerCase(), proof.serviceId, proof.authorizationDigest.toLowerCase(),
+  ].join("|");
+}
+
+export async function verifyNanopaymentReceipt(input: {
+  paymentResponse: string; payer: string; idempotencyKey: string; amount: string; payTo: string; network?: string; transaction?: string;
+}, ledger?: NanopaymentLedger) {
   const body = decodeHeader(input.paymentResponse);
   const expectedPayTo = addr(input.payTo, "payTo");
   const transaction = String(body.transaction ?? body.txHash ?? "");
@@ -171,9 +217,35 @@ export function verifyNanopaymentReceipt(input: {
   try { receiptPayTo = addr(proof.payTo ?? proof.to, "receipt payTo"); } catch { bindingErrors.push("payTo proof missing or invalid"); }
   if (receiptPayTo && receiptPayTo !== expectedPayTo) bindingErrors.push("payTo mismatch");
   if (String(proof.idempotencyKey ?? "") !== input.idempotencyKey) bindingErrors.push("idempotency proof missing or mismatched");
+  const intent = ledger ? await ledger.get(input.idempotencyKey) : null;
+  if (ledger && !intent) bindingErrors.push("unknown idempotency key");
+  if (intent) {
+    if (intent.amount !== input.amount) bindingErrors.push("ledger amount mismatch");
+    if (getAddress(intent.payTo) !== expectedPayTo) bindingErrors.push("ledger payTo mismatch");
+    if (intent.boundWallet !== addr(input.payer, "payer")) bindingErrors.push("ledger payer mismatch");
+    if (String(proof.requestHash ?? "") !== intent.requestHash) bindingErrors.push("requestHash proof missing or mismatched");
+    if (String(proof.serviceId ?? "") !== intent.serviceId) bindingErrors.push("serviceId proof missing or mismatched");
+    if (String(proof.authorizationDigest ?? "") !== intent.authorizationDigest) bindingErrors.push("authorization digest proof missing or mismatched");
+  }
+  try {
+    const statement = enrichedReceiptStatement({
+      transaction, network: String(body.network), payer: String(body.payer),
+      amount: String(proof.amount), payTo: String(proof.payTo ?? proof.to),
+      idempotencyKey: String(proof.idempotencyKey), requestHash: String(proof.requestHash),
+      serviceId: String(proof.serviceId), authorizationDigest: String(proof.authorizationDigest),
+    });
+    if (addr(verifyMessage(statement, String(body.sellerSignature)), "receipt signer") !== expectedPayTo) {
+      bindingErrors.push("seller signature mismatch");
+    }
+  } catch {
+    bindingErrors.push("seller signature missing or invalid");
+  }
+  const verified = settlementErrors.length === 0 && bindingErrors.length === 0;
+  if (verified && ledger) await ledger.settle(input.idempotencyKey, body);
   return {
     settlementVerified: settlementErrors.length === 0,
-    paymentBindingVerified: settlementErrors.length === 0 && bindingErrors.length === 0,
+    paymentBindingVerified: verified,
     settlementErrors, bindingErrors, transaction: transaction || null, receipt: body,
+    idempotentReplay: intent?.status === "settled",
   };
 }

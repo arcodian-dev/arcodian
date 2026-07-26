@@ -5,8 +5,10 @@ import { listJobs, inspectJob } from "./jobs.ts";
 import { inspectVault, inspectSpendingPolicy, getReceipt } from "./payments.ts";
 import { buildCreateJob, buildSubmitJob, buildEvaluateJob, buildLeaveFeedback, quotePayment } from "./builders.ts";
 import { inspectX402Challenge, quoteNanopayment, buildNanopaymentAuthorization, verifyNanopaymentReceipt } from "./nanopayments.ts";
+import { FileNanopaymentLedger } from "../nanopayment-ledger.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
+const nanopaymentLedger = new FileNanopaymentLedger();
 
 export const TOOLS: Tool[] = [
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
@@ -40,8 +42,9 @@ export const TOOLS: Tool[] = [
   { name: "quote_nanopayment", description: "Resolve Passport binding and enforce ArcPay seller/per-request/daily policy before an x402 payment.",
     schema: { paymentRequired: z.string().max(32768), agentId: z.string(), vault: z.string(), serviceId: z.string().max(128), requestHash: z.string() }, handler: quoteNanopayment },
   { name: "build_nanopayment_authorization", description: "Build deterministic UNSIGNED EIP-3009 typed data for Gateway Nanopayments. MCP never signs.",
-    schema: { paymentRequired: z.string().max(32768), agentId: z.string(), vault: z.string(), serviceId: z.string().max(128), requestHash: z.string() }, handler: buildNanopaymentAuthorization },
+    schema: { paymentRequired: z.string().max(32768), agentId: z.string(), vault: z.string(), serviceId: z.string().max(128), requestHash: z.string() },
+    handler: (args, ctx) => buildNanopaymentAuthorization(args, ctx, undefined, nanopaymentLedger) },
   { name: "verify_nanopayment_receipt", description: "Fail-closed verification of PAYMENT-RESPONSE fields against the quoted payment and idempotency key.",
     schema: { paymentResponse: z.string().max(32768), payer: z.string(), idempotencyKey: z.string(), amount: z.string(), payTo: z.string(), network: z.string().optional(), transaction: z.string().optional() },
-    handler: async (args) => verifyNanopaymentReceipt(args) },
+    handler: async (args) => verifyNanopaymentReceipt(args, nanopaymentLedger) },
 ];
