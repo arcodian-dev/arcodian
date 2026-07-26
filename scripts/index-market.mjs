@@ -41,6 +41,10 @@ class ThrottledProvider extends JsonRpcProvider {
   }
 }
 const provider = new ThrottledProvider(rpc, undefined, { batchMaxCount: 1, staticNetwork: true });
+const CANONICAL_V9_DEPLOY_BLOCK = Number(process.env.CANONICAL_V9_DEPLOY_BLOCK || 53_006_971);
+const USDC = "0x3600000000000000000000000000000000000000";
+const EURC = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+const PAIR_QUOTE_SCALE = 10n ** 12n; // ArcPair stablecoin reserves are 6-decimal.
 const factoryAbi = ["function launchCount() view returns(uint256)", "function tokenByLaunch(uint256) view returns(address)", "function curveByLaunch(uint256) view returns(address)", "function ENGINE_VERSION() view returns(uint8)", "function QUOTE_KIND() view returns(uint8)"];
 const tokenAbi = ["function name() view returns(string)", "function symbol() view returns(string)", "function imageURI() view returns(string)", "function balanceOf(address) view returns(uint256)"];
 // EURC (quoteKind 1) curves/pairs expose realQuoteReserve/VIRTUAL_QUOTE/quoteReserve
@@ -48,13 +52,15 @@ const tokenAbi = ["function name() view returns(string)", "function symbol() vie
 // names differ), so a single ABI parses both. EURC collateral is 6-dec and is
 // normalized to 18-dec (x1e12) below so every downstream consumer stays unchanged.
 const curveAbi = ["function realNativeReserve() view returns(uint256)", "function realQuoteReserve() view returns(uint256)", "function VIRTUAL_NATIVE() view returns(uint256)", "function VIRTUAL_QUOTE() view returns(uint256)", "function graduationThreshold() view returns(uint256)", "function graduated() view returns(bool)", "function creator() view returns(address)", "function pair() view returns(address)", "event Bought(address indexed buyer,uint256 nativeIn,uint256 tokensOut,uint256 protocolFee)", "event Sold(address indexed seller,uint256 tokensIn,uint256 nativeOut,uint256 protocolFee)"];
-const pairAbi = ["function nativeReserve() view returns(uint256)","function quoteReserve() view returns(uint256)","function tokenReserve() view returns(uint256)","function totalSupply() view returns(uint256)","function balanceOf(address) view returns(uint256)","function BURN() view returns(address)","event Swap(address indexed trader,bool nativeToToken,uint256 amountIn,uint256 amountOut,uint256 protocolFee)"];
+const pairAbi = ["function token0() view returns(address)","function token1() view returns(address)","function reserve0() view returns(uint256)","function reserve1() view returns(uint256)","function totalSupply() view returns(uint256)","function balanceOf(address) view returns(uint256)","event Swapped(address indexed trader,bool zeroForOne,uint256 amountIn,uint256 amountOut,uint256 protocolFee)"];
 let previous = null;
 try { previous = JSON.parse(await readFile(output, "utf8")); } catch {}
 const latestBlock = await provider.getBlockNumber();
-const fromBlock = previous?.indexedBlock
+// Version 7 is the first index with canonical-v9 historical curve + ArcPair
+// event coverage. Older payloads must backfill once from the deployment block.
+const fromBlock = previous?.version >= 7 && previous?.indexedBlock
   ? Math.max(0, Number(previous.indexedBlock) + 1)
-  : Math.max(0, latestBlock - Number(process.env.INDEX_BLOCK_WINDOW || 30000));
+  : CANONICAL_V9_DEPLOY_BLOCK;
 async function marketLogs(market) {
   if (fromBlock > latestBlock) return [];
   const logs = [];
@@ -76,8 +82,8 @@ const groups = await Promise.all(factories.map(async ({ address: factoryAddress,
   const SCALE = quoteKind === 1 ? 10n ** 12n : 1n; // EURC 6-dec -> 18-dec
   const rFn = quoteKind === 1 ? "realQuoteReserve" : "realNativeReserve";
   const vFn = quoteKind === 1 ? "VIRTUAL_QUOTE" : "VIRTUAL_NATIVE";
-  const pFn = quoteKind === 1 ? "quoteReserve" : "nativeReserve";
   const currency = quoteKind === 1 ? "EURC" : "USDC";
+  const quoteAddress = (quoteKind === 1 ? EURC : USDC).toLowerCase();
   const cachedMarkets = previous?.indexedBlock
     ? (previous.launches || []).filter((item) => item.factory.toLowerCase() === factoryAddress.toLowerCase())
     : [];
@@ -108,7 +114,19 @@ const groups = await Promise.all(factories.map(async ({ address: factoryAddress,
     }
     let pair = previousMarket?.pair || "", lpSupply = BigInt(previousMarket?.lpSupply || 0), lpBurned = BigInt(previousMarket?.lpBurned || 0);
     let dexPair = null;
-    if (graduated) try { pair = await market.pair(); dexPair = new Contract(pair, pairAbi, provider); const burn = await dexPair.BURN(); [reserve, inventory, lpSupply, lpBurned] = await Promise.all([dexPair[pFn](), dexPair.tokenReserve(), dexPair.totalSupply(), dexPair.balanceOf(burn)]); reserve *= SCALE; } catch {}
+    if (graduated) try {
+      pair = await market.pair();
+      dexPair = new Contract(pair, pairAbi, provider);
+      const [token0, reserve0, reserve1, supply, burned] = await Promise.all([
+        dexPair.token0(), dexPair.reserve0(), dexPair.reserve1(), dexPair.totalSupply(),
+        dexPair.balanceOf("0x000000000000000000000000000000000000dEaD"),
+      ]);
+      const quoteIsToken0 = token0.toLowerCase() === quoteAddress;
+      reserve = (quoteIsToken0 ? reserve0 : reserve1) * PAIR_QUOTE_SCALE;
+      inventory = quoteIsToken0 ? reserve1 : reserve0;
+      lpSupply = supply;
+      lpBurned = burned;
+    } catch {}
     let image = previousMarket?.image || "", creator = previousMarket?.creator || "";
     if (!previousMarket) {
       try { image = await token.imageURI(); } catch {}
@@ -128,11 +146,24 @@ const groups = await Promise.all(factories.map(async ({ address: factoryAddress,
         const swaps = (await marketLogs(dexPair)).flatMap((log) => {
           try {
             const parsed = dexPair.interface.parseLog(log);
-            if (parsed?.name === "Swap") return [{ side: parsed.args.nativeToToken ? "BUY" : "SELL", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.trader, native: ((parsed.args.nativeToToken ? parsed.args.amountIn : parsed.args.amountOut) * SCALE).toString(), tokens: (parsed.args.nativeToToken ? parsed.args.amountOut : parsed.args.amountIn).toString(), venue: "DEX" }];
+            if (parsed?.name === "Swapped") return [{ parsed, log }];
           } catch {}
           return [];
         });
-        trades.push(...swaps);
+        const pairToken0 = (await dexPair.token0()).toLowerCase();
+        const quoteIsToken0 = pairToken0 === quoteAddress;
+        trades.push(...swaps.map(({parsed,log}) => {
+          const inputIsQuote = Boolean(parsed.args.zeroForOne) === quoteIsToken0;
+          return {
+            side: inputIsQuote ? "BUY" : "SELL",
+            block: log.blockNumber,
+            tx: log.transactionHash,
+            user: parsed.args.trader,
+            native: ((inputIsQuote ? parsed.args.amountIn : parsed.args.amountOut) * PAIR_QUOTE_SCALE).toString(),
+            tokens: (inputIsQuote ? parsed.args.amountOut : parsed.args.amountIn).toString(),
+            venue: "DEX",
+          };
+        }));
         trades.sort((a, b) => a.block - b.block);
       }
       const timestamps = new Map();
@@ -184,7 +215,7 @@ if (previous?.arena?.roundId && previous.arena.roundId !== roundId && previous.a
   if (!arenaHistory.some((entry) => entry.roundId === previous.arena.roundId)) arenaHistory.unshift({ roundId: previous.arena.roundId, winner, finalizedAt: new Date().toISOString() });
 }
 arenaHistory = arenaHistory.slice(0, 12);
-const payload = JSON.stringify({ version: 6, chainId: 5042002, engineVersion: 9, factories: factories.map(({address})=>address), indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
+const payload = JSON.stringify({ version: 7, chainId: 5042002, engineVersion: 9, factories: factories.map(({address})=>address), indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
 await mkdir(dirname(output), { recursive: true });
 await writeFile(`${output}.tmp`, payload, { mode: 0o644 });
 await rename(`${output}.tmp`, output);
