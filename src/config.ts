@@ -58,6 +58,11 @@ export const AGENT_JOBS_ABI = ["function createJob(address provider,address eval
 export const REPUTATION_REGISTRY_ADDRESS = "0x8004B663056A597Dffe9eCcC1965A193B7388713";
 export const VALIDATION_REGISTRY_ADDRESS = "0x8004Cb1BF31DAf7788923b405b754f57acEB4272";
 export const REPUTATION_ENDPOINT = "https://arcodian.fun/developers/reputation.json";
+// Phase F4/F5 operational-hardening spikes (Arc Testnet). Enforced scoped delegation
+// at execution time, and governed timelock administration. Not audited / not mainnet.
+export const SESSION_KEY_ACCOUNT_ADDRESS = "0x06e26288AeC908c926A8e2466d9543e997f59d7C";
+export const ADMIN_TIMELOCK_ADDRESS = "0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac";
+export const ARCODIAN_MCP_ENDPOINT = "https://arcodian.fun/mcp";
 // Signatures verified on-chain 2026-07-25 by decoding a live giveFeedback tx + raw readFeedback returns:
 // giveFeedback takes (int128 score, uint8 decimals) then 4 strings + filehash; readFeedback surfaces
 // only (int128 score, uint8 decimals, tag1, tag2, isRevoked) — endpoint/fileuri/filehash are write-only.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS } from "../config";
+import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 
 function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
@@ -133,18 +133,46 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       finally { provider.destroy(); }
     })();
   }, []);
-  const addressCards = [
-    ["Launch Factory v9", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
-    ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
-    ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
-    ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
-    ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than one hour fails closed."] as const] : []),
-    ...(ARC_LEND_COLLATERAL_ADDRESS ? [["Arc Lend collateral · EURC", ARC_LEND_COLLATERAL_ADDRESS, "The canonical Circle EURC token accepted as collateral in the isolated Arc Lend market (6 decimals)."] as const] : []),
+  const contractGroups: { title: string; note: string; cards: (readonly [string, string, string])[] }[] = [
+    {
+      title: "Money & market",
+      note: "The USDC economy: payments, lending, and the permissionless launchpad.",
+      cards: [
+        ["Launch Factory v9", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
+        ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
+        ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
+        ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
+        ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than one hour fails closed."] as const] : []),
+        ...(ARC_LEND_COLLATERAL_ADDRESS ? [["Arc Lend collateral · EURC", ARC_LEND_COLLATERAL_ADDRESS, "The canonical Circle EURC token accepted as collateral in the isolated Arc Lend market (6 decimals)."] as const] : []),
+      ],
+    },
+    {
+      title: "Agent economy",
+      note: "ERC-8004 identity, escrowed jobs, and verified reputation — an agent is never granted spending authority by its identity alone.",
+      cards: [
+        ["Agent Passport", AGENT_PASSPORT_ADDRESS, "Binds an official ERC-8004 Agent ID to an authorized wallet with owner-only rotation. Identity never grants spending authority by itself."],
+        ["Agent Jobs v2", AGENT_JOBS_ADDRESS, "Escrowed job lifecycle settled in USDC through Arc Pay. A nonzero provider Agent ID is accepted only when the provider is the current Passport-bound wallet — no Agent-ID spoofing."],
+        ["Reputation Registry", REPUTATION_REGISTRY_ADDRESS, "Official ERC-8004 registry. Feedback is evidence-backed only when its tag names a real completed job and its authorized client or evaluator."],
+        ["Validation Registry", VALIDATION_REGISTRY_ADDRESS, "Official ERC-8004 registry for independent validation of an agent's work, tied to the exact completed job."],
+        ["Agent Pay Factory v3", AGENT_PAY_V3_FACTORY_ADDRESS, "Mints one isolated, non-custodial vault per owner whose bounded spending policies are keyed by Agent ID."],
+      ],
+    },
+    {
+      title: "Operational hardening · spikes",
+      note: "Phase F testnet spikes. Bounded, fail-closed, not ERC-4337, not independently audited, not mainnet-ready.",
+      cards: [
+        ["Session-Key Account", SESSION_KEY_ACCOUNT_ADDRESS, "Owner installs a scoped session key (target + function + per-call and daily caps + time window + instant revoke). The key executes autonomously with no per-call owner signature; the account enforces every bound on-chain. Owner keeps custody."],
+        ["Admin Timelock", ADMIN_TIMELOCK_ADDRESS, "Role-gated governed administration: schedule → enforced delay → execute, with cancel and a self-governed delay. The mechanism for moving admin to a production multisig."],
+      ],
+    },
   ];
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
-    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>These are the canonical Arc Testnet contracts read by Arcodian. Every address opens in the explorer; live wiring checks run again when this page loads.</p></header>
-    <div className="contract-address-grid">{addressCards.map(([label,address,note])=><article key={address}><small>{label}</small><a href={`${ARC.explorer}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
+    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>These are the canonical Arc Testnet contracts read by Arcodian. Every address opens in the explorer; live wiring checks run again when this page loads. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads the same contracts and returns unsigned transactions only — it never holds a key.</p></header>
+    {contractGroups.map((group) => <div key={group.title} className="contract-group">
+      <div className="contract-group-head"><h2>{group.title}</h2><p>{group.note}</p></div>
+      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={address}><small>{label}</small><a href={`${ARC.explorer}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
+    </div>)}
     <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Testnet…"}</h2><p>Read directly from chain {ARC.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
     <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>4,500</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
   </section>;
