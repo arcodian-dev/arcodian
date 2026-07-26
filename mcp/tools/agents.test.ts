@@ -52,7 +52,7 @@ describe("inspect_agent", () => {
     // inspectAgent reads identity via ctx.provider(); we assert reputation join here by stubbing resolveIdentity
     const r = await inspectAgent({ agentId: "1" }, identityCtx, async () => ({ owner: "0xowner1", wallet: "0xw1", tokenURI: "ipfs://x", integrity: "unchecked" }));
     expect(r.agentId).toBe("1");
-    expect(r.reputation.score).toBe(80);
+    expect(r.reputation?.score).toBe(80);
     expect(r.identity.owner).toBe("0xowner1");
   });
 });

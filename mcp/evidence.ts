@@ -1,4 +1,4 @@
-import { STALE_THRESHOLD } from "./sources";
+import { STALE_THRESHOLD } from "./sources.ts";
 
 export const CHAIN_ID = 5042002;
 export const EXPLORER = "https://testnet.arcscan.app";

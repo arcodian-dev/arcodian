@@ -1,7 +1,7 @@
 import { Contract } from "ethers";
-import type { Ctx } from "../sources";
-import { indexEvidence, addrLink } from "../evidence";
-import { IDENTITY_REGISTRY_ADDRESS, IDENTITY_REGISTRY_ABI } from "./_config";
+import type { Ctx } from "../sources.ts";
+import { indexEvidence, addrLink } from "../evidence.ts";
+import { IDENTITY_REGISTRY_ADDRESS, IDENTITY_REGISTRY_ABI } from "./_config.ts";
 
 export type FindAgentsInput = { capability?: string; minReputation?: number; requireValidation?: boolean; limit?: number };
 
