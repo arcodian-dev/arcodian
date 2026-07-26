@@ -1,7 +1,12 @@
 import { Contract } from "ethers";
 import type { Ctx } from "../sources.ts";
 import { indexEvidence, addrLink } from "../evidence.ts";
-import { IDENTITY_REGISTRY_ADDRESS, IDENTITY_REGISTRY_ABI } from "./_config.ts";
+import {
+  AGENT_PASSPORT_ABI,
+  AGENT_PASSPORT_ADDRESS,
+  IDENTITY_REGISTRY_ADDRESS,
+  IDENTITY_REGISTRY_ABI,
+} from "./_config.ts";
 
 export type FindAgentsInput = { capability?: string; minReputation?: number; requireValidation?: boolean; limit?: number };
 
@@ -53,8 +58,13 @@ export type ResolveIdentity = (agentId: string, ctx: Ctx) => Promise<{ owner: st
 
 export async function resolveIdentity(agentId: string, ctx: Ctx) {
   const reg = new Contract(IDENTITY_REGISTRY_ADDRESS, IDENTITY_REGISTRY_ABI, ctx.provider());
-  const [owner, tokenURI] = await Promise.all([reg.ownerOf(agentId), reg.tokenURI(agentId)]);
-  return { owner, wallet: owner, tokenURI, integrity: "unchecked" };
+  const passport = new Contract(AGENT_PASSPORT_ADDRESS, AGENT_PASSPORT_ABI, ctx.provider());
+  const [owner, tokenURI, wallet] = await Promise.all([
+    reg.ownerOf(agentId),
+    reg.tokenURI(agentId),
+    passport.walletOf(agentId),
+  ]);
+  return { owner, wallet, tokenURI, integrity: "unchecked" };
 }
 
 export async function inspectAgent(input: { agentId: string }, ctx: Ctx, resolver: ResolveIdentity = resolveIdentity) {

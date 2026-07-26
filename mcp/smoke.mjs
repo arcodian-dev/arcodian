@@ -24,16 +24,20 @@ console.log("tools:", names.join(", "));
 
 const agent = await call("tools/call", {
   name: "inspect_agent",
-  arguments: { agentId: "851849" },
+  arguments: { agentId: "851812" },
 });
 const agentText = agent.result?.content?.[0]?.text || "";
-if (!agentText.includes('"score": 25')) throw new Error("agent 851849 score not found");
-console.log("inspect_agent 851849: score 25");
+if (!agentText.includes('"score": 40')) throw new Error("agent 851812 score not found");
+if (!agentText.includes('"wallet": "0x7D9b5ab14b24Dede3b78b7e1715C1E01032F40C2"')) {
+  throw new Error("agent 851812 passport wallet not found");
+}
+console.log("inspect_agent 851812: score 40, passport wallet verified");
 
 const job = await call("tools/call", {
   name: "inspect_job",
-  arguments: { jobId: "4" },
+  arguments: { jobId: "2" },
 });
 const jobText = job.result?.content?.[0]?.text || "";
-if (!jobText.includes('"status": "Completed"')) throw new Error("job 4 Completed status not found");
-console.log("inspect_job 4: Completed");
+if (!jobText.includes('"status": "Completed"')) throw new Error("job 2 Completed status not found");
+if (!jobText.includes('"providerAgentId": "851812"')) throw new Error("job 2 identity binding not found");
+console.log("inspect_job 2: Completed, providerAgentId 851812");

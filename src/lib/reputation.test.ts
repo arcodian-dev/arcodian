@@ -78,12 +78,21 @@ describe("feedback + validation classification", () => {
   const jobs: RepJob[] = [job({ jobId: "1", providerAgentId: "7", deliverableHash: "0xd" })];
   it("feedback from the job evaluator is evidence_backed; a stranger is unverified", () => {
     const fb: RegFeedback[] = [
-      { agentId: "7", client: "0xE", score: 90, tag1: "", tag2: "", endpoint: "", filehash: "0x0", index: 1 },
-      { agentId: "7", client: "0xSTRANGER", score: 10, tag1: "", tag2: "", endpoint: "", filehash: "0x0", index: 1 },
+      { agentId: "7", client: "0xE", score: 90, tag1: "arcjob", tag2: "1", endpoint: "", filehash: "0x0", index: 1 },
+      { agentId: "7", client: "0xSTRANGER", score: 10, tag1: "arcjob", tag2: "1", endpoint: "", filehash: "0x0", index: 1 },
     ];
     const c = classifyFeedback("7", fb, jobs);
     expect(c.find(x => x.client === "0xE")!.evidenceBacked).toBe(true);
     expect(c.find(x => x.client === "0xSTRANGER")!.evidenceBacked).toBe(false);
+  });
+  it("does not borrow evidence from another job for the same provider", () => {
+    const other = job({ jobId: "2", providerAgentId: "7", client: "0xOTHER", evaluator: "0xOTHER_E" });
+    const fb: RegFeedback[] = [
+      { agentId: "7", client: "0xE", score: 90, tag1: "arcjob", tag2: "2", endpoint: "", filehash: "0x0", index: 1 },
+      { agentId: "7", client: "0xE", score: 90, tag1: "", tag2: "1", endpoint: "", filehash: "0x0", index: 2 },
+    ];
+    const c = classifyFeedback("7", fb, [...jobs, other]);
+    expect(c.every(x => !x.evidenceBacked)).toBe(true);
   });
   it("validation by a job participant is non-independent", () => {
     const v: RegValidation[] = [

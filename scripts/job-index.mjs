@@ -1,7 +1,7 @@
 import {JsonRpcProvider,Interface} from "ethers";
 import {readFileSync,writeFileSync} from "node:fs";
 const RPC=process.env.ARC_RPC_URL||"https://rpc.testnet.arc.network/";
-const JOBS=process.env.AGENT_JOBS_ADDRESS||"0x3ceb2eb2fdf41396e20cc55b9096933d208ba8a6";
+const JOBS=process.env.AGENT_JOBS_ADDRESS||"0x33f54C516107A8c67d9Dc245f00E253132a6D15A";
 const OUT=process.env.JOB_INDEX_OUT||"public/developers/jobs.json";
 const STATE=`${OUT}.state.json`;
 const DEPLOY_BLOCK=Number(process.env.JOB_DEPLOY_BLOCK||53_590_959);

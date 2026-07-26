@@ -123,12 +123,16 @@ export type ClassifiedFeedback = RegFeedback & { evidenceBacked: boolean; jobId?
 export type ClassifiedValidation = RegValidation & { independent: boolean; jobId?: string };
 export type Policy = { minScore?: number; minCompletedJobs?: number; maxDisputeRate?: number };
 
-// evidence_backed: rater is the client or evaluator of a real Completed job for this agent.
+// evidence_backed: the feedback explicitly names a completed Arcodian job and
+// the rater is that exact job's client or evaluator. Merely participating in a
+// different job for the same provider is insufficient.
 export function classifyFeedback(agentId: string, feedback: RegFeedback[], jobs: RepJob[]): ClassifiedFeedback[] {
   const completed = jobs.filter(j => j.status === "Completed" && j.providerAgentId === agentId);
   return feedback.map(f => {
-    const j = completed.find(j => lc(j.client) === lc(f.client) || lc(j.evaluator) === lc(f.client));
-    return { ...f, evidenceBacked: Boolean(j), jobId: j?.jobId };
+    const taggedJobId = lc(f.tag1) === "arcjob" ? String(f.tag2 || "") : "";
+    const j = taggedJobId ? completed.find(job => job.jobId === taggedJobId) : undefined;
+    const eligibleRater = j && (lc(j.client) === lc(f.client) || lc(j.evaluator) === lc(f.client));
+    return { ...f, evidenceBacked: Boolean(eligibleRater), jobId: eligibleRater ? j.jobId : undefined };
   });
 }
 

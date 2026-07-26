@@ -1,5 +1,5 @@
 import {Contract,id,parseEther} from "https://cdn.jsdelivr.net/npm/ethers@6.17.0/+esm";
-export const ARC_AGENT_JOBS={chainId:5042002,address:"0x3ceb2eb2fdf41396e20cc55b9096933d208ba8a6",feedUrl:"https://arcodian.fun/developers/jobs.json"};
+export const ARC_AGENT_JOBS={chainId:5042002,address:"0x33f54C516107A8c67d9Dc245f00E253132a6D15A",feedUrl:"https://arcodian.fun/developers/jobs.json"};
 const JOBS_STATUS=["None","Funded","Submitted","Completed","Rejected","Expired"];
 const JOBS_ABI=["function createJob(address provider,address evaluator,uint64 expiry,bytes32 descHash,uint256 providerAgentId) payable returns(uint256)","function submit(uint256,bytes32)","function evaluate(uint256,bool,bytes32)","function reclaimExpired(uint256)","function jobs(uint256) view returns(address client,address provider,address evaluator,uint128 budget,uint64 expiry,uint8 status,bytes32 descHash,bytes32 deliverableHash,uint256 providerAgentId)","function jobCount() view returns(uint256)"];
 // Read a single job's on-chain state (decoded, with a human status label).

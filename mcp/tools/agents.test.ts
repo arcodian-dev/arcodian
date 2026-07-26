@@ -54,5 +54,6 @@ describe("inspect_agent", () => {
     expect(r.agentId).toBe("1");
     expect(r.reputation?.score).toBe(80);
     expect(r.identity.owner).toBe("0xowner1");
+    expect(r.identity.wallet).toBe("0xw1");
   });
 });

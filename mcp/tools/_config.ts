@@ -12,8 +12,10 @@ export const ARC = {
 
 export const IDENTITY_REGISTRY_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 export const IDENTITY_REGISTRY_ABI = ["function register(string metadataURI) returns(uint256)","function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)","event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"];
+export const AGENT_PASSPORT_ADDRESS = "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf";
+export const AGENT_PASSPORT_ABI = ["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)"];
 
-export const AGENT_JOBS_ADDRESS = "0x3ceb2eb2fdf41396e20cc55b9096933d208ba8a6";
+export const AGENT_JOBS_ADDRESS = "0x33f54C516107A8c67d9Dc245f00E253132a6D15A";
 export const AGENT_JOBS_ABI = ["function createJob(address provider,address evaluator,uint64 expiry,bytes32 descHash,uint256 providerAgentId) payable returns(uint256)","function submit(uint256 jobId,bytes32 deliverableHash)","function evaluate(uint256 jobId,bool approve,bytes32 evidenceHash)","function reclaimExpired(uint256 jobId)","function jobs(uint256) view returns(address client,address provider,address evaluator,uint128 budget,uint64 expiry,uint8 status,bytes32 descHash,bytes32 deliverableHash,uint256 providerAgentId)","function jobCount() view returns(uint256)","function arcPay() view returns(address)","event JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 budget,uint64 expiry,bytes32 descHash,uint256 providerAgentId)","event JobSubmitted(uint256 indexed jobId,bytes32 deliverableHash)","event JobCompleted(uint256 indexed jobId,address indexed provider,uint256 budget,uint256 providerAgentId,bytes32 evidenceHash)","event JobRejected(uint256 indexed jobId,address indexed client,uint256 budget,bytes32 evidenceHash)","event JobExpired(uint256 indexed jobId,address indexed client,uint256 budget)"];
 
 export const AGENT_PAY_V3_FACTORY_ADDRESS = "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5";
