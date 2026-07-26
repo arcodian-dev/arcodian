@@ -4404,6 +4404,13 @@ footer::before {
 .coin-route>.trade-layout { border-color:rgba(126,150,190,.14); }.trade-layout>.chart-panel { background:#091226; }.trade-layout>.order-panel { border-color:rgba(126,150,190,.14); background:#0b1429; }
 .chart-head { border-color:rgba(126,150,190,.14); background:#0b1429; }.chart-timeframes { border-color:rgba(126,150,190,.16); background:#070e1e; }.chart-timeframes button.active { color:#07101d; background:#5ab0ff; }.chart-tools b { color:#75c9ff; }
 .hero-chart { border-color:rgba(126,150,190,.14); background:linear-gradient(180deg,rgba(90,176,255,.035),transparent),repeating-linear-gradient(90deg,transparent 0,transparent calc(20% - 1px),rgba(126,150,190,.035) 20%),#081122; }
+/* Hero + docs headlines were hardcoded to dark navy (#07185c/#62789c) with no dark
+   override → near-invisible on the #06100d shell. Restore legibility. */
+.hero h1, .docs-hero h1 { color: var(--f-bone); }
+.hero h1 em, .docs-hero h1 em { color: var(--f-amberhi); -webkit-text-fill-color: initial; background: none; }
+.hero-copy, .workspace-copy > p:last-child, .docs-hero > div > p { color: var(--f-dim); }
+.hero-copy::first-line { color: var(--f-bone); }
+.hero-secondary, .docs-hero-actions button:not(.primary) { color: var(--f-bone); border-color: var(--f-hair2); background: rgba(233,239,250,.05); box-shadow: none; }
 .market-metrics { border-color:rgba(126,150,190,.14); }.market-metrics span { border-color:rgba(126,150,190,.12); background:#0a1428; }.desk-tabs { border-color:rgba(126,150,190,.14); background:#0b1429; }.desk-tabs button.active { color:#75c9ff; background:rgba(90,176,255,.09); }.live-trades { background:#091226; }.live-trades>.live-trades-head { background:#0b1429f5; }
 .order-panel .risk-notice { color:#b9c8dc; border-color:rgba(90,176,255,.2); background:rgba(90,176,255,.06); }.order-panel .risk-notice strong { color:#dce8f8; }.order-panel .side-tabs { background:#070e1e; }.order-panel>label,.order-panel .trade-quote { border-color:rgba(126,150,190,.16); background:#081122; }.order-panel .primary { background:linear-gradient(135deg,#5ad6f7,#5a91ff); }.trade-presets button { border-color:rgba(126,150,190,.16); background:rgba(255,255,255,.025); }
 @media(max-width:900px){.market-lifecycle{grid-template-columns:1fr 1fr}.market-lifecycle>div{grid-column:1/-1}.market-lifecycle>*:nth-child(2){border-left:0}.market-lifecycle>*{border-bottom:1px solid rgba(126,150,190,.12)}}
