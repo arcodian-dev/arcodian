@@ -19,13 +19,14 @@ async function call(method, params) {
 
 const list = await call("tools/list", {});
 const names = (list.result?.tools || []).map((tool) => tool.name);
-if (names.length !== 22) throw new Error(`expected 22 tools, received ${names.length}`);
+if (names.length !== 23) throw new Error(`expected 23 tools, received ${names.length}`);
 for (const required of ["inspect_x402_challenge", "quote_nanopayment", "build_nanopayment_authorization", "verify_nanopayment_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E1 tool ${required}`);
 }
 for (const required of ["build_send_delegation", "activate_send_delegation", "build_revoke_send_delegation", "revoke_send_delegation", "build_appkit_send", "verify_appkit_send_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E2 tool ${required}`);
 }
+if (!names.includes("inspect_unified_balance")) throw new Error("missing Phase E2 Unified Balance tool");
 console.log("tools:", names.join(", "));
 
 const agent = await call("tools/call", {

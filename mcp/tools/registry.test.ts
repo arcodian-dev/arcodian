@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { TOOLS } from "./registry";
 
 describe("registry", () => {
-  it("exposes all 22 tools with unique names, descriptions, and zod schemas", () => {
+  it("exposes all 23 tools with unique names, descriptions, and zod schemas", () => {
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
     expect(names).toEqual(expect.arrayContaining([
@@ -14,8 +14,9 @@ describe("registry", () => {
       "build_send_delegation", "activate_send_delegation", "build_revoke_send_delegation",
       "revoke_send_delegation", "build_appkit_send",
       "verify_appkit_send_receipt",
+      "inspect_unified_balance",
     ]));
-    expect(names).toHaveLength(22);
+    expect(names).toHaveLength(23);
     for (const t of TOOLS) {
       expect(typeof t.description).toBe("string");
       expect(t.description.length).toBeGreaterThan(10);

@@ -7,6 +7,7 @@ import { buildCreateJob, buildSubmitJob, buildEvaluateJob, buildLeaveFeedback, q
 import { inspectX402Challenge, quoteNanopayment, buildNanopaymentAuthorization, verifyNanopaymentReceipt } from "./nanopayments.ts";
 import { FileNanopaymentLedger } from "../nanopayment-ledger.ts";
 import { AppKitDelegationStore, buildRevokeTypedData, buildSendGrantTypedData, defaultDelegationReaders } from "../appkit-delegation.ts";
+import { inspectUnifiedBalance } from "../appkit-unified-balance.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 const nanopaymentLedger = new FileNanopaymentLedger();
@@ -71,4 +72,7 @@ export const TOOLS: Tool[] = [
   { name: "verify_appkit_send_receipt", description: "Verify an App Kit Send transaction exactly matches its reserved invocation and persist settlement.",
     schema: { invocationId: z.string(), txHash: z.string() },
     handler: async (args, ctx) => appKitDelegations.verifySend(args.invocationId, args.txHash, ctx.provider()) },
+  { name: "inspect_unified_balance", description: "Read Circle App Kit Unified Balance for the Agent's current Passport wallet on explicit USDC testnet chains.",
+    schema: { agentId: z.string(), chains: z.array(z.string()).min(1).max(16).optional(), includePending: z.boolean().optional() },
+    handler: async (args, ctx) => inspectUnifiedBalance(args, ctx) },
 ];
