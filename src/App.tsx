@@ -697,22 +697,23 @@ export default function App() {
           <span className="brand-name">ARCODIAN<small>ARC MARKETS</small></span>
         </button>
         <div className="nav-links">
-          <details className={`nav-group ${["wallet", "swap", "bridge"].includes(tab) ? "active" : ""}`}>
+          <details className={`nav-group ${["wallet", "swap", "bridge", "arcpay", "fx"].includes(tab) ? "active" : ""}`}>
             <summary>Product <i>⌄</i></summary>
             <div>
               <a href={navHref("wallet", host) || "/wallet"}><b>Wallet</b><small>Self-custody on Arc</small></a>
               <button onClick={() => chooseTab("swap")}><b>Swap</b><small>Trade Arc assets</small></button>
-              <button onClick={() => chooseTab("bridge")}><b>Bridge</b><small>Move USDC with CCTP</small></button>
+              <button onClick={() => chooseTab("bridge")}><b>Bridge</b><small>Move USDC over CCTP</small></button>
+              <button onClick={() => chooseTab("arcpay")}><b>Pay</b><small>Exact-value invoices</small></button>
+              <button onClick={() => chooseTab("fx")}><b>Stablecoin FX</b><small>USDC ⇄ EURC</small></button>
             </div>
           </details>
           <details className={`nav-group ${["screener"].includes(tab) ? "active" : ""}`}>
             <summary>Market <i>⌄</i></summary>
             <div>
-              <a href="https://lend.arcodian.fun/"><b>Lend</b><small>Supply and borrow</small></a>
               <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
+              <a href="https://lend.arcodian.fun/"><b>Lend</b><small>Supply and borrow</small></a>
             </div>
           </details>
-          <button className={tab === "arcpay" ? "active" : ""} onClick={() => chooseTab("arcpay")}>Pay</button>
           <details className={`nav-group ${["agentpay", "jobs"].includes(tab) ? "active" : ""}`}>
             <summary>Agent <i>⌄</i></summary>
             <div>
@@ -720,10 +721,15 @@ export default function App() {
               <button onClick={() => chooseTab("jobs")}><b>Jobs</b><small>Outcome escrow</small></button>
             </div>
           </details>
-          <button className={["how", "contracts", "faq", "canary"].includes(tab) ? "active" : ""} onClick={() => chooseTab("how")}>Docs</button>
-          <details className="nav-more">
-            <summary>more</summary>
-            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
+          <details className={`nav-group ${["how", "contracts", "faq", "canary", "analytics", "treasury", "developers"].includes(tab) ? "active" : ""}`}>
+            <summary>Resources <i>⌄</i></summary>
+            <div>
+              <button onClick={() => chooseTab("developers")}><b>Developers</b><small>SDK, registry & MCP</small></button>
+              <button onClick={() => chooseTab("contracts")}><b>Trust Center</b><small>Canonical contracts</small></button>
+              <button onClick={() => chooseTab("analytics")}><b>Analytics</b><small>Public protocol metrics</small></button>
+              <button onClick={() => chooseTab("treasury")}><b>Treasury</b><small>Protocol treasury</small></button>
+              <button onClick={() => chooseTab("how")}><b>Docs, FAQ & Legal</b><small>How everything works</small></button>
+            </div>
           </details>
         </div>
         <div className="wallet-area">
@@ -1134,7 +1140,16 @@ export default function App() {
         <button className={tab === "bridge" || tab === "swap" ? "active" : ""} onClick={() => chooseTab("bridge")}><i aria-hidden="true">⇄</i><span>Bridge</span></button>
         <button onClick={() => setMobileMoreOpen((value) => !value)}><i aria-hidden="true">•••</i><span>More</span></button>
       </nav>
-      {mobileMoreOpen && <aside className="mobile-more-menu" aria-label="More products"><button onClick={() => setMobileMoreOpen(false)}>Close ×</button><a href="https://lend.arcodian.fun/">Arc Lend</a><a href="/fx">Stablecoin FX</a><a href="/agentpay">Agent Pay</a><a href="/analytics">Public Analytics</a><a href="/treasury">Treasury Lite</a><a href="/developers">Developers</a><a href="/docs">Docs, FAQ & Legal</a><a href="/contracts">Trust Center</a><button onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
+      {mobileMoreOpen && <aside className="mobile-more-menu" aria-label="All products"><div className="mm-head"><img src="/arcodian-mark.svg" alt="" width="22" height="22" /><b>ARCODIAN</b><button className="mm-close" onClick={() => setMobileMoreOpen(false)}>Close ×</button></div>
+        <p className="mm-group">Product</p>
+        <a href="/swap">Swap</a><a href="/arcpay">Pay</a><a href="/fx">Stablecoin FX</a>
+        <p className="mm-group">Market</p>
+        <a href="/screener">Markets</a><a href="https://lend.arcodian.fun/">Lend</a>
+        <p className="mm-group">Agent</p>
+        <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a>
+        <p className="mm-group">Resources</p>
+        <a href="/developers">Developers</a><a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
+        <button className="mm-create" onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
       {walletOpen && (
         <WalletModal
           wallets={wallets}

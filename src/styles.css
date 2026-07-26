@@ -2445,11 +2445,13 @@ body::before { background-size:80px 80px; opacity:.45; }
     z-index: 120;
     right: 14px;
     bottom: 82px;
-    width: min(280px, calc(100vw - 28px));
+    width: min(300px, calc(100vw - 28px));
+    max-height: calc(100vh - 120px);
+    overflow-y: auto;
     display: grid;
-    gap: 6px;
+    gap: 5px;
     padding: 14px;
-    border: 1px solid #ffffff1f;
+    border: 1px solid var(--f-hair2);
     border-radius: 18px;
     background: #07101ff2;
     box-shadow: 0 24px 70px #000a;
@@ -2459,13 +2461,27 @@ body::before { background-size:80px 80px; opacity:.45; }
   .mobile-more-menu button {
     border: 0;
     border-radius: 12px;
-    padding: 13px 14px;
-    color: #eef5ff;
-    background: #ffffff0b;
+    padding: 12px 14px;
+    color: var(--f-bone);
+    background: rgba(233,239,250,.05);
     text-align: left;
     text-decoration: none;
-    font: 700 13px var(--ax-font-body);
+    font: 700 13px var(--f-body);
   }
+  .mobile-more-menu .mm-group {
+    margin: 10px 4px 2px;
+    color: var(--f-amberhi);
+    font: 800 10px var(--f-mono);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    background: none;
+    padding: 0;
+  }
+  .mobile-more-menu .mm-head { position: sticky; top: -14px; z-index: 1; display: flex; align-items: center; gap: 9px; margin: -14px -14px 4px; padding: 12px 14px; background: #07101ff2; border-bottom: 1px solid var(--f-hair2); }
+  .mobile-more-menu .mm-head img { border-radius: 6px; }
+  .mobile-more-menu .mm-head b { color: var(--f-bone); font: 800 13px var(--f-display); letter-spacing: .06em; }
+  .mobile-more-menu .mm-close { margin-left: auto; padding: 7px 10px; color: var(--f-dim); background: rgba(233,239,250,.05); font-size: 12px; }
+  .mobile-more-menu .mm-create { margin-top: 10px; color: var(--f-ink); background: linear-gradient(100deg, var(--f-amber), var(--f-brass)); font-weight: 850; }
   .mobile-trade-dock { bottom: 84px; }
 }
 
@@ -3820,6 +3836,8 @@ label, .panel-head small { color: var(--f-dim); }
 .nav-links .nav-group > div a:hover, .nav-links .nav-group > div button:hover { background: rgba(31,182,240,.10); }
 .nav-group b { color: var(--f-bone); font: 700 12px var(--f-body); }
 .nav-group small { color: var(--f-faint); font: 500 10px var(--f-body); }
+/* Right-most group's menu anchors to the right edge so it never clips the viewport. */
+.nav-links .nav-group:last-child > div { left: auto; right: 0; transform: none; }
 
 /* ---- Inner-page hardcoded-light surfaces → dark (families) ---- */
 /* Market screener */
@@ -4457,3 +4475,25 @@ footer::before {
 /* Landing embedded below the global hero (its own duplicate hero was removed). */
 .lp-embedded{padding-top:8px}
 .lp-embedded .lp-ticker{margin-top:0}
+
+/* Landing — full product/feature stack grid (four pillars) */
+.lp-products > .lp-kicker { color: var(--f-amberhi); }
+.lp-products h2 { color: var(--f-bone); }
+.lp-products-sub { max-width: 720px; margin: 12px 0 0; color: var(--f-dim); font-size: 15px; line-height: 1.7; }
+.lp-pillars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 36px; }
+.lp-pillar { display: grid; align-content: start; gap: 6px; padding: 22px; border: 1px solid var(--f-hair2); border-radius: 18px; background: linear-gradient(155deg, var(--f-ink3), var(--f-ink2)); }
+.lp-pillar > header { margin-bottom: 8px; }
+.lp-pillar h3 { margin: 0 0 4px; color: var(--f-bone); font: 800 18px var(--f-display); letter-spacing: .01em; }
+.lp-pillar > header span { color: var(--f-faint); font-size: 12px; line-height: 1.5; }
+.lp-pillar ul { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.lp-pillar li a, .lp-pillar li button {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 10px; width: 100%;
+  padding: 11px 12px; border: 0; border-radius: 12px; background: rgba(233,239,250,.03);
+  text-align: left; text-decoration: none; cursor: pointer;
+}
+.lp-pillar li a:hover, .lp-pillar li button:hover { background: rgba(31,182,240,.10); }
+.lp-pillar li b { color: var(--f-bone); font: 700 13px var(--f-body); }
+.lp-pillar li small { grid-column: 1; color: var(--f-dim); font-size: 11px; line-height: 1.5; }
+.lp-pillar li i { grid-column: 2; grid-row: 1 / span 2; color: var(--f-amber); font-style: normal; font-weight: 800; }
+@media (max-width: 1080px) { .lp-pillars { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .lp-pillars { grid-template-columns: 1fr; } }

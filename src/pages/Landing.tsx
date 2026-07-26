@@ -68,6 +68,47 @@ const RAILS = [
   },
 ] as const;
 
+const PILLARS: { group: string; blurb: string; items: { name: string; desc: string; tab?: string; href?: string }[] }[] = [
+  {
+    group: "Money", blurb: "A non-custodial home for USDC and EURC.",
+    items: [
+      { name: "Wallet", desc: "Self-custody USDC + EURC on Arc. No keys held, no custody taken.", href: "https://wallet.arcodian.fun/" },
+      { name: "Pay", desc: "Exact-value invoices that settle once, with a 0.30% fee taken atomically.", tab: "arcpay" },
+      { name: "Swap", desc: "Trade any Arc token on the canonical AMM.", tab: "swap" },
+      { name: "Bridge", desc: "Move USDC in and out over official Circle CCTP — no bridge holding your funds.", tab: "bridge" },
+      { name: "Stablecoin FX", desc: "Convert USDC ⇄ EURC at one transparent rate.", tab: "fx" },
+    ],
+  },
+  {
+    group: "Market", blurb: "Discover, launch, and put idle USDC to work.",
+    items: [
+      { name: "Markets", desc: "Every Arc coin on one live radar with price, holders, and graduation.", tab: "screener" },
+      { name: "Launchpad", desc: "Deploy a coin in minutes on a readable bonding curve — liquidity burns at graduation.", tab: "screener" },
+      { name: "Lend", desc: "Isolated USDC market: supply to earn, or borrow against EURC up to 70% LTV.", href: "https://lend.arcodian.fun/" },
+    ],
+  },
+  {
+    group: "Agent economy", blurb: "Give software money with limits, not a blank check.",
+    items: [
+      { name: "Agent Passport", desc: "ERC-8004 identity bound to an authorized wallet. Identity never grants spend by itself.", tab: "developers" },
+      { name: "Agent Pay", desc: "One isolated vault per owner with per-payment, daily, expiry, and merchant limits.", tab: "agentpay" },
+      { name: "Jobs", desc: "Outcome escrow settled in USDC only when a job is verifiably completed.", tab: "jobs" },
+      { name: "Reputation", desc: "Objective, evidence-backed scores from real completed jobs and independent validation.", tab: "jobs" },
+      { name: "Arcodian MCP", desc: "Agents read state and get unsigned transactions to sign — the server never holds a key.", href: "https://arcodian.fun/mcp" },
+      { name: "Scoped delegation", desc: "Session-key and timelock spikes that enforce capability, amount, time, and revocation on-chain.", tab: "contracts" },
+    ],
+  },
+  {
+    group: "Build & trust", blurb: "Everything is a public contract you can verify.",
+    items: [
+      { name: "Developers", desc: "SDK, machine-readable registry, event schemas, and the MCP endpoint.", tab: "developers" },
+      { name: "Trust Center", desc: "Every canonical address with a live on-chain wiring proof.", tab: "contracts" },
+      { name: "Analytics", desc: "Public protocol metrics read straight from chain.", tab: "analytics" },
+      { name: "Treasury", desc: "Where protocol fees go, in the open.", tab: "treasury" },
+    ],
+  },
+];
+
 const STEPS = [
   { n: "01", title: "Discover", desc: "New coins surface the moment they launch. Price discovery starts in the open, on a curve anyone can read." },
   { n: "02", title: "Launch", desc: "Deploy in minutes with no hidden allocation. Supply and distribution are verifiable from the first block." },
@@ -275,6 +316,27 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
             <p className="lp-empty">{failed ? "Could not reach the market index." : "The floor is syncing with Arc."}</p>
           )}
         </div>
+      </div>
+    </section>
+
+    <section className="lp-section lp-products">
+      <p className="lp-kicker">/ The full stack</p>
+      <h2>Everything Arcodian does on Arc.</h2>
+      <p className="lp-products-sub">One economy, four pillars — a self-custody money app, an open market, a bounded agent economy, and public contracts you can verify.</p>
+      <div className="lp-pillars">
+        {PILLARS.map((pillar) => (
+          <div className="lp-pillar" key={pillar.group}>
+            <header><h3>{pillar.group}</h3><span>{pillar.blurb}</span></header>
+            <ul>
+              {pillar.items.map((item) => {
+                const inner = <><b>{item.name}</b><small>{item.desc}</small></>;
+                return <li key={item.name}>{item.href
+                  ? <a href={item.href} target="_blank" rel="noreferrer">{inner}<i aria-hidden="true">→</i></a>
+                  : <button type="button" onClick={() => openTab(item.tab!)}>{inner}<i aria-hidden="true">→</i></button>}</li>;
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
     </section>
 
