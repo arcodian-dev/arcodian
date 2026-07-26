@@ -1,6 +1,17 @@
 /* Phase C reputation view — inherits the dark agent palette
    (#07111d bg, #0c1b2a panel, #20364a border, #eaf4ff ink, #91a7bb muted, #49dcc4 accent). */
 .rep{margin-top:1.8rem;display:grid;gap:14px}
+.agent-profile{max-width:1120px}
+.agent-profile-hero{display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;padding:26px;border:1px solid #20364a;border-radius:24px;background:radial-gradient(circle at 90% 10%,#159aff22,transparent 42%),linear-gradient(145deg,#0d1c30,#081321)}
+.agent-profile-hero p{margin:0;color:#49dcc4;font:800 11px monospace;letter-spacing:.16em}
+.agent-profile-hero h1{margin:10px 0 4px}.agent-profile-hero h2{margin:0 0 8px;color:#eaf4ff;font-size:22px}.agent-profile-hero span{display:block;max-width:680px;color:#91a7bb;line-height:1.6}
+.agent-profile-hero aside{display:grid;place-items:center;gap:10px;min-width:150px}
+.agent-profile-hero img,.agent-profile-hero aside>b{width:128px;height:128px;border-radius:22px;border:1px solid #49dcc455;background:#071522;object-fit:cover}
+.agent-profile-hero aside>b{display:grid;place-items:center;color:#49dcc4;font-size:28px}
+.agent-profile-hero aside small{color:#91a7bb}.agent-profile-hero aside small.ok{color:#4bd486}.agent-profile-hero aside small.bad{color:#ff8a8a}
+.agent-binding{margin-top:16px;padding:20px;border:1px solid #20364a;border-radius:18px;background:#0c1b2a}
+.agent-binding>p{margin:0 0 14px;color:#49dcc4;font:800 11px monospace;letter-spacing:.16em}
+.agent-binding dl{margin:0}
 .rep-kicker{color:#49dcc4;font:800 11px monospace;letter-spacing:.16em;margin:0}
 .rep-empty{display:grid;gap:5px;padding:16px;border:1px dashed #3a5a72;border-radius:12px;color:#91a7bb}
 .rep-empty b{color:#eaf4ff}
@@ -37,4 +48,4 @@
 .rep-fb a{color:#49dcc4;text-decoration:none}
 .rep-fb.unverified{color:#91a7bb}
 
-@media(max-width:850px){.rep-context{grid-template-columns:1fr}.rep-head{flex-direction:column;align-items:flex-start}}
+@media(max-width:850px){.rep-context{grid-template-columns:1fr}.rep-head{flex-direction:column;align-items:flex-start}.agent-profile-hero{grid-template-columns:1fr}.agent-profile-hero aside{justify-items:start}.agent-profile-hero img,.agent-profile-hero aside>b{width:96px;height:96px}}

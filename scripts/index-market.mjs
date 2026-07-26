@@ -4,22 +4,12 @@ import { dirname } from "node:path";
 
 const rpc = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network/";
 const output = process.env.INDEX_OUTPUT || new URL("../public/data/market-index.json", import.meta.url).pathname;
-// Canonical factories first, then every retired one. A factory missing from
-// this list is not "old", it is invisible — its coins vanish from the market.
-// The v8 USDC factory was missing here for a day after it went live, which is
-// why the canonical addresses now lead the list and are commented as such.
+// Canonical v9 factories only. Retired deployments remain readable on-chain,
+// but must never leak back into the public market index after a stack reset.
 const factories = (process.env.PUMP_FACTORIES ||
   [
-    "0x0876Df73010d4Cf830daFfCc6Ddc1cC852B1840B@8", // canonical USDC (hub)
-    "0xc95C0e4A098C97C5435397093CAbE0Bc2cBb677c@8", // canonical EURC (hub)
-    "0x978eB4e63f2Eabf23FB984BBdAB291f29862dB8d@8", // v8 USDC, pre-hub
-    "0x73471B058a26b62CD0f77d5409d83de5c5A502AC@7", // EURC, pre-hub
-    "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774@7",
-    "0x454529204A0B0846Cc0dF37CFdFf3De8541B36e4@6",
-    "0xA26eD2d51264246f7dDF8EB33626e999E592c309",
-    "0x450883D80e46D866c81dd64CAbE216071b2DB651",
-    "0x4925Cd48Cae870730286e058a3c9020f2892eb6A",
-    "0x7D0b32E57D0e52da3aac5E18c761029E7b179113",
+    "0x0604f54450565B393e8F52078a28F260845e3064@9", // canonical USDC v9
+    "0xcEBdF68043b73cff75c4ea5872A24a4998B51774@9", // canonical EURC v9
   ].join(","))
   .split(",")
   .filter(Boolean)
@@ -194,7 +184,7 @@ if (previous?.arena?.roundId && previous.arena.roundId !== roundId && previous.a
   if (!arenaHistory.some((entry) => entry.roundId === previous.arena.roundId)) arenaHistory.unshift({ roundId: previous.arena.roundId, winner, finalizedAt: new Date().toISOString() });
 }
 arenaHistory = arenaHistory.slice(0, 12);
-const payload = JSON.stringify({ version: 5, chainId: 5042002, indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
+const payload = JSON.stringify({ version: 6, chainId: 5042002, engineVersion: 9, factories: factories.map(({address})=>address), indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
 await mkdir(dirname(output), { recursive: true });
 await writeFile(`${output}.tmp`, payload, { mode: 0o644 });
 await rename(`${output}.tmp`, output);

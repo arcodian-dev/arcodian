@@ -28,13 +28,13 @@ export default function AgentProfile({agentId}:{agentId:string}){
   const evidenceBacked=(rep?.feedback||[]).filter((f:any)=>f.evidenceBacked);
   const unverified=(rep?.feedback||[]).filter((f:any)=>!f.evidenceBacked);
   return <section className="agent-profile">
-    <p>ERC-8004 AGENT PASSPORT</p><h1>Agent #{agentId}</h1>
-    {meta&&<><h2>{meta.name}</h2><p>{meta.description}</p>{meta.image&&<img src={meta.image} alt={meta.name} style={{maxWidth:160,borderRadius:12}}/>}</>}
+    <header className="agent-profile-hero"><div><p>ERC-8004 AGENT PASSPORT</p><h1>Agent #{agentId}</h1>{meta&&<><h2>{meta.name}</h2><span>{meta.description}</span></>}</div>
+    <aside>{meta?.image?<img src={meta.image} alt={meta.name}/>:<b>#{agentId}</b>}<small className={integrity==="ok"?"ok":integrity==="fail"?"bad":""}>{integrity==="ok"?"✓ Metadata verified":integrity==="fail"?"⚠ Integrity failed":"Reading identity…"}</small></aside></header>
     {err&&<p className="err">Identity metadata unavailable: {err}</p>}
-    <dl><dt>Owner</dt><dd>{owner||"…"}</dd><dt>Authorized wallet</dt><dd>{wallet&&wallet!=="0x0000000000000000000000000000000000000000"?wallet:"— not bound —"}</dd>
+    <section className="agent-binding"><p>IDENTITY BINDING</p><dl><dt>Owner</dt><dd>{owner||"…"}</dd><dt>Authorized wallet</dt><dd>{wallet&&wallet!=="0x0000000000000000000000000000000000000000"?wallet:"— not bound —"}</dd>
     <dt>Metadata URI</dt><dd>{uri||"…"}</dd>
     <dt>Metadata integrity</dt><dd>{integrity==="ok"?"✓ verified":integrity==="fail"?"⚠ integrity failed":"…"}</dd>
-    <dt>Capabilities</dt><dd>{meta?.capabilities?.join(", ")||"—"}</dd><dt>Payment modes</dt><dd>{meta?.supportedPaymentModes?.join(", ")||"—"}</dd></dl>
+    <dt>Capabilities</dt><dd>{meta?.capabilities?.join(", ")||"—"}</dd><dt>Payment modes</dt><dd>{meta?.supportedPaymentModes?.join(", ")||"—"}</dd></dl></section>
 
     <section className="rep">
       <p className="rep-kicker">REPUTATION · VERIFIED OUTCOMES</p>

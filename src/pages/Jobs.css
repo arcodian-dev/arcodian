@@ -1,6 +1,15 @@
 /* Agent Jobs — inherits the dark agent-pay palette (bg #07111d, panel #0c1b2a,
    border #20364a, text #eaf4ff, muted #91a7bb, accent #49dcc4). */
 .jobs-page h1{max-width:12ch}
+.jobs-overview{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}
+.jobs-overview article{padding:18px;border:1px solid #20364a;border-radius:16px;background:linear-gradient(145deg,#0d1c30,#091424)}
+.jobs-overview small{display:block;color:#6f8296;font:800 10px monospace;letter-spacing:.11em}
+.jobs-overview strong{display:block;margin:8px 0 4px;color:#eaf4ff;font-size:clamp(20px,2.4vw,30px)}
+.jobs-overview span{color:#91a7bb;font-size:12px}
+.jobs-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;margin-bottom:22px;border:1px solid #20364a;border-radius:14px;overflow:hidden;background:#20364a}
+.jobs-flow span{display:grid;grid-template-columns:auto 1fr;gap:2px 9px;padding:13px 15px;background:#081523}
+.jobs-flow i{grid-row:1/3;color:#49dcc4;font:800 11px monospace}
+.jobs-flow b{color:#eaf4ff;font-size:13px}.jobs-flow small{color:#6f8296}
 .jobs-tabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 18px}
 .jobs-tabs button{border:1px solid #20364a;border-radius:999px;padding:9px 16px;background:#0c1b2a;color:#91a7bb;font-weight:700;cursor:pointer}
 .jobs-tabs button.active{border-color:#49dcc4;background:#49dcc4;color:#07111d}
@@ -56,7 +65,10 @@ a.jobs-row:hover{background:#102135}
 .job-reclaim button:disabled{opacity:.4}
 
 @media(max-width:850px){
+  .jobs-overview{grid-template-columns:1fr 1fr}
+  .jobs-flow{grid-template-columns:1fr 1fr}
   .jobs-row{grid-template-columns:.6fr 1fr 1fr;gap:8px}
   .jobs-row span:nth-child(4),.jobs-row span:nth-child(5),.jobs-row span:nth-child(6){display:none}
   .jobs-decision{grid-template-columns:1fr}
 }
+@media(max-width:520px){.jobs-overview,.jobs-flow{grid-template-columns:1fr}}

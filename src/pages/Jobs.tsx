@@ -52,9 +52,19 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
   const shown=useMemo(()=>filter==="All"?feed:feed.filter(j=>j.status===filter),[feed,filter]);
   const mineProvider=useMemo(()=>feed.filter(j=>eq(j.provider,account)&&j.status==="Funded"),[feed,account]);
   const mineEvaluator=useMemo(()=>feed.filter(j=>eq(j.evaluator,account)&&j.status==="Submitted"),[feed,account]);
+  const settled=useMemo(()=>feed.filter(j=>j.status==="Completed"),[feed]);
+  const totalEscrow=useMemo(()=>feed.reduce((sum,j)=>sum+BigInt(j.budget||"0"),0n),[feed]);
 
   return <main className="agent-pay jobs-page">
     <header><p>AGENT JOBS · OUTCOME ESCROW</p><h1>Fund the outcome.<br/>Pay on delivery.</h1><span>A shared, permissionless registry: any wallet funds a job in USDC, a provider delivers, and a named evaluator approves — settling 99.7% to the provider (0.3% protocol fee via Arc Pay) — or rejects to refund you. Unlimited clients run concurrently, isolated per job.</span><div><b>LIVE REGISTRY</b><a href={`${ARC.explorer}/address/${AGENT_JOBS_ADDRESS}`} target="_blank" rel="noreferrer">{short(AGENT_JOBS_ADDRESS)} ↗</a></div></header>
+
+    <section className="jobs-overview" aria-label="Jobs network overview">
+      <article><small>JOBS INDEXED</small><strong>{feed.length}</strong><span>Independent escrow records</span></article>
+      <article><small>TOTAL ESCROWED</small><strong>{Number(formatEther(totalEscrow)).toLocaleString(undefined,{maximumFractionDigits:2})} USDC</strong><span>Funded through the registry</span></article>
+      <article><small>SETTLED OUTCOMES</small><strong>{settled.length}</strong><span>Released after evaluation</span></article>
+      <article><small>YOUR ACTIONS</small><strong>{mineProvider.length+mineEvaluator.length}</strong><span>Awaiting delivery or review</span></article>
+    </section>
+    <section className="jobs-flow" aria-label="Outcome escrow flow"><span><i>01</i><b>Fund</b><small>Client locks USDC</small></span><span><i>02</i><b>Deliver</b><small>Provider anchors proof</small></span><span><i>03</i><b>Evaluate</b><small>Named reviewer decides</small></span><span><i>04</i><b>Settle</b><small>Arc Pay releases or refunds</small></span></section>
 
     <nav className="jobs-tabs" aria-label="Jobs views">
       {(["board","create","provider","evaluator"] as View[]).map(v=>

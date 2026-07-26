@@ -1,19 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
-  <title id="title">Arcodian orbital mark</title>
-  <defs>
-    <linearGradient id="arc-g" x1="36" y1="30" x2="214" y2="226" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#16D6FF"/><stop offset=".46" stop-color="#0969E8"/><stop offset="1" stop-color="#081A68"/>
-    </linearGradient>
-    <linearGradient id="arc-c" x1="86" y1="90" x2="172" y2="178" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#35E6FF"/><stop offset="1" stop-color="#0872E8"/>
-    </linearGradient>
-  </defs>
-  <path d="M42 165A94 94 0 0 1 128 31a94 94 0 0 1 86 134" fill="none" stroke="url(#arc-g)" stroke-width="15" stroke-linecap="round"/>
-  <path d="m128 24 59 104-24-13-35-61-35 61-24 13z" fill="url(#arc-g)"/>
-  <path d="m72 126 56-34 56 34-9 77-47 30-47-30zm23 15 8 49 25 16 25-16 8-49-33-20z" fill="url(#arc-g)" fill-rule="evenodd"/>
-  <ellipse cx="128" cy="145" rx="116" ry="35" fill="none" stroke="url(#arc-c)" stroke-width="7"/>
-  <circle cx="128" cy="145" r="30" fill="#fff" stroke="url(#arc-c)" stroke-width="7"/>
-  <path d="M128 123c3 13 9 19 22 22-13 3-19 9-22 22-3-13-9-19-22-22 13-3 19-9 22-22" fill="url(#arc-c)"/>
-  <circle cx="31" cy="145" r="8" fill="#16D6FF" stroke="#fff" stroke-width="4"/>
-  <circle cx="225" cy="145" r="8" fill="#0969E8" stroke="#fff" stroke-width="4"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Arcodian AC monogram">
+  <defs><linearGradient id="g" x1="220" y1="130" x2="820" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#19F2ED"/><stop offset=".48" stop-color="#159AFF"/><stop offset="1" stop-color="#8050FF"/></linearGradient></defs>
+  <path fill="url(#g)" d="M512 94 177 751c-21 41-13 90 21 123l66-128 248-486 107 210h136L569 108c-23-44-44-44-57-14Z"/>
+  <path fill="url(#g)" d="M833 450H547c-146 0-264 115-264 257s118 257 264 257h286l-71-103H547c-87 0-157-69-157-154s70-154 157-154h216l70-103Z"/>
 </svg>
