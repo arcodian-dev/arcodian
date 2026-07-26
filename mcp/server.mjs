@@ -44,7 +44,11 @@ function buildServer(ip) {
 }
 
 const httpServer = createServer(async (req, res) => {
-  const ip = (req.headers["x-forwarded-for"]?.split(",")[0] || req.socket.remoteAddress || "unknown").trim();
+  // The service is loopback-only and Apache appends the real client address to
+  // X-Forwarded-For. Use the final hop so a client-supplied prefix cannot evade
+  // the per-IP rate limiter.
+  const forwarded = req.headers["x-forwarded-for"]?.split(",").at(-1);
+  const ip = (forwarded || req.socket.remoteAddress || "unknown").trim();
   if (req.method === "GET" && req.url === "/health") { res.writeHead(200).end("ok"); return; }
   if (req.method !== "POST" || req.url !== "/") {
     res.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not found" }));
