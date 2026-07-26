@@ -3785,6 +3785,35 @@ label, .panel-head small { color: var(--f-dim); }
 }
 .nav-links .active:hover, .nav-links a.active:hover { color: var(--f-ink); background: var(--f-amberhi); }
 
+/* Grouped product navigation */
+.nav-group { position: relative; }
+.nav-group summary {
+  display: flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 12px;
+  border-radius: 9px; color: var(--f-dim); cursor: pointer; list-style: none;
+  font: 500 12px var(--f-mono); letter-spacing: .03em;
+}
+.nav-group summary::-webkit-details-marker { display: none; }
+.nav-group summary i { color: var(--f-faint); font-style: normal; transition: transform .18s ease; }
+.nav-group[open] summary i { transform: rotate(180deg); }
+.nav-group:hover summary, .nav-group[open] summary { color: var(--f-bone); background: rgba(233,239,250,.06); }
+.nav-group.active summary { color: var(--f-ink); background: var(--f-amber); }
+.nav-group.active summary i { color: var(--f-ink); }
+.nav-group > div {
+  position: absolute; top: calc(100% + 12px); left: 50%; z-index: 80;
+  display: grid; min-width: 245px; padding: 8px; transform: translateX(-50%);
+  border: 1px solid var(--f-hair2); border-radius: 15px;
+  background: rgba(10,20,40,.98); box-shadow: 0 22px 60px rgba(0,0,0,.48);
+  backdrop-filter: blur(20px);
+}
+.nav-links .nav-group > div a, .nav-links .nav-group > div button {
+  display: grid; width: 100%; min-width: 0; gap: 3px; padding: 11px 12px;
+  border: 0; border-radius: 10px; color: var(--f-bone); background: transparent;
+  text-align: left; text-decoration: none; text-transform: none;
+}
+.nav-links .nav-group > div a:hover, .nav-links .nav-group > div button:hover { background: rgba(31,182,240,.10); }
+.nav-group b { color: var(--f-bone); font: 700 12px var(--f-body); }
+.nav-group small { color: var(--f-faint); font: 500 10px var(--f-body); }
+
 /* ---- Inner-page hardcoded-light surfaces → dark (families) ---- */
 /* Market screener */
 .board-head { background: none; box-shadow: none; border-color: var(--f-hair); }

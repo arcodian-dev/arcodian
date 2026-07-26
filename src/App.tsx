@@ -697,30 +697,33 @@ export default function App() {
           <span className="brand-name">ARCODIAN<small>ARC MARKETS</small></span>
         </button>
         <div className="nav-links">
-          {([
-            ["wallet", "wallet"],
-            ["screener", "market"],
-            ["swap", "swap"],
-            ["bridge", "bridge"],
-            ["arcpay", "pay"],
-            ["how", "docs"],
-          ] as Array<[Tab, string]>).map(([item, label]) => {
-            const href = navHref(item, host);
-            const active = tab === item || (item === "how" && (tab === "contracts" || tab === "faq" || tab === "canary"));
-            return href ? (
-              <a key={item} className={active ? "active" : ""} href={href} target="_blank" rel="noreferrer">
-                {label}
-              </a>
-            ) : (
-              <button key={item} className={active ? "active" : ""} onClick={() => chooseTab(item)}>
-                {label}
-              </button>
-            );
-          })}
-          <a href="https://lend.arcodian.fun/" target="_blank" rel="noreferrer">lend</a>
+          <details className={`nav-group ${["wallet", "swap", "bridge"].includes(tab) ? "active" : ""}`}>
+            <summary>Product <i>⌄</i></summary>
+            <div>
+              <a href={navHref("wallet", host) || "/wallet"}><b>Wallet</b><small>Self-custody on Arc</small></a>
+              <button onClick={() => chooseTab("swap")}><b>Swap</b><small>Trade Arc assets</small></button>
+              <button onClick={() => chooseTab("bridge")}><b>Bridge</b><small>Move USDC with CCTP</small></button>
+            </div>
+          </details>
+          <details className={`nav-group ${["screener"].includes(tab) ? "active" : ""}`}>
+            <summary>Market <i>⌄</i></summary>
+            <div>
+              <a href="https://lend.arcodian.fun/"><b>Lend</b><small>Supply and borrow</small></a>
+              <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
+            </div>
+          </details>
+          <button className={tab === "arcpay" ? "active" : ""} onClick={() => chooseTab("arcpay")}>Pay</button>
+          <details className={`nav-group ${["agentpay", "jobs"].includes(tab) ? "active" : ""}`}>
+            <summary>Agent <i>⌄</i></summary>
+            <div>
+              <button onClick={() => chooseTab("agentpay")}><b>Agent Pay</b><small>Bounded agent spending</small></button>
+              <button onClick={() => chooseTab("jobs")}><b>Jobs</b><small>Outcome escrow</small></button>
+            </div>
+          </details>
+          <button className={["how", "contracts", "faq", "canary"].includes(tab) ? "active" : ""} onClick={() => chooseTab("how")}>Docs</button>
           <details className="nav-more">
             <summary>more</summary>
-            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("agentpay")}>Agent Pay</button><button onClick={() => chooseTab("jobs")}>Agent Jobs</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
+            <div><button onClick={() => chooseTab("fx")}>Stablecoin FX</button><button onClick={() => chooseTab("analytics")}>Analytics</button><button onClick={() => chooseTab("treasury")}>Treasury</button><button onClick={() => chooseTab("developers")}>Developers</button><button onClick={() => chooseTab("contracts")}>Contracts</button></div>
           </details>
         </div>
         <div className="wallet-area">

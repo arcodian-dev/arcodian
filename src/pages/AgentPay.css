@@ -20,3 +20,30 @@
 .agent-profile dd{word-break:break-all;margin:0}
 .agent-profile .phase-pending{display:flex;flex-direction:column;gap:.3rem;margin-top:1.6rem;padding:1rem;border:1px dashed #3a5a72;border-radius:12px;color:#91a7bb}
 @media(max-width:850px){.agent-profile{padding:100px 15px}.agent-profile dl{grid-template-columns:1fr}}
+
+/* Arcodian unified theme */
+.agent-pay{
+  background:
+    radial-gradient(900px 520px at 84% 0,rgba(31,182,240,.09),transparent 58%),
+    radial-gradient(720px 460px at 8% 18%,rgba(128,80,255,.06),transparent 58%),var(--f-ink);
+  color:var(--f-bone);font-family:var(--f-body)
+}
+.agent-pay header p,.agent-grid section>p,.agent-identity>p{color:var(--f-amber);font-family:var(--f-mono)}
+.agent-pay h1,.agent-pay h2,.agent-pay h3{font-family:var(--f-display);text-transform:uppercase;letter-spacing:.01em}
+.agent-pay h1{max-width:10ch}
+.agent-pay header>span,.agent-pay small,.agent-pay footer,.agent-grid label,.agent-identity label,.agent-identity>span{color:var(--f-dim)}
+.agent-pay header b{background:var(--f-amber);color:var(--f-ink)}
+.agent-pay a,.agent-grid code,.agent-status{color:var(--f-amberhi)}
+.agent-assurance{display:grid;grid-template-columns:repeat(3,1fr);max-width:900px;margin:30px 0 8px;border:1px solid var(--f-hair);border-radius:16px;overflow:hidden;background:rgba(233,239,250,.025)}
+.agent-assurance span{display:grid;grid-template-columns:auto 1fr;gap:3px 12px;padding:17px;border-right:1px solid var(--f-hair)}
+.agent-assurance span:last-child{border:0}.agent-assurance i{grid-row:1/3;color:var(--f-amber);font:600 11px var(--f-mono);font-style:normal}.agent-assurance b{padding:0;background:none;color:var(--f-bone)}.agent-assurance small{font-size:10px}
+.agent-metrics article,.agent-grid section,.agent-identity,.agent-onboard,.agent-activity{
+  border-color:var(--f-hair);background:linear-gradient(158deg,rgba(14,26,51,.68),rgba(7,14,30,.54));box-shadow:inset 0 1px rgba(255,255,255,.03)
+}
+.agent-metrics small{font-family:var(--f-mono);color:var(--f-faint)}.agent-metrics strong{font-family:var(--f-display)}
+.agent-grid input,.agent-identity input{border-color:var(--f-hair);background:rgba(233,239,250,.04);color:var(--f-bone)}
+.agent-grid button,.agent-connect,.agent-identity button{border-color:var(--f-amber);background:var(--f-amber);color:var(--f-ink)}
+.agent-grid button:hover,.agent-connect:hover,.agent-identity button:hover{background:var(--f-amberhi)}
+.agent-grid aside,.agent-identity aside{background:rgba(6,12,26,.72);border:1px solid var(--f-hair)}
+.agent-pay footer{border-color:var(--f-hair);background:transparent}
+@media(max-width:700px){.agent-assurance{grid-template-columns:1fr}.agent-assurance span{border-right:0;border-bottom:1px solid var(--f-hair)}}
