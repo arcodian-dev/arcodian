@@ -34,7 +34,7 @@ const CANONICAL = {
 
 describe("canonical stack integrity", () => {
   it("declares the engine version the rest of the app reports", () => {
-    expect(ENGINE_VERSION).toBe(9);
+    expect(ENGINE_VERSION).toBe(10);
   });
 
   it("has no canonical address that is also marked retired", () => {

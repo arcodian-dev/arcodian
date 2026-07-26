@@ -395,7 +395,7 @@ export default function Screener({
       <section className="market-proof-strip" aria-label="Canonical market proof">
         <span><small>ENGINE</small><b>v{ENGINE_VERSION}</b></span>
         <span><small>FACTORIES</small><b>USDC + EURC canonical</b></span>
-        <span><small>GRADUATION</small><b>4,500 stablecoin reserve</b></span>
+        <span><small>GRADUATION</small><b>12,000 stablecoin reserve</b></span>
         <a href="/contracts">Verify deployment →</a>
       </section>
       {marketView === "arena" && <div className="arena-workspace">
@@ -1672,7 +1672,7 @@ function Launch({
         <div>
           <p className="kicker">Launch studio · Arc testnet</p>
           <h3>Build the coin.<br/><em>We handle the market.</em></h3>
-          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 4,500 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
+          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 12,000 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
         </div>
         <span className="launch-network"><i/> Canonical v{ENGINE_VERSION}</span>
       </div>
@@ -1719,7 +1719,7 @@ function Launch({
             <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
             <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
           </div>
-          <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 4,500 {quoteChoice}.</small>
+          <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 12,000 {quoteChoice}.</small>
         </label>
         <div className="launch-section-title launch-section-social"><span>02</span><div><b>Community</b><small>Optional discovery links</small></div></div>
         <label>
@@ -1757,7 +1757,7 @@ function Launch({
         <div className="preview-token-art">{image ? <img src={imageUrl(image)} alt="" /> : <b>{symbol?.[0]?.toUpperCase() || "A"}</b>}</div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
-        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>4,500 {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
+        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>12,000 {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
         <div className="launch-readiness"><b>{launchReady ? "Ready to launch" : "Complete required fields"}</b><div><i className={identityReady ? "done" : ""}/><i className={image ? "done" : ""}/><i className={launchReady ? "done" : ""}/></div></div>
         <small className="preview-note">This is a visual preview. Contract addresses are created only after wallet confirmation.</small>
       </aside>

@@ -87,13 +87,35 @@ export const FX_AGGREGATOR_ALLOWED_TARGETS = (import.meta.env.VITE_FX_AGGREGATOR
 // Engine v9 preserves the curve price at graduation by burning excess unsold
 // inventory before seeding ArcPair. The launch factory is the stack root.
 // ---------------------------------------------------------------------------
-export const ENGINE_VERSION = 9;
-export const PUMP_FACTORY_ADDRESS = "0x0604f54450565B393e8F52078a28F260845e3064";
+// Engine v10 is a graduation-threshold migration, not an economics change:
+// same ArcPumpV8 curve math, same 1% (100 bps) curve fee, same ArcPair 0.30%
+// post-graduation swap fee. Only the net collateral raise required to
+// graduate moved from 4,500 to 12,000 (USDC and EURC alike). The threshold is
+// immutable per suite, and the graduation authority is a hub sealed with
+// exactly two members at deploy time (see ARC_GRADUATION_HUB_ADDRESS below),
+// so raising it can only be done by standing up a new hub + pair registry +
+// both pump factories together — never by mutating the live ones.
+export const ENGINE_VERSION = 10;
+export const PUMP_FACTORY_ADDRESS = "0x453a38aB960137e0294665d7C5A1BC0B1C41b9cc";
+export const GRADUATION_THRESHOLD_18 = "12000000000000000000000"; // 12,000 USDC, 18 decimals
 
 /// Superseded deployments. Recorded so history stays readable and so nothing
 /// here can be mistaken for the live stack. Do not export these individually;
 /// if one is needed again, promote it deliberately.
 export const RETIRED_DEPLOYMENTS = {
+  v9: {
+    pumpFactory: "0x0604f54450565B393e8F52078a28F260845e3064",
+    pairFactory: "0x4B71169F63A36d819421F10C0436A6A7d3C7253f",
+    hub: "0x39e146c99a774d7213Cc95F51C8Db7c2a3Ff7c43",
+    router: "0xa0da11008439829A37e01d0B9973F9199bB59DC2",
+    eurcPumpFactory: "0xcEBdF68043b73cff75c4ea5872A24a4998B51774",
+    retired: "2026-07-26",
+    note: "4,500 threshold. Graduated pairs here stay tradable forever (LP burned); only new launches moved to the v10 hub. Source predates this checkout and was reconstructed as ArcPumpV8 for the v10 migration — the exact v9 bytecode (a graduation-price-preserving tweak over v8) could not be recovered, so v10 intentionally reuses the audited, in-repo v8 curve rather than guess at unverified math.",
+  },
+  v9MistakenDeploy: {
+    suite: "0x02Cc1A1a94f0733C747ff48110faa05751f44106",
+    note: "Deployed against the wrong (self-contained ArcPump.sol) engine while diagnosing the threshold migration — its ArcDexPair uses buy()/sell(), incompatible with the frontend's post-graduation swap()/token0()/reserve0/1() calls. Never wired into any config; zero launches created on it.",
+  },
   v7: {
     suite: "0x59D8eDf019053c7D8fE48f906258960c092893AD",
     pumpFactory: "0x4D768da57277C1Ea6f74a4309cAFaFd21Bfc5774",
@@ -156,8 +178,8 @@ export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 // Since 2026-07-19 EURC graduates into ArcPair, like USDC — the v7-era suite
 // (0x73471B058a26b62CD0f77d5409d83de5c5A502AC) graduated into a private EURC
 // DEX nothing else could route through, and is retired.
-export const EURC_PUMP_FACTORY_ADDRESS = "0xcEBdF68043b73cff75c4ea5872A24a4998B51774";
-export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimals
+export const EURC_PUMP_FACTORY_ADDRESS = "0x171033cA9A61C71A73e0f68FfA3BEEFFEA44f2ef";
+export const EURC_GRADUATION_THRESHOLD_6 = "12000000000"; // 12,000 EURC, 6 decimals
 // Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
 // reserves from measured balances, so fee-on-transfer and rebasing tokens cannot
@@ -173,16 +195,24 @@ export const EURC_GRADUATION_THRESHOLD_6 = "4500000000"; // 4500 EURC, 6 decimal
 // one-time authority slot went to the USDC pump factory, so the EURC launchpad
 // could never register. Replaced while the registry still held zero pairs,
 // which is the only cheap moment to do it. Deployed 2026-07-19.
-export const ARC_PAIR_FACTORY_ADDRESS = "0x4B71169F63A36d819421F10C0436A6A7d3C7253f";
+// Third V2 instance. The second (0x4B71169F63A36d819421F10C0436A6A7d3C7253f)
+// is superseded by the v10 threshold migration below — its hub was sealed to
+// the two 4,500-threshold factories, and a sealed hub's membership can never
+// change, so raising the threshold required a new hub + registry rather than
+// a parameter change. Old pairs stay put and stay tradable; nothing there was
+// migrated. Deployed 2026-07-26.
+export const ARC_PAIR_FACTORY_ADDRESS = "0x0540915768713dFd4436D0D2669129BA6809d1A5";
 // One graduation authority standing in front of both pump factories, so USDC
 // and EURC launches land in the same pool registry instead of two. Sealed at
-// deployment with exactly two members; membership can never change.
-export const ARC_GRADUATION_HUB_ADDRESS = "0x39e146c99a774d7213Cc95F51C8Db7c2a3Ff7c43";
+// deployment with exactly two members; membership can never change. This is
+// the v10 hub (0x39e146c99a774d7213Cc95F51C8Db7c2a3Ff7c43 was v9's, retired
+// alongside its two 4,500-threshold factories).
+export const ARC_GRADUATION_HUB_ADDRESS = "0x8a6d61a12D31BBBf5c011fa70c2f4802377D60c9";
 // Router bound to the current factory. Each router hardcodes its factory, so a
 // factory change forces a new router; the prior ones were
-// 0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166 and
-// 0x3681d045a79A3290F3228575D99f26cB057b39d2.
-export const ARC_ROUTER_ADDRESS = "0xa0da11008439829A37e01d0B9973F9199bB59DC2";
+// 0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166, 0x3681d045a79A3290F3228575D99f26cB057b39d2,
+// and 0xa0da11008439829A37e01d0B9973F9199bB59DC2.
+export const ARC_ROUTER_ADDRESS = "0x84bC0825c1A7FC72AbD07967B9F910E8ff5bC650";
 export const FEE_TREASURY = "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF";
 // External FX routes charge five basis points (0.05%) on the server/provider
 // side. Quotes are compared after this fee. Revenue is reserved for paired,

@@ -4,12 +4,12 @@ import { dirname } from "node:path";
 
 const rpc = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network/";
 const output = process.env.INDEX_OUTPUT || new URL("../public/data/market-index.json", import.meta.url).pathname;
-// Canonical v9 factories only. Retired deployments remain readable on-chain,
+// Canonical v10 factories only. Retired deployments remain readable on-chain,
 // but must never leak back into the public market index after a stack reset.
 const factories = (process.env.PUMP_FACTORIES ||
   [
-    "0x0604f54450565B393e8F52078a28F260845e3064@9", // canonical USDC v9
-    "0xcEBdF68043b73cff75c4ea5872A24a4998B51774@9", // canonical EURC v9
+    "0x453a38aB960137e0294665d7C5A1BC0B1C41b9cc@10", // canonical USDC v10
+    "0x171033cA9A61C71A73e0f68FfA3BEEFFEA44f2ef@10", // canonical EURC v10
   ].join(","))
   .split(",")
   .filter(Boolean)
@@ -215,7 +215,7 @@ if (previous?.arena?.roundId && previous.arena.roundId !== roundId && previous.a
   if (!arenaHistory.some((entry) => entry.roundId === previous.arena.roundId)) arenaHistory.unshift({ roundId: previous.arena.roundId, winner, finalizedAt: new Date().toISOString() });
 }
 arenaHistory = arenaHistory.slice(0, 12);
-const payload = JSON.stringify({ version: 7, chainId: 5042002, engineVersion: 9, factories: factories.map(({address})=>address), indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
+const payload = JSON.stringify({ version: 7, chainId: 5042002, engineVersion: 10, factories: factories.map(({address})=>address), indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches, activity, arena: { roundId, standings: standings.slice(0, 10), history: arenaHistory } });
 await mkdir(dirname(output), { recursive: true });
 await writeFile(`${output}.tmp`, payload, { mode: 0o644 });
 await rename(`${output}.tmp`, output);

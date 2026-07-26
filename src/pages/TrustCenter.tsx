@@ -138,7 +138,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Money & market",
       note: "The USDC economy: payments, lending, and the permissionless launchpad.",
       cards: [
-        ["Launch Factory v9", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
+        ["Launch Factory v10", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
         ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
         ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
         ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
@@ -174,7 +174,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={address}><small>{label}</small><a href={`${ARC.explorer}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
     </div>)}
     <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Testnet…"}</h2><p>Read directly from chain {ARC.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
-    <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>4,500</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
+    <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>12,000</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
   </section>;
 }
 
@@ -299,7 +299,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div className="economics-flow">
         <div><i>01</i><small>Opening state</small><h3>1,000 USDC starting FDV</h3><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></div>
         <div><i>02</i><small>While trading</small><h3>Open price discovery</h3><p>Buys and sells execute against the curve. Every quote and minimum-output is computed on-chain before you sign.</p></div>
-        <div><i>03</i><small>Graduation</small><h3>4,500 USDC net reserve</h3><p>At the threshold, remaining tokens and real collateral move atomically into the canonical ARC DEX pair.</p></div>
+        <div><i>03</i><small>Graduation</small><h3>12,000 USDC net reserve</h3><p>At the threshold, remaining tokens and real collateral move atomically into the canonical ARC DEX pair.</p></div>
         <div><i>04</i><small>After graduation</small><h3>LP ownership burned</h3><p>All LP tokens are minted to the burn address. The token and collateral stay tradable; nobody can withdraw the liquidity.</p></div>
       </div>
     </article>
@@ -311,7 +311,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
         <div><small>Bonding-curve fee</small><strong>1.00%</strong><p>Charged on every curve buy and sell. Buy fees are removed before reserve growth.</p></div>
         <div><small>ARC DEX total swap fee</small><strong>0.30%</strong><p>Symmetric on buys and sells of the graduated pair.</p></div>
         <div><small>Protocol share</small><strong>0.05%</strong><p>Accrues in-contract and is withdrawn by pull, so trading never halts on a treasury failure.</p></div>
-        <div><small>Graduation threshold</small><strong>4,500</strong><p>Net collateral reserve. A final transaction can cross slightly above it.</p></div>
+        <div><small>Graduation threshold</small><strong>12,000</strong><p>Net collateral reserve. A final transaction can cross slightly above it.</p></div>
       </div>
     </article>
 

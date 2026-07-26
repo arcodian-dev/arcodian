@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "network": "Arc Testnet",
+  "decision": "NO_AUTOMATIC_MIGRATION",
+  "governanceTarget": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
+  "principles": [
+    "Never move user balances or positions without an explicit user transaction.",
+    "Keep repay, withdraw, refund, and claim paths available on legacy contracts.",
+    "Deploy replacements in parallel when an immutable fee recipient or owner cannot be changed.",
+    "Publish bytecode, constructor arguments, deployment receipts, and cutover blocks before changing canonical UI routing."
+  ],
+  "components": [
+    { "name": "ArcLend legacy markets", "action": "withdraw-repay-only", "status": "legacy-open", "automaticMigration": false },
+    { "name": "Arc Pay", "action": "parallel-vNext-required-for-multisig-fees", "status": "planned", "automaticMigration": false },
+    { "name": "Agent Pay internal v1", "action": "owner-withdraw-and-retire-after-zero-balance", "status": "planned", "automaticMigration": false },
+    { "name": "Agent Pay public factory v2", "action": "vault-owners-retain-control; no factory custody migration", "status": "retain", "automaticMigration": false },
+    { "name": "Legacy market and bridge fee recipients", "action": "parallel-version-and-explicit-canonical-cutover", "status": "inventory-required", "automaticMigration": false },
+    { "name": "Launchpad v9 (4,500 threshold, sealed hub)", "action": "graduated-pairs-remain-tradable-forever-LP-burned; new launches moved to v10 hub since a sealed hub's membership cannot change", "status": "retired-2026-07-26", "automaticMigration": false }
+  ],
+  "requiredBeforeCutover": [
+    "independent audit sign-off",
+    "final multisig signer custody approval",
+    "official mainnet registry",
+    "verified source and constructor arguments",
+    "two independent RPC/indexer observations",
+    "rollback and incident runbook"
+  ]
+}
