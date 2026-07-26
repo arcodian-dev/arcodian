@@ -4,6 +4,7 @@ import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
+import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -666,7 +667,7 @@ function TradingDesk({
   const [reportDetail, setReportDetail] = useState("");
   const [timeframe, setTimeframe] = useState<60 | 300 | 900 | 3600>(300);
   const [chartWindow, setChartWindow] = useState(30);
-  const [chartHover, setChartHover] = useState<number | null>(null);
+  const [chartHover, setChartHover] = useState<Candle | null>(null);
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [netCost, setNetCost] = useState(0n);
   const [liveTrades, setLiveTrades] = useState<
@@ -1101,11 +1102,6 @@ function TradingDesk({
   for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
   const candles = [...candleMap.entries()].sort(([a], [b]) => a - b).slice(-chartWindow).map(([time, points]) => { const prices=points.map(point=>point.price); return { time, open: prices[0], close: prices[prices.length - 1], high: Math.max(...prices), low: Math.min(...prices), volume: points.reduce((sum,point)=>sum+point.volume,0) }; });
   const visibleCandles = candles;
-  const chartLow = Math.min(...(visibleCandles.length ? visibleCandles.map((candle) => candle.low) : [0]));
-  const chartHigh = Math.max(...(visibleCandles.length ? visibleCandles.map((candle) => candle.high) : [1]));
-  const chartPad = (chartHigh - chartLow || chartHigh * .04 || 1) * .18;
-  const chartFloor = Math.max(0, chartLow - chartPad), chartCeil = chartHigh + chartPad, chartSpan = chartCeil - chartFloor || 1;
-  const candleY = (price: number) => 225 - ((price - chartFloor) / chartSpan) * 185;
   const lastPrice = tradePrices.at(-1)?.price || (inventory ? Number(x) / Number(inventory) : 0);
   const averageExecutionPrice = quote > 0n && amountWei > 0n ? side === "buy" ? Number(amountWei) / Number(quote) : Number(quote) / Number(amountWei) : 0;
   const priceImpact = lastPrice > 0 && averageExecutionPrice > 0 ? Math.abs(averageExecutionPrice - lastPrice) / lastPrice * 100 : 0;
@@ -1240,31 +1236,12 @@ function TradingDesk({
           <div className={`chart-panel ${chartFullscreen ? "chart-fullscreen" : ""}`}>
             <div className="chart-head">
               <div><span>Candlestick · price per {asset.symbol}</span><div className="chart-timeframes">{([[60,"1m"],[300,"5m"],[900,"15m"],[3600,"1h"]] as const).map(([seconds,label])=><button key={seconds} className={timeframe===seconds?"active":""} onClick={()=>{setTimeframe(seconds);setChartHover(null)}}>{label}</button>)}</div></div>
-              <div className="chart-tools"><b>{priceLabel(lastPrice)} {currency}</b><button onClick={()=>setChartWindow(value=>value===30?60:30)}>{chartWindow===30?"Zoom out":"Zoom in"}</button><button onClick={()=>setChartFullscreen(value=>!value)}>{chartFullscreen?"Exit":"Fullscreen"}</button></div>
+              <div className="chart-tools"><b>{priceLabel(lastPrice)} {currency}</b><button onClick={()=>setChartWindow(value=>value===30?60:30)}>{chartWindow===30?"More history":"Less history"}</button><button onClick={()=>setChartFullscreen(value=>!value)}>{chartFullscreen?"Exit":"Fullscreen"}</button></div>
             </div>
-            <div className={`hero-chart ${visibleCandles.length ? "has-data" : "is-empty"}`} onMouseLeave={()=>setChartHover(null)} onMouseMove={(event)=>{if(!visibleCandles.length)return;const rect=event.currentTarget.getBoundingClientRect();setChartHover(Math.max(0,Math.min(visibleCandles.length-1,Math.floor(((event.clientX-rect.left)/rect.width)*visibleCandles.length))))}}>
+            <div className={`hero-chart ${visibleCandles.length ? "has-data" : "is-empty"}`}>
               {!visibleCandles.length && <div className="chart-empty-state"><i>⌁</i><strong>Waiting for market activity</strong><small>The first confirmed buy or sell will create a candle here automatically.</small></div>}
-              {chartHover!==null&&visibleCandles[chartHover]&&<div className="chart-tooltip"><b>{new Date(visibleCandles[chartHover].time*1000).toLocaleString()}</b><span>O {priceLabel(visibleCandles[chartHover].open)}</span><span>H {priceLabel(visibleCandles[chartHover].high)}</span><span>L {priceLabel(visibleCandles[chartHover].low)}</span><span>C {priceLabel(visibleCandles[chartHover].close)}</span><span>Vol {visibleCandles[chartHover].volume.toLocaleString(undefined,{maximumFractionDigits:4})} {currency}</span></div>}
-              <svg viewBox="0 0 600 260" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="area" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#b9ff45" stopOpacity=".35" />
-                    <stop offset="1" stopColor="#b9ff45" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {[0, .25, .5, .75, 1].map((ratio) => <line key={ratio} x1="0" x2="600" y1={40 + ratio * 185} y2={40 + ratio * 185} stroke="#b8cce022" strokeWidth="1" />)}
-                {visibleCandles.length ? visibleCandles.map((candle, index) => {
-                  const xPos = ((index + .5) / visibleCandles.length) * 540 + 10;
-                  const width = Math.max(5, Math.min(18, 430 / visibleCandles.length));
-                  const up = candle.close >= candle.open;
-                  const top = candleY(Math.max(candle.open, candle.close));
-                  const bottom = candleY(Math.min(candle.open, candle.close));
-                  return <g key={`${candle.time}-${index}`}><line x1={xPos} x2={xPos} y1={candleY(candle.high)} y2={candleY(candle.low)} stroke={up ? "#0bbf9a" : "#ef5570"} strokeWidth="2"/><rect x={xPos - width / 2} y={top} width={width} height={Math.max(3, bottom - top)} rx="1" fill={up ? "#0bbf9a" : "#ef5570"}/></g>;
-                }) : null}
-                {chartHover!==null&&visibleCandles.length>0&&<line x1={((chartHover+.5)/visibleCandles.length)*540+10} x2={((chartHover+.5)/visibleCandles.length)*540+10} y1="30" y2="230" stroke="#d9ff9b" strokeDasharray="4 4"/>}
-                <text x="592" y="34" textAnchor="end" fill="#405a80" fontSize="11" fontWeight="600">{priceLabel(chartCeil)}</text>
-                <text x="592" y="239" textAnchor="end" fill="#405a80" fontSize="11" fontWeight="600">{priceLabel(chartFloor)}</text>
-              </svg>
+              {chartHover && <div className="chart-tooltip"><b>{new Date(chartHover.time*1000).toLocaleString()}</b><span>O {priceLabel(chartHover.open)}</span><span>H {priceLabel(chartHover.high)}</span><span>L {priceLabel(chartHover.low)}</span><span>C {priceLabel(chartHover.close)}</span><span>Vol {chartHover.volume.toLocaleString(undefined,{maximumFractionDigits:4})} {currency}</span></div>}
+              <TerminalChart candles={visibleCandles} priceLabel={priceLabel} onHover={setChartHover} />
             </div>
             <div className="market-metrics">
               <span>

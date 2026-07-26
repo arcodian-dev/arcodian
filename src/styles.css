@@ -782,8 +782,8 @@ button {
 .chart-head > div { display:flex; align-items:center; gap:12px; }
 .chart-head > div:first-child { align-items:flex-start; flex-direction:column; gap:8px; }
 .chart-timeframes,.chart-tools { display:flex; align-items:center; gap:6px; }
-.chart-timeframes button,.chart-tools button { padding:6px 9px; border:1px solid #294238; border-radius:8px; color:#9fb5ac; background:#11271f; font:800 10px Manrope,sans-serif; cursor:pointer; }
-.chart-timeframes button.active,.chart-timeframes button:hover,.chart-tools button:hover { border-color:#8ecb3b; color:#dfffaa; background:#183624; }
+.chart-timeframes button,.chart-tools button { padding:6px 9px; border:1px solid var(--f-hair2); border-radius:8px; color:var(--f-dim); background:rgba(233,239,250,.05); font:800 10px var(--f-body); cursor:pointer; }
+.chart-timeframes button.active,.chart-timeframes button:hover,.chart-tools button:hover { border-color:var(--f-amber); color:var(--f-amberhi); background:rgba(31,182,240,.12); }
 .hero-chart {
   position: relative;
   height: 320px;
@@ -792,8 +792,9 @@ button {
   background: linear-gradient(#0a6fe805, #0000);
   overflow: hidden;
 }
-.chart-tooltip { position:absolute; z-index:3; top:12px; left:12px; display:grid; grid-template-columns:repeat(2,auto); gap:4px 14px; padding:10px 12px; border:1px solid #39584b; border-radius:10px; color:#b8cbc3; background:#07130fee; box-shadow:0 12px 28px #0008; font:700 10px DM Mono,monospace; pointer-events:none; }
-.chart-tooltip b { grid-column:1/-1; color:#effff8; }
+.terminal-chart-canvas { position:absolute; inset:0; }
+.chart-tooltip { position:absolute; z-index:3; top:12px; left:12px; display:grid; grid-template-columns:repeat(2,auto); gap:4px 14px; padding:10px 12px; border:1px solid var(--f-hair2); border-radius:10px; color:var(--f-dim); background:rgba(10,20,40,.92); box-shadow:0 12px 28px rgba(0,0,0,.5); font:700 10px var(--f-mono); pointer-events:none; }
+.chart-tooltip b { grid-column:1/-1; color:var(--f-bone); }
 .chart-fullscreen { position:fixed!important; z-index:100; inset:12px; overflow:auto; border-color:#527a69!important; box-shadow:0 24px 80px #000b; }
 .chart-fullscreen .hero-chart { height:calc(100vh - 235px); min-height:420px; }
 .execution-preview { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; }
@@ -2199,17 +2200,17 @@ body::before { background-size:80px 80px; opacity:.45; }
 .trade-identity { padding:24px 0 20px; border-bottom:1px solid var(--od-line); }
 .trade-identity h3 { color:var(--od-ink); font-family:Syne,Manrope,sans-serif; font-size:clamp(28px,3.3vw,48px); letter-spacing:-.045em; }
 .trade-layout { grid-template-columns:minmax(0,1.9fr) minmax(340px,.72fr); gap:12px; margin-top:16px; }
-.chart-panel { color:#dce7ed; border-color:#1d3445; border-radius:16px; background:var(--od-navy); box-shadow:0 18px 45px rgba(7,21,34,.2); }
-.chart-head { color:#90a5b3; }
-.chart-head b { color:var(--od-lime); }
-.chart-timeframes button,.chart-tools button { border-color:#294153; color:#a9bac5; background:#102638; }
-.chart-timeframes button.active,.chart-timeframes button:hover,.chart-tools button:hover { color:var(--od-lime); border-color:#6b8d58; background:#173247; }
-.hero-chart { height:390px; border:1px solid rgba(255,255,255,.05); background:linear-gradient(180deg,rgba(22,201,232,.045),transparent); }
+.chart-panel { color:var(--f-bone); border-color:var(--f-hair2); border-radius:16px; background:var(--f-ink3); box-shadow:0 18px 45px rgba(2,6,16,.4); }
+.chart-head { color:var(--f-dim); }
+.chart-head b { color:var(--f-amberhi); }
+.chart-timeframes button,.chart-tools button { border-color:var(--f-hair2); color:var(--f-dim); background:rgba(233,239,250,.05); }
+.chart-timeframes button.active,.chart-timeframes button:hover,.chart-tools button:hover { color:var(--f-amberhi); border-color:var(--f-amber); background:rgba(31,182,240,.14); }
+.hero-chart { height:390px; border:1px solid var(--f-hair); background:linear-gradient(180deg,rgba(31,182,240,.05),transparent); }
 .hero-chart.is-empty { position:relative; }
 .chart-empty-state { position:absolute; z-index:2; inset:0; display:grid; place-content:center; justify-items:center; gap:7px; padding:28px; text-align:center; pointer-events:none; }
-.chart-empty-state i { display:grid; place-items:center; width:42px; height:42px; border:1px solid #2a4558; border-radius:13px; color:var(--od-cyan); background:#102638; font-size:24px; font-style:normal; }
-.chart-empty-state strong { color:#e8f1f5; font-size:14px; }
-.chart-empty-state small { max-width:340px; color:#8197a5; line-height:1.5; }
+.chart-empty-state i { display:grid; place-items:center; width:42px; height:42px; border:1px solid var(--f-hair2); border-radius:13px; color:var(--f-amberhi); background:var(--f-ink2); font-size:24px; font-style:normal; }
+.chart-empty-state strong { color:var(--f-bone); font-size:14px; }
+.chart-empty-state small { max-width:340px; color:var(--f-dim); line-height:1.5; }
 .market-metrics span { border:1px solid rgba(255,255,255,.06); background:rgba(255,255,255,.035); }
 .market-metrics small { color:#8298a6; }
 .market-metrics b { color:#eef6fa; }
