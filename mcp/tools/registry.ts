@@ -6,9 +6,11 @@ import { inspectVault, inspectSpendingPolicy, getReceipt } from "./payments.ts";
 import { buildCreateJob, buildSubmitJob, buildEvaluateJob, buildLeaveFeedback, quotePayment } from "./builders.ts";
 import { inspectX402Challenge, quoteNanopayment, buildNanopaymentAuthorization, verifyNanopaymentReceipt } from "./nanopayments.ts";
 import { FileNanopaymentLedger } from "../nanopayment-ledger.ts";
+import { AppKitDelegationStore, buildRevokeTypedData, buildSendGrantTypedData, defaultDelegationReaders } from "../appkit-delegation.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 const nanopaymentLedger = new FileNanopaymentLedger();
+const appKitDelegations = new AppKitDelegationStore();
 
 export const TOOLS: Tool[] = [
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
@@ -47,4 +49,26 @@ export const TOOLS: Tool[] = [
   { name: "verify_nanopayment_receipt", description: "Fail-closed verification of PAYMENT-RESPONSE fields against the quoted payment and idempotency key.",
     schema: { paymentResponse: z.string().max(32768), payer: z.string(), idempotencyKey: z.string(), amount: z.string(), payTo: z.string(), network: z.string().optional(), transaction: z.string().optional() },
     handler: async (args) => verifyNanopaymentReceipt(args, nanopaymentLedger) },
+  { name: "build_send_delegation", description: "Build owner-signed typed data for a scoped App Kit Send grant. Arc Testnet USDC only; no signing.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), recipients: z.array(z.string()).min(1).max(32), perAction: z.string(), periodLimit: z.string(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string() },
+    handler: async (args, ctx) => {
+      const wallet = await defaultDelegationReaders(ctx).wallet(args.agentId);
+      return buildSendGrantTypedData(args, wallet);
+    } },
+  { name: "activate_send_delegation", description: "Verify the vault owner's signature and persist an immutable scoped Send grant.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), recipients: z.array(z.string()).min(1).max(32), perAction: z.string(), periodLimit: z.string(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string(), boundWallet: z.string(), signature: z.string() },
+    handler: async (args, ctx) => {
+      const { boundWallet, signature, ...grant } = args;
+      return appKitDelegations.activate(grant, boundWallet, signature, defaultDelegationReaders(ctx));
+    } },
+  { name: "build_revoke_send_delegation", description: "Build owner-signed typed data to revoke one Send grant.",
+    schema: { grantId: z.string(), nonce: z.string() }, handler: async (args) => buildRevokeTypedData(args.grantId, args.nonce) },
+  { name: "revoke_send_delegation", description: "Verify the owner's revocation signature and disable the grant.",
+    schema: { grantId: z.string(), nonce: z.string(), signature: z.string() }, handler: async (args) => appKitDelegations.revoke(args.grantId, args.nonce, args.signature) },
+  { name: "build_appkit_send", description: "Reserve scoped budget and return App Kit Send params plus an unsigned Arc transaction. Never signs.",
+    schema: { grantId: z.string(), recipient: z.string(), amount: z.string(), requestId: z.string() },
+    handler: async (args, ctx) => appKitDelegations.buildSend(args, defaultDelegationReaders(ctx)) },
+  { name: "verify_appkit_send_receipt", description: "Verify an App Kit Send transaction exactly matches its reserved invocation and persist settlement.",
+    schema: { invocationId: z.string(), txHash: z.string() },
+    handler: async (args, ctx) => appKitDelegations.verifySend(args.invocationId, args.txHash, ctx.provider()) },
 ];

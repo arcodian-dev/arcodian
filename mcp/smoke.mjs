@@ -19,9 +19,12 @@ async function call(method, params) {
 
 const list = await call("tools/list", {});
 const names = (list.result?.tools || []).map((tool) => tool.name);
-if (names.length !== 16) throw new Error(`expected 16 tools, received ${names.length}`);
+if (names.length !== 22) throw new Error(`expected 22 tools, received ${names.length}`);
 for (const required of ["inspect_x402_challenge", "quote_nanopayment", "build_nanopayment_authorization", "verify_nanopayment_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E1 tool ${required}`);
+}
+for (const required of ["build_send_delegation", "activate_send_delegation", "build_revoke_send_delegation", "revoke_send_delegation", "build_appkit_send", "verify_appkit_send_receipt"]) {
+  if (!names.includes(required)) throw new Error(`missing Phase E2 tool ${required}`);
 }
 console.log("tools:", names.join(", "));
 

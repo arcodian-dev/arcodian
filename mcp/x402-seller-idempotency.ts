@@ -42,7 +42,7 @@ export class SellerReplayCache {
   }
   async store(idempotencyKey: string, paymentSignature: string, response: Omit<CachedSellerResponse, "signatureHash">) {
     let result!: CachedSellerResponse;
-    this.queue = this.queue.then(async () => {
+    const op = this.queue.then(async () => {
       const data = await this.load();
       const signatureHash = hash(paymentSignature);
       const existing = data.responses[idempotencyKey];
@@ -57,7 +57,8 @@ export class SellerReplayCache {
       data.responses[idempotencyKey] = result;
       await this.save(data);
     });
-    await this.queue;
+    this.queue = op.catch(() => undefined);
+    await op;
     return result;
   }
 }

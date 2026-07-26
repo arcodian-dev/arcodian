@@ -58,7 +58,7 @@ export class FileNanopaymentLedger implements NanopaymentLedger {
 
   async put(intent: NanopaymentIntent): Promise<{ intent: NanopaymentIntent; reused: boolean }> {
     let result!: { intent: NanopaymentIntent; reused: boolean };
-    this.queue = this.queue.then(async () => {
+    const op = this.queue.then(async () => {
       const data = await this.load();
       const existing = data.intents[intent.idempotencyKey];
       if (existing) {
@@ -71,13 +71,14 @@ export class FileNanopaymentLedger implements NanopaymentLedger {
       await this.save(data);
       result = { intent, reused: false };
     });
-    await this.queue;
+    this.queue = op.catch(() => undefined);
+    await op;
     return result;
   }
 
   async settle(key: string, receipt: Record<string, unknown>) {
     let result!: NanopaymentIntent;
-    this.queue = this.queue.then(async () => {
+    const op = this.queue.then(async () => {
       const data = await this.load();
       const existing = data.intents[key];
       if (!existing) throw new Error("unknown idempotency key");
@@ -90,7 +91,8 @@ export class FileNanopaymentLedger implements NanopaymentLedger {
       data.intents[key] = result;
       await this.save(data);
     });
-    await this.queue;
+    this.queue = op.catch(() => undefined);
+    await op;
     return result;
   }
 }
