@@ -2422,7 +2422,7 @@ body::before { background-size:80px 80px; opacity:.45; }
     border-radius: 13px;
     color: #b9cbe6;
     background: transparent;
-    font: 700 11px/1 var(--ax-font-body);
+    font: 700 11px/1 var(--f-body);
     letter-spacing: .04em;
     cursor: pointer;
   }
@@ -2529,7 +2529,7 @@ body::before { background-size:80px 80px; opacity:.45; }
   padding: 10px 18px;
   background: #eef4fc;
   color: var(--ax-ink-soft);
-  font: 800 11px/1 var(--ax-font-body);
+  font: 800 11px/1 var(--f-body);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -2556,16 +2556,16 @@ body::before { background-size:80px 80px; opacity:.45; }
 .mt-market span { display: grid; min-width: 0; }
 .mt-market strong { font-size: 14px; color: var(--ax-ink); }
 .mt-market small { overflow: hidden; color: var(--ax-ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.mt-num { color: var(--ax-ink); font: 600 12.5px var(--ax-font-mono); }
+.mt-num { color: var(--ax-ink); font: 600 12.5px var(--f-mono); }
 .mt-num small { color: var(--ax-ink-soft); font-size: 10px; }
 .mt-num.positive { color: #0b7a4b; }
 .mt-num.negative { color: #b8324f; }
 .mt-progress { display: grid; gap: 4px; align-items: center; }
 .mt-progress i { display: block; height: 6px; border-radius: 99px; background: #e3ecf7; overflow: hidden; }
 .mt-progress em { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--ax-blue), var(--ax-cyan)); }
-.mt-progress b { font: 700 10.5px var(--ax-font-mono); color: var(--ax-ink-soft); }
+.mt-progress b { font: 700 10.5px var(--f-mono); color: var(--ax-ink-soft); }
 .mt-progress small { color: var(--ax-ink-soft); font-size: 11px; }
-.mt-status { justify-self: start; padding: 5px 9px; border-radius: 99px; font: 800 10px var(--ax-font-body); letter-spacing: .06em; text-transform: uppercase; }
+.mt-status { justify-self: start; padding: 5px 9px; border-radius: 99px; font: 800 10px var(--f-body); letter-spacing: .06em; text-transform: uppercase; }
 .mt-status.curve { color: #075fd2; background: #e8f4ff; }
 .mt-status.dex { color: #2f6d0a; background: #eefbdc; }
 .mt-status.official { color: #4c5f7d; background: #eef2f8; }
@@ -2592,7 +2592,7 @@ body::before { background-size:80px 80px; opacity:.45; }
   border-radius: 9px;
   background: transparent;
   color: #9fb5ac;
-  font: 800 12px var(--ax-font-body);
+  font: 800 12px var(--f-body);
   cursor: pointer;
 }
 .desk-tabs button.active { color: #06231c; background: linear-gradient(135deg, #9fe870, #d9ff9b); }
@@ -2612,7 +2612,7 @@ body::before { background-size:80px 80px; opacity:.45; }
   background: linear-gradient(135deg, #f2fbf3, #eafaf6);
 }
 .swap-pair-hero b {
-  font: 800 clamp(26px, 3vw, 38px)/1 var(--ax-font-display);
+  font: 800 clamp(26px, 3vw, 38px)/1 var(--f-display);
   letter-spacing: -.03em;
   color: #0b3b2e;
 }
@@ -2620,7 +2620,7 @@ body::before { background-size:80px 80px; opacity:.45; }
 .swap-pair-hero small {
   grid-column: 1 / -1;
   color: #4c6f60;
-  font: 600 11px var(--ax-font-mono);
+  font: 600 11px var(--f-mono);
   letter-spacing: .04em;
 }
 .workspace-swap .panel { border-top: 4px solid #38c07a; }
@@ -2640,7 +2640,7 @@ body::before { background-size:80px 80px; opacity:.45; }
 }
 .bridge-finality small {
   color: #4c6a92;
-  font: 700 9.5px var(--ax-font-body);
+  font: 700 9.5px var(--f-body);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
