@@ -4,6 +4,7 @@ import { findAgents, inspectAgent } from "./agents.ts";
 import { listJobs, inspectJob } from "./jobs.ts";
 import { inspectVault, inspectSpendingPolicy, getReceipt } from "./payments.ts";
 import { buildCreateJob, buildSubmitJob, buildEvaluateJob, buildLeaveFeedback, quotePayment } from "./builders.ts";
+import { inspectX402Challenge, quoteNanopayment, buildNanopaymentAuthorization, verifyNanopaymentReceipt } from "./nanopayments.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 
@@ -34,4 +35,13 @@ export const TOOLS: Tool[] = [
     schema: { jobId: z.string(), approve: z.boolean(), evidenceHash: z.string().optional() }, handler: buildEvaluateJob },
   { name: "build_leave_feedback", description: "UNSIGNED Reputation giveFeedback transaction (score 0-100, decimals 0), simulated. Feedback counts as evidence-backed only if signed by the job's client/evaluator.",
     schema: { agentId: z.string(), score: z.number(), jobId: z.string().optional(), filehash: z.string().optional() }, handler: buildLeaveFeedback },
+  { name: "inspect_x402_challenge", description: "Validate a PAYMENT-REQUIRED header against the official Arc Testnet Gateway batching configuration.",
+    schema: { paymentRequired: z.string().max(32768) }, handler: inspectX402Challenge },
+  { name: "quote_nanopayment", description: "Resolve Passport binding and enforce ArcPay seller/per-request/daily policy before an x402 payment.",
+    schema: { paymentRequired: z.string().max(32768), agentId: z.string(), vault: z.string(), serviceId: z.string().max(128), requestHash: z.string() }, handler: quoteNanopayment },
+  { name: "build_nanopayment_authorization", description: "Build deterministic UNSIGNED EIP-3009 typed data for Gateway Nanopayments. MCP never signs.",
+    schema: { paymentRequired: z.string().max(32768), agentId: z.string(), vault: z.string(), serviceId: z.string().max(128), requestHash: z.string() }, handler: buildNanopaymentAuthorization },
+  { name: "verify_nanopayment_receipt", description: "Fail-closed verification of PAYMENT-RESPONSE fields against the quoted payment and idempotency key.",
+    schema: { paymentResponse: z.string().max(32768), payer: z.string(), idempotencyKey: z.string(), amount: z.string(), payTo: z.string(), network: z.string().optional(), transaction: z.string().optional() },
+    handler: async (args) => verifyNanopaymentReceipt(args) },
 ];
