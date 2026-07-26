@@ -16,11 +16,11 @@ console.log(tx.hash);`;
 const verifyCode=`curl -s https://arcodian.fun/developers/contracts.json | jq .contracts
 cast chain-id --rpc-url https://rpc.testnet.arc.network/
 cast call 0x27c722F643ea787f7425449AF8B03601B90815eD 'arcPay()(address)' --rpc-url https://rpc.testnet.arc.network/
-cast call 0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637 'admin()(address)' --rpc-url https://rpc.testnet.arc.network/`;
+cast call 0xAe24C79632f7B83811102EdFB1f0710AeCBC7B03 'admin()(address)' --rpc-url https://rpc.testnet.arc.network/`;
 const entries=[
  ["Arc Pay","0x5E3d1B63213B8608539116D1C6248A36819684b5","Exact-value invoices, 30 bps merchant fee, one-use invoice IDs, merchant refund."],
  ["Agent Pay Factory","0x27c722F643ea787f7425449AF8B03601B90815eD","One isolated non-custodial vault per owner; no factory admin path into user funds."],
- ["ArcLend · governed Pyth","0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637","Timelocked EURC-collateral market with separate emergency guardian and delayed cap increases."],
+ ["ArcLend v2 · utilization rate","0xAe24C79632f7B83811102EdFB1f0710AeCBC7B03","Timelocked EURC-collateral market, separate emergency guardian, delayed cap increases, and a Compound/Aave-style utilization interest curve."],
  ["Governance multisig","0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa","2-of-2 testnet governance canary controlling the 24-hour timelock."],
  ["Stablecoin FX","0x982D61ddCAb6169d82B3e37A4E4158f1982E5447","Permissionless USDC/EURC AMM with 8 bps LP + 2 bps protocol fee."],
  ["Agent Passport · ERC-8004","0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf","Binds an Agent ID to an authorized wallet with owner-only rotation; identity alone never grants spend."],

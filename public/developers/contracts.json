@@ -20,8 +20,8 @@
     "validationRegistry": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
     "sessionKeyAccount": "0x06e26288AeC908c926A8e2466d9543e997f59d7C",
     "adminTimelock": "0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac",
-    "arcLendPythMarket": "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
-    "arcLendPythAdapter": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
+    "arcLendV2Market": "0xAe24C79632f7B83811102EdFB1f0710AeCBC7B03",
+    "arcLendManualOracle": "0x63951B73cD71Fbad20a68656a75bbb5dea68ccF3",
     "governanceMultisig": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
     "governanceTimelock": "0x4e15d1f1211d3Ce6Cf24f4E10c159C485cf8AaCD",
     "pyth": "0x2880aB155794e7179c9eE2e38200202908C17B43",
@@ -33,7 +33,6 @@
   "verification": {
     "governanceMultisig": "verified",
     "governanceTimelock": "verified",
-    "arcLendPythMarket": "verified",
     "agentPassport": "verified",
     "agentPayFactoryV3": "verified"
   },

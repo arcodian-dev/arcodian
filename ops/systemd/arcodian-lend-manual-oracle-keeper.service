@@ -1,0 +1,14 @@
+[Unit]
+Description=Arcodian ArcLendV2 manual EUR/USD oracle keeper (interim, Pyth testnet feed stale)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URLS=https://rpc.testnet.arc.network/,https://arcodian.fun/api/rpc.php,https://rpc.drpc.testnet.arc.io
+Environment=LEND_MANUAL_ORACLE_ADDRESS=0x63951B73cD71Fbad20a68656a75bbb5dea68ccF3
+ExecStart=/bin/bash -c 'export PRIVATE_KEY="$(jq -r .PRIVATE_KEY /root/.config/arcodian/lend-keeper.json)"; exec /usr/bin/node scripts/lend-manual-oracle-keeper.mjs'
+
+[Install]
+WantedBy=multi-user.target

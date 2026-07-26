@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh ArcLendV2 manual EUR/USD oracle every 20 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=20min
+RandomizedDelaySec=30s
+Persistent=true
+Unit=arcodian-lend-manual-oracle-keeper.service
+
+[Install]
+WantedBy=timers.target

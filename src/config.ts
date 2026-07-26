@@ -36,8 +36,19 @@ export const CHAINS = [
 export const PUBLIC_ORIGIN = import.meta.env.VITE_PUBLIC_ORIGIN || (typeof window !== "undefined" ? window.location.origin : "");
 export const WALLETCONNECT_PROJECT_ID = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID || "";
 export const ARC_PAY_ADDRESS = import.meta.env.VITE_ARC_PAY_ADDRESS || "";
-export const ARC_LEND_ADDRESS = import.meta.env.VITE_ARC_LEND_ADDRESS || "";
-export const ARC_LEND_COLLATERAL_ADDRESS = import.meta.env.VITE_ARC_LEND_COLLATERAL_ADDRESS || "";
+// ArcLendV2 — same market as ArcLend (governed Pyth) but with a Compound/Aave-
+// style utilization interest curve instead of a fixed rate: 1% base, +10% to
+// an 80% kink, then a steep +200% jump slope above it. Oracle is a manual
+// EUR/USD feed pushed by a keeper every ~20 min, not Pyth — Arc Testnet's
+// official Pyth EUR/USD feed has been stale upstream since ~2026-07-24 (Hermes
+// itself serves the same frozen publish_time), so the prior deploy
+// (RETIRED_DEPLOYMENTS.arcLendPythV1, which never held any deposits) could not
+// stay on Pyth and keep working. Swap back once Pyth resumes. Was also never
+// actually wired here before — VITE_ARC_LEND_ADDRESS was never set in any env
+// file, so the interactive /lend page had no live contract prior to this.
+export const ARC_LEND_ADDRESS = "0xAe24C79632f7B83811102EdFB1f0710AeCBC7B03";
+export const ARC_LEND_COLLATERAL_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a"; // EURC
+export const ARC_LEND_ORACLE_ADDRESS = "0x63951B73cD71Fbad20a68656a75bbb5dea68ccF3";
 export const AGENT_PAY_ADDRESS = "0xBEB0D78FD10474eb9Ef27D24600bACe9A1F13026";
 export const AGENT_PAY_FACTORY_ADDRESS = import.meta.env.VITE_AGENT_PAY_FACTORY_ADDRESS || "";
 // ERC-8004 Agent Passport (Phase A) — Arc Testnet 5042002, verified on-chain 2026-07-24.
@@ -115,6 +126,12 @@ export const RETIRED_DEPLOYMENTS = {
   v9MistakenDeploy: {
     suite: "0x02Cc1A1a94f0733C747ff48110faa05751f44106",
     note: "Deployed against the wrong (self-contained ArcPump.sol) engine while diagnosing the threshold migration — its ArcDexPair uses buy()/sell(), incompatible with the frontend's post-graduation swap()/token0()/reserve0/1() calls. Never wired into any config; zero launches created on it.",
+  },
+  arcLendPythV1: {
+    market: "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
+    oracle: "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
+    retired: "2026-07-26",
+    note: "Fixed-APR market (immutable ratePerSecond, no utilization response). Held zero deposits and zero borrows at migration time — nothing to wind down. Superseded by ArcLendV2's utilization curve. Its ArcPythOracle is real and correctly wired, but Arc Testnet's official Pyth EUR/USD feed has been stale upstream since ~2026-07-24 (Hermes itself serves the same frozen publish_time), which is why ARC_LEND_ADDRESS temporarily runs on ArcManualOracle instead — swap back once Pyth resumes.",
   },
   v7: {
     suite: "0x59D8eDf019053c7D8fE48f906258960c092893AD",

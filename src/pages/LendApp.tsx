@@ -5,7 +5,7 @@ import { LEND_MARKETS, OFFICIAL_ARC_ASSET_STATUS } from "../lendMarkets";
 import "./LendApp.css";
 
 type Props = { account: string; chainId: number | null; activeProvider: EthereumProvider | null; connect: () => void; disconnect: () => void };
-type Position = { supplied: string; collateral: string; borrowed: string; health: string; liquidity: string; supplyCap: string; borrowCap: string; paused: boolean; oracleFresh: boolean };
+type Position = { supplied: string; collateral: string; borrowed: string; health: string; liquidity: string; supplyCap: string; borrowCap: string; paused: boolean; oracleFresh: boolean; utilization: string; borrowApr: string; supplyApr: string };
 
 const MARKET_ABI = [
   "function supply() payable returns(uint256)", "function withdraw(uint256) returns(uint256)",
@@ -15,10 +15,11 @@ const MARKET_ABI = [
   "function healthFactor(address) view returns(uint256)", "function totalAssets() view returns(uint256)",
   "function totalSupplyShares() view returns(uint256)", "function supplyCap() view returns(uint256)",
   "function borrowCap() view returns(uint256)", "function paused() view returns(bool)", "function oracle() view returns(address)",
+  "function utilization() view returns(uint256)", "function borrowRatePerYear() view returns(uint256)", "function supplyRatePerYear() view returns(uint256)",
 ];
 const TOKEN_ABI = ["function approve(address,uint256) returns(bool)", "function balanceOf(address) view returns(uint256)"];
 const ORACLE_ABI = ["function price() view returns(uint256,uint64)"];
-const empty: Position = { supplied: "0.00", collateral: "0.00", borrowed: "0.00", health: "—", liquidity: "0.00", supplyCap: "100", borrowCap: "50", paused: false, oracleFresh: false };
+const empty: Position = { supplied: "0.00", collateral: "0.00", borrowed: "0.00", health: "—", liquidity: "0.00", supplyCap: "100", borrowCap: "50", paused: false, oracleFresh: false, utilization: "0.0", borrowApr: "0.0", supplyApr: "0.0" };
 const short = (value: string) => value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "Connect wallet";
 
 export default function LendApp({ account, chainId, activeProvider, connect, disconnect }: Props) {
@@ -36,8 +37,9 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
       // request; disabling ethers batching also keeps CORS responses predictable.
       const provider = activeProvider ? new BrowserProvider(activeProvider) : new JsonRpcProvider(ARC.rpcs[1] || ARC.rpc, undefined, { batchMaxCount: 1 });
       const market = new Contract(ARC_LEND_ADDRESS, MARKET_ABI, provider);
-      const [assets, totalShares, sCap, bCap, paused, oracleAddress] = await Promise.all([
+      const [assets, totalShares, sCap, bCap, paused, oracleAddress, utilizationWad, borrowRateWad, supplyRateWad] = await Promise.all([
         market.totalAssets(), market.totalSupplyShares(), market.supplyCap(), market.borrowCap(), market.paused(), market.oracle(),
+        market.utilization(), market.borrowRatePerYear(), market.supplyRatePerYear(),
       ]);
       const totalAssets = BigInt(assets); const shareTotal = BigInt(totalShares);
       let supplied = 0n, userCollateral = 0n, debt = 0n, health = 0n;
@@ -50,7 +52,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
       }
       const [, updatedAt] = await new Contract(oracleAddress, ORACLE_ABI, provider).price();
       const age = Math.floor(Date.now() / 1000) - Number(updatedAt);
-      setPosition({ supplied: formatEther(supplied), collateral: formatUnits(userCollateral, 6), borrowed: formatEther(debt), health: debt === 0n ? "∞" : Number(formatEther(health)).toFixed(2), liquidity: formatEther(await provider.getBalance(ARC_LEND_ADDRESS)), supplyCap: formatEther(sCap), borrowCap: formatEther(bCap), paused, oracleFresh: age >= 0 && age <= 3600 });
+      setPosition({ supplied: formatEther(supplied), collateral: formatUnits(userCollateral, 6), borrowed: formatEther(debt), health: debt === 0n ? "∞" : Number(formatEther(health)).toFixed(2), liquidity: formatEther(await provider.getBalance(ARC_LEND_ADDRESS)), supplyCap: formatEther(sCap), borrowCap: formatEther(bCap), paused, oracleFresh: age >= 0 && age <= 3600, utilization: (Number(formatEther(utilizationWad)) * 100).toFixed(1), borrowApr: (Number(formatEther(borrowRateWad)) * 100).toFixed(2), supplyApr: (Number(formatEther(supplyRateWad)) * 100).toFixed(2) });
     } catch { if (account) setStatus("Connected, but the Arc RPC could not refresh this position yet. Transactions remain wallet-confirmed."); }
   }, [account, activeProvider]);
 
@@ -95,6 +97,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
     <header><p>ARC LEND · ARC TESTNET</p><h1>Supply USDC.<br/>Borrow USDC.</h1><span>Use approved Arc assets as collateral in isolated markets. The first live market accepts EURC collateral; it does not lend EURC.</span><div className="lend-badges"><b>70% MAX LTV</b><b>80% LIQUIDATION</b><b>10% INTEREST RESERVE</b></div></header>
     <section className="lend-terminal">
       <div className="lend-overview"><article><small>MARKET LIQUIDITY</small><strong>{Number(position.liquidity).toFixed(2)} USDC</strong></article><article><small>YOUR SUPPLY</small><strong>{Number(position.supplied).toFixed(4)} USDC</strong></article><article><small>YOUR DEBT</small><strong>{Number(position.borrowed).toFixed(4)} USDC</strong></article><article><small>HEALTH FACTOR</small><strong>{position.health}</strong></article></div>
+      <div className="lend-overview"><article><small>UTILIZATION</small><strong>{position.utilization}%</strong></article><article><small>BORROW APR</small><strong>{position.borrowApr}%</strong></article><article><small>SUPPLY APR</small><strong>{position.supplyApr}%</strong></article><article><small>RATE MODEL</small><strong>Utilization curve</strong></article></div>
       {!account ? <div className="lend-gate"><h2>Connect an EVM wallet</h2><p>MetaMask, Rabby, OKX, Bitget, Coinbase Wallet, or another injected EVM wallet.</p><button onClick={connect}>Connect wallet</button></div> : <>
         {!onArc && <button className="lend-network" onClick={switchArc}>Switch to Arc Testnet</button>}
         {(!position.oracleFresh || position.paused) && <div className="lend-alert">{position.paused ? "Market is paused. Risk-increasing actions are unavailable." : "Oracle update is stale. New borrowing and collateral-sensitive actions will fail closed until refreshed."}</div>}
@@ -108,6 +111,6 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
     <section className="lend-assets"><p>SUPPORTED ARC ASSETS</p><h2>Approved collateral, not arbitrary tokens.</h2><span>Every new collateral requires a canonical token contract, independent oracle, liquidity review, immutable caps, and its own isolated market.</span><div>{OFFICIAL_ARC_ASSET_STATUS.map(asset=><article key={asset.symbol}><b>{asset.symbol}</b><strong className={asset.state.includes("Live")||asset.state.includes("Borrow")?"live":"pending"}>{asset.state}</strong><small>{asset.note}</small></article>)}</div><aside><b>Live market</b><span>{LEND_MARKETS[0].name} · borrow {LEND_MARKETS[0].borrowAsset} against {LEND_MARKETS[0].collateralSymbol}</span></aside></section>
     <section className="lend-flow"><p>ONE ISOLATED MARKET</p><h2>Know the route before you sign.</h2><div><article><i>01</i><b>Supply</b><span>Deposit USDC to earn from borrower interest inside this market.</span></article><article><i>02</i><b>Collateralize</b><span>Approve official EURC, then deposit it under visible caps and oracle rules.</span></article><article><i>03</i><b>Borrow safely</b><span>Borrow USDC while monitoring health factor and liquidation threshold.</span></article></div></section>
     <section className="lend-risk"><p>CANARY PARAMETERS</p><h2>Risk is visible before you sign.</h2><div><article><b>{Number(position.supplyCap).toLocaleString()} USDC</b><span>Immutable supply cap</span></article><article><b>{Number(position.borrowCap).toLocaleString()} USDC</b><span>Immutable borrow cap</span></article><article><b>EURC</b><span>Official Arc collateral · 6 decimals</span></article></div></section>
-    <footer><span>Testnet canary · Pyth EUR/USD oracle · Not audited for production funds</span><a href={`https://testnet.arcscan.app/address/${ARC_LEND_ADDRESS}`} target="_blank" rel="noreferrer">View contract →</a></footer>
+    <footer><span>Testnet canary · Utilization-priced interest · Not audited for production funds</span><a href={`https://testnet.arcscan.app/address/${ARC_LEND_ADDRESS}`} target="_blank" rel="noreferrer">View contract →</a></footer>
   </main>;
 }
