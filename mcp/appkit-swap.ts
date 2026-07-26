@@ -41,6 +41,7 @@ export class AppKitSwapStore {
   constructor(path = process.env.MCP_APPKIT_SWAP_GRANTS || "/var/lib/arcodian-mcp/appkit-swap-grants.json") { this.path = path; }
   private async load(): Promise<Store> { try { const d = JSON.parse(await readFile(this.path, "utf8")); if (d?.version !== 1) throw Error("invalid swap store"); return d; } catch (e: any) { if (e?.code === "ENOENT") return { version: 1, grants: {}, invocations: {} }; throw e; } }
   private async save(d: Store) { await mkdir(dirname(this.path), { recursive: true, mode: 0o700 }); const t = `${this.path}.${process.pid}.tmp`; await writeFile(t, `${JSON.stringify(d)}\n`, { mode: 0o600 }); await rename(t, this.path); }
+  async get(grantId: string) { return (await this.load()).grants[grantId] ?? null; }
   async activate(input: Input, boundWallet: string, signature: string, readers: Readers) {
     const typed = buildSwapGrantTypedData(input, boundWallet); const [owner, wallet] = await Promise.all([readers.owner(input.vault), readers.wallet(input.agentId)]);
     if (getAddress(owner) !== getAddress(input.owner)) throw Error("signer is not vault owner");

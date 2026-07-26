@@ -19,7 +19,7 @@ async function call(method, params) {
 
 const list = await call("tools/list", {});
 const names = (list.result?.tools || []).map((tool) => tool.name);
-if (names.length !== 35) throw new Error(`expected 35 tools, received ${names.length}`);
+if (names.length !== 36) throw new Error(`expected 36 tools, received ${names.length}`);
 for (const required of ["inspect_x402_challenge", "quote_nanopayment", "build_nanopayment_authorization", "verify_nanopayment_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E1 tool ${required}`);
 }
@@ -33,6 +33,7 @@ for (const required of ["build_bridge_delegation", "activate_bridge_delegation",
 for (const required of ["build_swap_delegation", "activate_swap_delegation", "build_revoke_swap_delegation", "revoke_swap_delegation", "build_appkit_swap", "verify_appkit_swap_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E2 Swap tool ${required}`);
 }
+if (!names.includes("inspect_appkit_delegation")) throw new Error("missing Phase F grant observability tool");
 console.log("tools:", names.join(", "));
 
 const agent = await call("tools/call", {

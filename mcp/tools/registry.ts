@@ -16,6 +16,24 @@ const nanopaymentLedger = new FileNanopaymentLedger();
 const appKitDelegations = new AppKitDelegationStore();
 const appKitBridges = new AppKitBridgeStore();
 const appKitSwaps = new AppKitSwapStore();
+const inspectGrant = async (capability: "send" | "bridge" | "swap", grantId: string, ctx: Ctx) => {
+  const store = capability === "send" ? appKitDelegations : capability === "bridge" ? appKitBridges : appKitSwaps;
+  const grant = await store.get(grantId);
+  if (!grant) throw new Error("grant not found");
+  const currentWallet = await defaultDelegationReaders(ctx).wallet(grant.agentId);
+  const { signature: _signature, ...safeGrant } = grant;
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    capability,
+    ...safeGrant,
+    currentPassportWallet: currentWallet,
+    bindingCurrent: currentWallet.toLowerCase() === grant.boundWallet.toLowerCase(),
+    expired: grant.expiresAt <= now,
+    effectiveStatus: grant.revoked ? "revoked" : grant.expiresAt <= now ? "expired" :
+      currentWallet.toLowerCase() !== grant.boundWallet.toLowerCase() ? "binding_changed" : "active",
+    signingBoundary: "Owner-signed policy intent; execution still requires a user-controlled App Kit adapter.",
+  };
+};
 
 export const TOOLS: Tool[] = [
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
@@ -111,4 +129,7 @@ export const TOOLS: Tool[] = [
   { name: "verify_appkit_swap_receipt", description: "Verify the official Arc App Kit adapter transaction and exact USDC debit/EURC minimum credit.",
     schema: { invocationId: z.string(), txHash: z.string() },
     handler: async (args, ctx) => appKitSwaps.verify(args.invocationId, args.txHash, ctx.provider()) },
+  { name: "inspect_appkit_delegation", description: "Inspect a Send, Bridge, or Swap grant's effective status, current Passport binding, limits, and signing boundary without exposing its signature.",
+    schema: { capability: z.enum(["send", "bridge", "swap"]), grantId: z.string() },
+    handler: async (args, ctx) => inspectGrant(args.capability, args.grantId, ctx) },
 ];
