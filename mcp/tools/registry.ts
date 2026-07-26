@@ -9,11 +9,13 @@ import { FileNanopaymentLedger } from "../nanopayment-ledger.ts";
 import { AppKitDelegationStore, buildRevokeTypedData, buildSendGrantTypedData, defaultDelegationReaders } from "../appkit-delegation.ts";
 import { inspectUnifiedBalance } from "../appkit-unified-balance.ts";
 import { AppKitBridgeStore, buildBridgeGrantTypedData, buildBridgeRevokeTypedData } from "../appkit-bridge.ts";
+import { AppKitSwapStore, buildSwapGrantTypedData, buildSwapRevokeTypedData } from "../appkit-swap.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 const nanopaymentLedger = new FileNanopaymentLedger();
 const appKitDelegations = new AppKitDelegationStore();
 const appKitBridges = new AppKitBridgeStore();
+const appKitSwaps = new AppKitSwapStore();
 
 export const TOOLS: Tool[] = [
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
@@ -93,4 +95,20 @@ export const TOOLS: Tool[] = [
   { name: "verify_appkit_bridge_receipt", description: "Verify Circle's decoded CCTP message plus exact successful burn and mint transactions.",
     schema: { invocationId: z.string(), burnTx: z.string(), mintTx: z.string() },
     handler: async (args, ctx) => appKitBridges.verify(args.invocationId, args.burnTx, args.mintTx, ctx.provider()) },
+  { name: "build_swap_delegation", description: "Build owner-signed typed data for a bounded Arc Testnet USDC-to-EURC App Kit Swap grant.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), perAction: z.string(), periodLimit: z.string(), minRate: z.string(), maxSlippageBps: z.number().int(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string() },
+    handler: async (args, ctx) => buildSwapGrantTypedData(args, await defaultDelegationReaders(ctx).wallet(args.agentId)) },
+  { name: "activate_swap_delegation", description: "Verify the vault owner's signature and activate an immutable scoped Swap grant.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), perAction: z.string(), periodLimit: z.string(), minRate: z.string(), maxSlippageBps: z.number().int(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string(), boundWallet: z.string(), signature: z.string() },
+    handler: async (args, ctx) => { const { boundWallet, signature, ...grant } = args; return appKitSwaps.activate(grant, boundWallet, signature, defaultDelegationReaders(ctx)); } },
+  { name: "build_revoke_swap_delegation", description: "Build owner-signed typed data to revoke one scoped Swap grant.",
+    schema: { grantId: z.string(), nonce: z.string() }, handler: async (args) => buildSwapRevokeTypedData(args.grantId, args.nonce) },
+  { name: "revoke_swap_delegation", description: "Verify the owner's revocation signature and disable one Swap grant.",
+    schema: { grantId: z.string(), nonce: z.string(), signature: z.string() }, handler: async (args) => appKitSwaps.revoke(args.grantId, args.nonce, args.signature) },
+  { name: "build_appkit_swap", description: "Reserve scoped Swap budget and return Arc Testnet USDC-to-EURC App Kit parameters with an owner-set price floor.",
+    schema: { grantId: z.string(), amountIn: z.string(), requestId: z.string() },
+    handler: async (args, ctx) => appKitSwaps.build(args, defaultDelegationReaders(ctx)) },
+  { name: "verify_appkit_swap_receipt", description: "Verify the official Arc App Kit adapter transaction and exact USDC debit/EURC minimum credit.",
+    schema: { invocationId: z.string(), txHash: z.string() },
+    handler: async (args, ctx) => appKitSwaps.verify(args.invocationId, args.txHash, ctx.provider()) },
 ];

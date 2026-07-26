@@ -19,7 +19,7 @@ async function call(method, params) {
 
 const list = await call("tools/list", {});
 const names = (list.result?.tools || []).map((tool) => tool.name);
-if (names.length !== 29) throw new Error(`expected 29 tools, received ${names.length}`);
+if (names.length !== 35) throw new Error(`expected 35 tools, received ${names.length}`);
 for (const required of ["inspect_x402_challenge", "quote_nanopayment", "build_nanopayment_authorization", "verify_nanopayment_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E1 tool ${required}`);
 }
@@ -29,6 +29,9 @@ for (const required of ["build_send_delegation", "activate_send_delegation", "bu
 if (!names.includes("inspect_unified_balance")) throw new Error("missing Phase E2 Unified Balance tool");
 for (const required of ["build_bridge_delegation", "activate_bridge_delegation", "build_revoke_bridge_delegation", "revoke_bridge_delegation", "build_appkit_bridge", "verify_appkit_bridge_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E2 Bridge tool ${required}`);
+}
+for (const required of ["build_swap_delegation", "activate_swap_delegation", "build_revoke_swap_delegation", "revoke_swap_delegation", "build_appkit_swap", "verify_appkit_swap_receipt"]) {
+  if (!names.includes(required)) throw new Error(`missing Phase E2 Swap tool ${required}`);
 }
 console.log("tools:", names.join(", "));
 
