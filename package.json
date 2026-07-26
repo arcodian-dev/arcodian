@@ -11,6 +11,8 @@
     "smoke:bridge": "node --experimental-strip-types scripts/smoke-bridge-routes.mjs",
     "e2e:live": "node scripts/e2e-live.mjs",
     "sdk:check": "node scripts/check-circle-sdk.mjs",
+    "state:backup": "node scripts/mcp-state-backup.mjs",
+    "state:restore-drill": "node scripts/mcp-state-restore-drill.mjs",
     "build": "npm run contracts:export && tsc -b && vite build",
     "test": "vitest run",
     "preview": "vite preview"

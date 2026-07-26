@@ -1,5 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { DurableJsonState } from "./durable-json-state.ts";
 
 export type NanopaymentIntent = {
   idempotencyKey: string;
@@ -29,26 +28,21 @@ export interface NanopaymentLedger {
 export class FileNanopaymentLedger implements NanopaymentLedger {
   private queue: Promise<unknown> = Promise.resolve();
   readonly path: string;
+  private readonly state: DurableJsonState<LedgerData>;
   constructor(path = process.env.MCP_NANOPAYMENT_LEDGER || "/var/lib/arcodian-mcp/nanopayments.json") {
     this.path = path;
+    this.state = new DurableJsonState("nanopayments", path, { version: 1, intents: {} },
+      process.env.MCP_STATE_DB || (path === "/var/lib/arcodian-mcp/nanopayments.json" ? undefined : `${path}.db`));
   }
 
   private async load(): Promise<LedgerData> {
-    try {
-      const parsed = JSON.parse(await readFile(this.path, "utf8"));
-      if (parsed?.version !== 1 || typeof parsed?.intents !== "object") throw new Error("invalid nanopayment ledger");
-      return parsed;
-    } catch (error: any) {
-      if (error?.code === "ENOENT") return { version: 1, intents: {} };
-      throw error;
-    }
+    const parsed = this.state.read();
+    if (parsed?.version !== 1 || typeof parsed?.intents !== "object") throw new Error("invalid nanopayment ledger");
+    return parsed;
   }
 
   private async save(data: LedgerData) {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const temp = `${this.path}.${process.pid}.tmp`;
-    await writeFile(temp, `${JSON.stringify(data)}\n`, { mode: 0o600 });
-    await rename(temp, this.path);
+    this.state.write(data);
   }
 
   async get(key: string) {

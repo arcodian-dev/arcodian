@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Arcodian MCP transactional state backup
+
+[Timer]
+OnCalendar=*-*-* 02:17:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=arcodian-mcp-backup.service
+
+[Install]
+WantedBy=timers.target

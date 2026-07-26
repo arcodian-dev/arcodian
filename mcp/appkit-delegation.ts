@@ -1,7 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { Contract, Interface, TypedDataEncoder, getAddress, keccak256, parseUnits, toUtf8Bytes, verifyTypedData } from "ethers";
 import { AGENT_PASSPORT_ABI, AGENT_PASSPORT_ADDRESS, AGENT_PAY_V3_VAULT_ABI, ARC } from "./tools/_config.ts";
+import { DurableJsonState } from "./durable-json-state.ts";
 
 export type SendGrantInput = {
   owner: string; agentId: string; vault: string; recipients: string[];
@@ -51,12 +50,16 @@ export function buildRevokeTypedData(grantId: string, nonce: string) {
 export class AppKitDelegationStore {
   readonly path: string;
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(path = process.env.MCP_APPKIT_GRANTS || "/var/lib/arcodian-mcp/appkit-grants.json") { this.path = path; }
-  private async load(): Promise<Store> {
-    try { const d = JSON.parse(await readFile(this.path, "utf8")); if (d?.version !== 1) throw Error("invalid delegation store"); return d; }
-    catch (e: any) { if (e?.code === "ENOENT") return { version: 1, grants: {}, invocations: {} }; throw e; }
+  private readonly state: DurableJsonState<Store>;
+  constructor(path = process.env.MCP_APPKIT_GRANTS || "/var/lib/arcodian-mcp/appkit-grants.json") {
+    this.path = path;
+    this.state = new DurableJsonState("appkit-send", path, { version: 1, grants: {}, invocations: {} },
+      process.env.MCP_STATE_DB || (path === "/var/lib/arcodian-mcp/appkit-grants.json" ? undefined : `${path}.db`));
   }
-  private async save(data: Store) { await mkdir(dirname(this.path), { recursive: true, mode: 0o700 }); const t = `${this.path}.${process.pid}.tmp`; await writeFile(t, `${JSON.stringify(data)}\n`, { mode: 0o600 }); await rename(t, this.path); }
+  private async load(): Promise<Store> {
+    const d = this.state.read(); if (d?.version !== 1) throw Error("invalid delegation store"); return d;
+  }
+  private async save(data: Store) { this.state.write(data); }
   async get(grantId: string) { return (await this.load()).grants[grantId] ?? null; }
   async activate(input: SendGrantInput, boundWallet: string, signature: string, readers: Readers) {
     const typed = await buildSendGrantTypedData(input, boundWallet);

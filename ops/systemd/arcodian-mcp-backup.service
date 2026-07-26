@@ -1,0 +1,19 @@
+[Unit]
+Description=Create and verify an Arcodian MCP transactional state backup
+After=arcodian-mcp.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=MCP_STATE_DB=/var/lib/arcodian-mcp/state.db
+Environment=MCP_BACKUP_DIR=/var/backups/arcodian-mcp
+ExecStart=/usr/bin/node scripts/mcp-state-backup.mjs
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/backups/arcodian-mcp
+ReadOnlyPaths=/var/lib/arcodian-mcp
+

@@ -1,7 +1,6 @@
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { Contract, Interface, JsonRpcProvider, TypedDataEncoder, getAddress, keccak256, parseUnits, toUtf8Bytes, verifyTypedData } from "ethers";
 import { AGENT_PASSPORT_ADDRESS, ARC } from "./tools/_config.ts";
+import { DurableJsonState } from "./durable-json-state.ts";
 
 type Readers = { owner: (vault: string) => Promise<string>; wallet: (agentId: string) => Promise<string> };
 type BridgeGrantInput = {
@@ -47,9 +46,14 @@ export function buildBridgeRevokeTypedData(grantId: string, nonce: string) {
 export class AppKitBridgeStore {
   private queue: Promise<unknown> = Promise.resolve();
   readonly path: string;
-  constructor(path = process.env.MCP_APPKIT_BRIDGE_GRANTS || "/var/lib/arcodian-mcp/appkit-bridge-grants.json") { this.path = path; }
-  private async load(): Promise<Store> { try { const d = JSON.parse(await readFile(this.path, "utf8")); if (d?.version !== 1) throw Error("invalid bridge store"); return d; } catch (e: any) { if (e?.code === "ENOENT") return { version: 1, grants: {}, invocations: {} }; throw e; } }
-  private async save(d: Store) { await mkdir(dirname(this.path), { recursive: true, mode: 0o700 }); const t = `${this.path}.${process.pid}.tmp`; await writeFile(t, `${JSON.stringify(d)}\n`, { mode: 0o600 }); await rename(t, this.path); }
+  private readonly state: DurableJsonState<Store>;
+  constructor(path = process.env.MCP_APPKIT_BRIDGE_GRANTS || "/var/lib/arcodian-mcp/appkit-bridge-grants.json") {
+    this.path = path;
+    this.state = new DurableJsonState("appkit-bridge", path, { version: 1, grants: {}, invocations: {} },
+      process.env.MCP_STATE_DB || (path === "/var/lib/arcodian-mcp/appkit-bridge-grants.json" ? undefined : `${path}.db`));
+  }
+  private async load(): Promise<Store> { const d = this.state.read(); if (d?.version !== 1) throw Error("invalid bridge store"); return d; }
+  private async save(d: Store) { this.state.write(d); }
   async get(grantId: string) { return (await this.load()).grants[grantId] ?? null; }
   async activate(input: BridgeGrantInput, boundWallet: string, signature: string, readers: Readers) {
     const typed = buildBridgeGrantTypedData(input, boundWallet);
