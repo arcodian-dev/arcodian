@@ -8,10 +8,12 @@ import { inspectX402Challenge, quoteNanopayment, buildNanopaymentAuthorization, 
 import { FileNanopaymentLedger } from "../nanopayment-ledger.ts";
 import { AppKitDelegationStore, buildRevokeTypedData, buildSendGrantTypedData, defaultDelegationReaders } from "../appkit-delegation.ts";
 import { inspectUnifiedBalance } from "../appkit-unified-balance.ts";
+import { AppKitBridgeStore, buildBridgeGrantTypedData, buildBridgeRevokeTypedData } from "../appkit-bridge.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 const nanopaymentLedger = new FileNanopaymentLedger();
 const appKitDelegations = new AppKitDelegationStore();
+const appKitBridges = new AppKitBridgeStore();
 
 export const TOOLS: Tool[] = [
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
@@ -75,4 +77,20 @@ export const TOOLS: Tool[] = [
   { name: "inspect_unified_balance", description: "Read Circle App Kit Unified Balance for the Agent's current Passport wallet on explicit USDC testnet chains.",
     schema: { agentId: z.string(), chains: z.array(z.string()).min(1).max(16).optional(), includePending: z.boolean().optional() },
     handler: async (args, ctx) => inspectUnifiedBalance(args, ctx) },
+  { name: "build_bridge_delegation", description: "Build owner-signed typed data for a bounded Arc Testnet USDC App Kit Bridge grant; no signing.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), destinations: z.array(z.string()).min(1).max(8), recipients: z.array(z.string()).min(1).max(32), perAction: z.string(), periodLimit: z.string(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string() },
+    handler: async (args, ctx) => buildBridgeGrantTypedData(args, await defaultDelegationReaders(ctx).wallet(args.agentId)) },
+  { name: "activate_bridge_delegation", description: "Verify the vault owner's signature and activate an immutable scoped Bridge grant.",
+    schema: { owner: z.string(), agentId: z.string(), vault: z.string(), destinations: z.array(z.string()).min(1).max(8), recipients: z.array(z.string()).min(1).max(32), perAction: z.string(), periodLimit: z.string(), periodSeconds: z.number().int(), expiresAt: z.number().int(), nonce: z.string(), boundWallet: z.string(), signature: z.string() },
+    handler: async (args, ctx) => { const { boundWallet, signature, ...grant } = args; return appKitBridges.activate(grant, boundWallet, signature, defaultDelegationReaders(ctx)); } },
+  { name: "build_revoke_bridge_delegation", description: "Build owner-signed typed data to revoke one scoped Bridge grant.",
+    schema: { grantId: z.string(), nonce: z.string() }, handler: async (args) => buildBridgeRevokeTypedData(args.grantId, args.nonce) },
+  { name: "revoke_bridge_delegation", description: "Verify the owner's revocation signature and disable one Bridge grant.",
+    schema: { grantId: z.string(), nonce: z.string(), signature: z.string() }, handler: async (args) => appKitBridges.revoke(args.grantId, args.nonce, args.signature) },
+  { name: "build_appkit_bridge", description: "Reserve scoped Bridge budget and return fail-closed App Kit parameters; user adapters sign outside MCP.",
+    schema: { grantId: z.string(), destination: z.string(), recipient: z.string(), amount: z.string(), requestId: z.string() },
+    handler: async (args, ctx) => appKitBridges.build(args, defaultDelegationReaders(ctx)) },
+  { name: "verify_appkit_bridge_receipt", description: "Verify Circle's decoded CCTP message plus exact successful burn and mint transactions.",
+    schema: { invocationId: z.string(), burnTx: z.string(), mintTx: z.string() },
+    handler: async (args, ctx) => appKitBridges.verify(args.invocationId, args.burnTx, args.mintTx, ctx.provider()) },
 ];
