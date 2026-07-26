@@ -58,8 +58,14 @@ export const AGENT_JOBS_ABI = ["function createJob(address provider,address eval
 export const REPUTATION_REGISTRY_ADDRESS = "0x8004B663056A597Dffe9eCcC1965A193B7388713";
 export const VALIDATION_REGISTRY_ADDRESS = "0x8004Cb1BF31DAf7788923b405b754f57acEB4272";
 export const REPUTATION_ENDPOINT = "https://arcodian.fun/developers/reputation.json";
-export const REPUTATION_REGISTRY_ABI = ["function getIdentityRegistry() view returns(address)","function getClients(uint256 agentId) view returns(address[])","function getLastIndex(uint256 agentId,address client) view returns(uint64)","function readFeedback(uint256 agentId,address client,uint64 index) view returns(uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash,bool isRevoked)","function giveFeedback(uint256 agentId,uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash)"];
-export const VALIDATION_REGISTRY_ABI = ["function getIdentityRegistry() view returns(address)","function getAgentValidations(uint256 agentId) view returns(bytes32[])","function getValidationStatus(bytes32 dataHash) view returns(address validator,uint256 agentId,uint8 response,uint256 lastUpdate)","function validationRequest(address validatorAddress,uint256 agentId,bytes32 dataHash)","function validationResponse(bytes32 dataHash,uint8 response)"];
+// Signatures verified on-chain 2026-07-25 by decoding a live giveFeedback tx + raw readFeedback returns:
+// giveFeedback takes (int128 score, uint8 decimals) then 4 strings + filehash; readFeedback surfaces
+// only (int128 score, uint8 decimals, tag1, tag2, isRevoked) — endpoint/fileuri/filehash are write-only.
+export const REPUTATION_REGISTRY_ABI = ["function getIdentityRegistry() view returns(address)","function getClients(uint256 agentId) view returns(address[])","function getLastIndex(uint256 agentId,address client) view returns(uint64)","function readFeedback(uint256 agentId,address client,uint64 index) view returns(int128 score,uint8 decimals,string tag1,string tag2,bool isRevoked)","function giveFeedback(uint256 agentId,int128 score,uint8 decimals,string tag1,string tag2,string endpoint,string fileuri,bytes32 filehash)"];
+// validationRequest is authorized to the AGENT OWNER only (verified on-chain: client got "Not authorized",
+// agent owner succeeded). validationResponse is called by the requested validator. Signatures confirmed by
+// resolving the proxy implementation's selectors 2026-07-25.
+export const VALIDATION_REGISTRY_ABI = ["function getIdentityRegistry() view returns(address)","function getAgentValidations(uint256 agentId) view returns(bytes32[])","function getValidationStatus(bytes32 dataHash) view returns(address validator,uint256 agentId,uint8 response,uint256 lastUpdate)","function validationRequest(address validatorAddress,uint256 agentId,string requestUri,bytes32 dataHash)","function validationResponse(bytes32 dataHash,uint8 response,string responseUri,bytes32 responseHash,string tag)"];
 // Optional server-side aggregator bridge. The endpoint keeps provider credentials
 // off the client and returns a normalized, executable quote. Execution and
 // allowance targets are rejected unless explicitly allowlisted.

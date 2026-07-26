@@ -34,14 +34,14 @@
   "reputationRegistry": [
     "read: getClients(uint256 agentId) returns(address[])",
     "read: getLastIndex(uint256 agentId,address client) returns(uint64)",
-    "read: readFeedback(uint256 agentId,address client,uint64 index) returns(uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash,bool isRevoked)",
-    "write: giveFeedback(uint256 agentId,uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash)"
+    "read: readFeedback(uint256 agentId,address client,uint64 index) returns(int128 score,uint8 decimals,string tag1,string tag2,bool isRevoked)",
+    "write: giveFeedback(uint256 agentId,int128 score,uint8 decimals,string tag1,string tag2,string endpoint,string fileuri,bytes32 filehash)"
   ],
   "validationRegistry": [
     "read: getAgentValidations(uint256 agentId) returns(bytes32[])",
     "read: getValidationStatus(bytes32 dataHash) returns(address validator,uint256 agentId,uint8 response,uint256 lastUpdate)",
-    "write: validationRequest(address validatorAddress,uint256 agentId,bytes32 dataHash)",
-    "write: validationResponse(bytes32 dataHash,uint8 response)"
+    "write: validationRequest(address validatorAddress,uint256 agentId,string requestUri,bytes32 dataHash) — agent-owner only",
+    "write: validationResponse(bytes32 dataHash,uint8 response,string responseUri,bytes32 responseHash,string tag) — requested validator only"
   ],
   "arcLend": [
     "Supplied(address indexed user,uint256 assets,uint256 shares)",

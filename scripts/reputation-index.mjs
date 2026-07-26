@@ -18,7 +18,7 @@ const PP_ABI = ["function agentIdOf(address) view returns(uint256)"];
 const REP_ABI = [
   "function getClients(uint256 agentId) view returns(address[])",
   "function getLastIndex(uint256 agentId,address client) view returns(uint64)",
-  "function readFeedback(uint256 agentId,address client,uint64 index) view returns(uint8 score,string tag1,string tag2,string endpoint,bytes32 filehash,bool isRevoked)",
+  "function readFeedback(uint256 agentId,address client,uint64 index) view returns(int128 score,uint8 decimals,string tag1,string tag2,bool isRevoked)",
 ];
 const VAL_ABI = [
   "function getAgentValidations(uint256 agentId) view returns(bytes32[])",
@@ -82,7 +82,8 @@ async function main() {
           try {
             const f = await retry(() => rep.readFeedback(g.agentId, c, i), "readFeedback");
             if (f.isRevoked) continue;
-            raw.push({ agentId: g.agentId, client: c, score: Number(f.score), tag1: f.tag1, tag2: f.tag2, endpoint: f.endpoint, filehash: f.filehash, index: i });
+            const human = Number(f.score) / 10 ** Number(f.decimals); // registry stores scaled int128 + decimals
+            raw.push({ agentId: g.agentId, client: c, score: human, tag1: f.tag1, tag2: f.tag2, endpoint: "", filehash: "", index: i });
           } catch { /* skip unreadable index */ }
         }
       }

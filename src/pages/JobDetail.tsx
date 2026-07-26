@@ -38,9 +38,9 @@ export default function JobDetail({jobId,account,chainId,activeProvider,connect}
     catch(e){setStatus(e instanceof Error?e.message:`${label} failed`);}finally{setBusy(false);}
   }
   const reclaim=()=>run("Reclaim",s=>new Contract(AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,s).reclaimExpired(BigInt(jobId)));
-  const leaveFeedback=()=>run("Feedback",s=>new Contract(REPUTATION_REGISTRY_ADDRESS,REPUTATION_REGISTRY_ABI,s).giveFeedback(BigInt(job!.providerAgentId),Number(fbScore),"arcjob",jobId,feed?.evidenceHash||"",feed?.evidenceHash&&/^0x[0-9a-fA-F]{64}$/.test(feed.evidenceHash)?feed.evidenceHash:id(`arcjob:${jobId}`)));
-  const requestValidation=()=>run("Validation request",s=>new Contract(VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI,s).validationRequest(validator,BigInt(job!.providerAgentId),job!.deliverableHash));
-  const submitValidation=()=>run("Validation response",s=>new Contract(VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI,s).validationResponse(job!.deliverableHash,Number(valScore)));
+  const leaveFeedback=()=>run("Feedback",s=>new Contract(REPUTATION_REGISTRY_ADDRESS,REPUTATION_REGISTRY_ABI,s).giveFeedback(BigInt(job!.providerAgentId),BigInt(Math.round(Number(fbScore))),0,"arcjob",jobId,`${location.origin}/job/${jobId}`,"",feed?.evidenceHash&&/^0x[0-9a-fA-F]{64}$/.test(feed.evidenceHash)?feed.evidenceHash:id(`arcjob:${jobId}`)));
+  const requestValidation=()=>run("Validation request",s=>new Contract(VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI,s).validationRequest(validator,BigInt(job!.providerAgentId),`${location.origin}/job/${jobId}`,job!.deliverableHash));
+  const submitValidation=()=>run("Validation response",s=>new Contract(VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI,s).validationResponse(job!.deliverableHash,Number(valScore),`${location.origin}/job/${jobId}`,ZERO,"arcjob"));
 
   if(err)return <section className="agent-profile"><p>AGENT JOBS</p><h1>Job #{jobId}</h1><p className="err">{err}</p><p><a href="/jobs">← Back to jobs</a></p></section>;
   if(!job)return <section className="agent-profile"><p>AGENT JOBS</p><h1>Job #{jobId}</h1><p>Loading…</p></section>;
@@ -100,10 +100,12 @@ export default function JobDetail({jobId,account,chainId,activeProvider,connect}
       {/* Tier 3 — independent validation */}
       <section className="jobs-form"><p>VALIDATION · INDEPENDENT ATTESTATION</p><h2>Request or submit validation</h2>
         {job.providerAgentId==="0"?<span>Validation is agent-identity-keyed; this provider has no ERC-8004 identity.</span>:!account?<button className="agent-connect" onClick={connect}>Connect wallet</button>:<>
-          <span>Point an independent validator (not the client/provider/evaluator) at this job's deliverable, or respond if you are that validator.</span>
-          <div className="agent-row"><label>Validator address<input value={validator} onChange={e=>setValidator(e.target.value)} placeholder="0x… independent validator"/></label></div>
-          <div className="jobs-decision"><button disabled={busy||!isAddress(validator)} onClick={()=>void requestValidation()}>Request validation</button>
-          <button disabled={busy} onClick={()=>void submitValidation()}>Submit validation ({valScore}/100)</button></div>
+          <span>The <b>agent owner</b> points an independent validator (not the client/provider/evaluator) at this deliverable; that validator then submits its response. Independent responses raise the Tier-3 signal on the provider's profile.</span>
+          {eqAddr(account,job.provider)?<>
+            <div className="agent-row"><label>Validator address<input value={validator} onChange={e=>setValidator(e.target.value)} placeholder="0x… independent validator"/></label></div>
+            <button disabled={busy||!isAddress(validator)} onClick={()=>void requestValidation()}>Request validation (owner)</button>
+          </>:<span className="rep-muted">Connect as the provider ({short(job.provider)}) to request a validator. Only the agent owner is authorized.</span>}
+          <div className="jobs-decision"><button disabled={busy} onClick={()=>void submitValidation()}>Submit response ({valScore}/100) — validator</button></div>
           <label>Validator response (0–100)<input value={valScore} onChange={e=>setValScore(e.target.value)} placeholder="80"/></label>
         </>}
       </section>
