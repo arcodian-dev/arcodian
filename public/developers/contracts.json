@@ -18,6 +18,7 @@
     "agentJobs": "0x33f54C516107A8c67d9Dc245f00E253132a6D15A",
     "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
     "validationRegistry": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
+    "sessionKeyAccount": "0x06e26288AeC908c926A8e2466d9543e997f59d7C",
     "arcLendPythMarket": "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
     "arcLendPythAdapter": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
     "governanceMultisig": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
