@@ -376,6 +376,8 @@
   gap: 70px;
   align-items: center;
 }
+.product-security > div,
+.product-security aside { min-width: 0; }
 .product-security ul {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -410,6 +412,7 @@
   letter-spacing: 0.15em;
 }
 .product-security aside strong {
+  width: 100%;
   max-width: 340px;
   margin-top: 95px;
   font: 800 38px/0.92 Syne;
@@ -478,10 +481,15 @@
     grid-template-columns: 1fr;
   }
   .product-security aside strong {
-    font-size: 32px;
+    max-width: 100%;
+    font-size: clamp(25px, 8vw, 32px);
+    overflow-wrap: anywhere;
   }
   .product-security aside {
+    width: 100%;
+    padding: 24px;
     min-height: 280px;
+    overflow: hidden;
   }
   .product-responsive {
     text-align: left;

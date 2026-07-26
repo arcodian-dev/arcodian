@@ -1192,9 +1192,7 @@ function TradingDesk({
             <p className="kicker">{graduated ? "Graduated · trading on ARC DEX" : "Bonding curve market"} · Engine v{asset.engineVersion || 5}</p>
             <div className="venue-badges">
               {graduated && pair && <span className="live">● Arcodian DEX Live</span>}
-              {asset.uniswapPool
-                ? <a className="live" href={`${ARC.explorer}/address/${asset.uniswapPool}`} target="_blank" rel="noreferrer">● Uniswap Live ↗</a>
-                : graduated && <span className="pending">Uniswap · awaiting official Arc deployment</span>}
+              {asset.uniswapPool && <a className="live" href={`${ARC.explorer}/address/${asset.uniswapPool}`} target="_blank" rel="noreferrer">● Uniswap Live ↗</a>}
             </div>
             <h3>
               {asset.name} <span>${asset.symbol}</span>

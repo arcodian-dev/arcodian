@@ -262,7 +262,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 <span className="lp-mini-id"><b>{row.symbol}</b><small>{row.name}</small></span>
                 {row.spark
                   ? <svg viewBox="0 0 120 34" aria-hidden="true"><polyline points={row.spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                  : <span className="lp-nospark">no trades yet</span>}
+                  : <span className="lp-nospark">{row.tradeCount} confirmed trade{row.tradeCount === 1 ? "" : "s"}</span>}
                 <span className="lp-mini-num"><b>{money(quoteAmount(row.volume, row.currency), row.currency)}</b><small>{row.progress.toFixed(1)}%</small></span>
               </button>
             ))
