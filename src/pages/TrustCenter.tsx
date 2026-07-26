@@ -189,6 +189,7 @@ const DOCS_SECTIONS = [
   ["lend", "Arc Lend"],
   ["bridge", "Bridge"],
   ["fx", "StableCoin FX"],
+  ["agent", "Agent economy"],
   ["lifecycle", "Launchpad & lifecycle"],
   ["fees", "Fees & graduation"],
   ["eurc", "EURC launches"],
@@ -278,8 +279,22 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       </div>
     </article>
 
+    <article id="docs-agent" className="docs-section">
+      <div className="docs-section-head"><span>07</span><h2>Agent economy</h2></div>
+      <p>Arcodian lets software hold money <b>with limits, not a blank check</b>. An agent gets an official on-chain identity, can be given a bounded budget, can take on paid work, and builds a reputation from verifiable outcomes — without anyone handing it an unrestricted wallet.</p>
+      <div className="economics-ledger">
+        <div><small>Identity</small><strong>Agent Passport</strong><p>An ERC-8004 Agent ID is bound to one authorized wallet with owner-only rotation. Identity never grants spending authority by itself.</p></div>
+        <div><small>Bounded spend</small><strong>Agent Pay</strong><p>One isolated, non-custodial vault per owner with per-payment, daily, expiry, and merchant-allowlist limits. The owner can pause or withdraw anytime.</p></div>
+        <div><small>Work</small><strong>Jobs</strong><p>USDC is escrowed and released only when a job is verifiably completed; rejected or expired jobs refund the client.</p></div>
+        <div><small>Reputation</small><strong>Evidence-backed</strong><p>Scores come only from real completed jobs plus independent validation. Owners and their agents cannot rate themselves.</p></div>
+        <div><small>Access</small><strong>Arcodian MCP</strong><p>Agents read state and receive <em>unsigned</em> transactions to sign themselves — the server never holds a key or signs.</p></div>
+        <div><small>Delegation</small><strong>Scoped, on-chain</strong><p>Session-key and timelock spikes enforce capability, target, amount, time, and revocation at execution time. Testnet spikes — not audited, not mainnet.</p></div>
+      </div>
+      <p className="docs-note">Every agent-economy contract is listed with a live wiring proof in the <a href="/contracts">Trust Center</a>, and machine-readable feeds are on the <a href="/developers">developer portal</a>.</p>
+    </article>
+
     <article id="docs-lifecycle" className="docs-section">
-      <div className="docs-section-head"><span>07</span><h2>Launchpad & lifecycle</h2></div>
+      <div className="docs-section-head"><span>08</span><h2>Launchpad & lifecycle</h2></div>
       <p>The launchpad is permissionless: anyone can create a coin and it gets a live bonding-curve market immediately. A coin then moves through four public states—there is no hidden mint, pause, or exit between them.</p>
       <div className="economics-flow">
         <div><i>01</i><small>Opening state</small><h3>1,000 USDC starting FDV</h3><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></div>
@@ -290,7 +305,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-fees" className="docs-section">
-      <div className="docs-section-head"><span>08</span><h2>Fees & graduation</h2></div>
+      <div className="docs-section-head"><span>09</span><h2>Fees & graduation</h2></div>
       <p>Two fee regimes, both charged atomically by the contracts—before and after graduation.</p>
       <div className="economics-ledger">
         <div><small>Bonding-curve fee</small><strong>1.00%</strong><p>Charged on every curve buy and sell. Buy fees are removed before reserve growth.</p></div>
@@ -301,7 +316,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-eurc" className="docs-section">
-      <div className="docs-section-head"><span>09</span><h2>EURC launches</h2></div>
+      <div className="docs-section-head"><span>10</span><h2>EURC launches</h2></div>
       <p>Coins can be denominated in <b>EURC</b> instead of USDC. Pick the collateral with the USDC/EURC toggle when you create. The bonding curve, 1% fee, and graduation logic are identical; only the quote asset changes.</p>
       <div className="docs-cards">
         <div><b>Auto-detected</b><p>Choose EURC and every trade on that coin routes through EURC—approval, buy, and sell—without another switch.</p></div>
@@ -311,7 +326,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-roadmap" className="docs-section">
-      <div className="docs-section-head"><span>10</span><h2>Roadmap</h2></div>
+      <div className="docs-section-head"><span>11</span><h2>Roadmap</h2></div>
       <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface—the first two are already live on testnet.</p>
       <div className="economics-flow">
         <div><i>01</i><small>Live · testnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live. Next: recurring requests, payment links, and merchant webhooks.</p></div>
@@ -322,13 +337,13 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-safety" className="docs-section">
-      <div className="docs-section-head"><span>11</span><h2>Safety & custody</h2></div>
+      <div className="docs-section-head"><span>12</span><h2>Safety & custody</h2></div>
       <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints, and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Mainnet paths stay fail-closed until every release check is signed off.</p>
       <aside className="docs-notice"><strong>Testnet notice</strong><p>Arcodian currently runs on Arc Testnet chain 5042002. Test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through Arc Explorer.</p></aside>
     </article>
 
     <article id="docs-verify" className="docs-section">
-      <div className="docs-section-head"><span>12</span><h2>Verify everything</h2></div>
+      <div className="docs-section-head"><span>13</span><h2>Verify everything</h2></div>
       <p>Don't take the docs on faith. The Contracts page reads the live wiring straight from chain, the FAQ covers the edge cases, and Arc Explorer lets you inspect any address or transaction yourself.</p>
       <div className="docs-links">
         <button onClick={openContracts}><b>Contracts →</b><small>Live on-chain wiring proof</small></button>
@@ -338,7 +353,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-readiness" className="docs-section readiness-section">
-      <div className="docs-section-head"><span>13</span><h2>Mainnet readiness</h2></div>
+      <div className="docs-section-head"><span>14</span><h2>Mainnet readiness</h2></div>
       <p><b>Current decision: NO-GO.</b> Testnet functionality is broad and monitored, but operational and governance gates remain open. No mainnet deployment path is enabled in the frontend.</p>
       <div className="readiness-grid">
         <div className="blocked"><small>BLOCKER</small><b>Official mainnet registry</b><p>Final Arc mainnet chain ID, RPC, explorer, USDC, EURC, Pyth, and CCTP addresses are not configured and independently verified.</p></div>
@@ -353,12 +368,12 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-faq" className="docs-section">
-      <div className="docs-section-head"><span>14</span><h2>Frequently asked questions</h2></div>
+      <div className="docs-section-head"><span>15</span><h2>Frequently asked questions</h2></div>
       <div className="faq-list docs-faq-list">{FAQ_ITEMS.map(([question,answer],index)=><details key={question} open={index===0}><summary><span>{String(index+1).padStart(2,"0")}</span>{question}<i>+</i></summary><p>{answer}</p></details>)}</div>
     </article>
 
     <article id="docs-legal" className="docs-section">
-      <div className="docs-section-head"><span>15</span><h2>Terms, risk & refunds</h2></div>
+      <div className="docs-section-head"><span>16</span><h2>Terms, risk & refunds</h2></div>
       <p>Arcodian is currently a testnet interface. Test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing.</p>
       <div className="docs-cards">
         <div><b>Self-custody</b><p>Arcodian does not hold recovery phrases or sign on a user&apos;s behalf. Blockchain transactions are public and normally irreversible.</p></div>

@@ -4497,3 +4497,7 @@ footer::before {
 .lp-pillar li i { grid-column: 2; grid-row: 1 / span 2; color: var(--f-amber); font-style: normal; font-weight: 800; }
 @media (max-width: 1080px) { .lp-pillars { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) { .lp-pillars { grid-template-columns: 1fr; } }
+
+/* Docs inline note (agent-economy section cross-links) */
+.docs-section .docs-note { margin-top: 16px; color: var(--f-dim); font-size: 14px; line-height: 1.6; }
+.docs-section .docs-note a { color: var(--f-amberhi); text-decoration: none; border-bottom: 1px solid var(--f-hair2); }
