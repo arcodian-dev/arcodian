@@ -1,0 +1,22 @@
+[Unit]
+Description=Independent Arcodian Agent Economy monitor (MCP, audit chain, backups, indexers)
+After=arcodian-mcp.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=MCP_STATE_DB=/var/lib/arcodian-mcp/state.db
+Environment=MCP_BACKUP_DIR=/var/backups/arcodian-mcp
+Environment=AGENT_ECONOMY_NOTIFICATIONS=/var/lib/arcodian-mcp/agent-economy-notifications.json
+Environment=MCP_HEALTH_URL=http://127.0.0.1:8793/health
+Environment=ARC_RPC_URL=https://rpc.blockdaemon.testnet.arc.io
+Environment=ARC_FEED_BASE=https://arcodian.fun/developers
+ExecStart=/usr/bin/node scripts/agent-economy-monitor.mjs
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/arcodian-mcp
+SuccessExitStatus=0 1 2

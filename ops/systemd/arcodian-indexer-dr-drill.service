@@ -1,0 +1,16 @@
+[Unit]
+Description=Arcodian Agent Economy indexer disaster-recovery drill
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_SHARED_DATA=/www/wwwroot/arcodian.fun/shared/developers
+Environment=ARC_RPC_URL=https://rpc.blockdaemon.testnet.arc.io
+Environment=ARC_FEED_BASE=https://arcodian.fun/developers
+ExecStart=/usr/bin/node scripts/indexer-dr-drill.mjs
+User=root
+Group=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict

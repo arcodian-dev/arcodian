@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the indexer disaster-recovery drill daily
+
+[Timer]
+OnCalendar=*-*-* 03:23:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=arcodian-indexer-dr-drill.service
+
+[Install]
+WantedBy=timers.target

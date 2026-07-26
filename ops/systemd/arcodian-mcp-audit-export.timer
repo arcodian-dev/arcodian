@@ -1,0 +1,11 @@
+[Unit]
+Description=Export the MCP audit chain every 15 minutes
+
+[Timer]
+OnBootSec=3m
+OnUnitActiveSec=15m
+RandomizedDelaySec=1m
+Unit=arcodian-mcp-audit-export.service
+
+[Install]
+WantedBy=timers.target

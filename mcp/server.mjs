@@ -5,12 +5,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { makeCtx } from "./sources.ts";
 import { TOOLS } from "./tools/registry.ts";
+import { AuditLog } from "./audit-log.ts";
 
 const PORT = Number(process.env.MCP_PORT || 8793);
 const RATE_RPS = Number(process.env.MCP_RATE_RPS || 4);
 const RATE_BURST = Number(process.env.MCP_RATE_BURST || 20);
 const MAX_BODY_BYTES = Number(process.env.MCP_MAX_BODY_BYTES || 256 * 1024);
 const ctx = makeCtx();
+// Durable, hash-chained audit trail. Best-effort: an audit-store failure must
+// never drop a tool call, but it is surfaced on stderr for the independent monitor.
+let audit = null;
+try { audit = new AuditLog(); } catch (e) { process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), auditInit: String(e?.message || e) }) + "\n"); }
 
 // per-IP token bucket
 const buckets = new Map();
@@ -31,7 +36,10 @@ function buildServer(ip) {
   );
   for (const t of TOOLS) {
     server.registerTool(t.name, { description: t.description, inputSchema: t.schema }, async (args) => {
-      process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), ip, tool: t.name, argHash: argHash(args) }) + "\n");
+      const ah = argHash(args);
+      process.stdout.write(JSON.stringify({ ts: new Date().toISOString(), ip, tool: t.name, argHash: ah }) + "\n");
+      try { audit?.append({ tool: t.name, ip, argHash: ah }); }
+      catch (e) { process.stderr.write(JSON.stringify({ ts: new Date().toISOString(), auditAppend: String(e?.message || e) }) + "\n"); }
       try {
         const result = await t.handler(args, ctx);
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
