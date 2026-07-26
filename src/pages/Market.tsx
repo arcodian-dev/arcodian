@@ -305,6 +305,9 @@ export default function Screener({
     else board.push({ address: item.creator, volume: BigInt(item.volume || "0"), launches: 1 });
     return board;
   }, []).sort((a, b) => a.volume > b.volume ? -1 : 1).slice(0, 5);
+  const totalTrades = launches.reduce((sum, item) => sum + (item.tradeCount || 0), 0);
+  const totalVolume = launches.reduce((sum, item) => sum + BigInt(item.volume || "0"), 0n);
+  const graduatedMarkets = launches.filter((item) => item.graduated).length;
   const traderBoard = arenaActivity.reduce<Array<{ address: string; volume: bigint; trades: number }>>((board, trade) => {
     const found = board.find((row) => row.address.toLowerCase() === trade.user.toLowerCase());
     if (found) { found.volume += BigInt(trade.native); found.trades += 1; }
@@ -367,9 +370,10 @@ export default function Screener({
         <span>
           <b>LIVE</b> Arc Testnet
         </span>
-        <span>{launches.length} launches</span>
-        <span>4,500 USDC canonical graduation</span>
-        <span>LP permanently burned</span>
+        <span>{launches.length} canonical markets</span>
+        <span>{totalTrades} confirmed trades</span>
+        <span>{Number(formatEther(totalVolume)).toLocaleString(undefined,{maximumFractionDigits:2})} USDC volume</span>
+        <span>{graduatedMarkets} graduated · LP locked</span>
       </div>
       <div className="board-head">
         <div>
@@ -388,6 +392,12 @@ export default function Screener({
         <button role="tab" aria-selected={marketView === "markets"} className={marketView === "markets" ? "active" : ""} onClick={() => setMarketView("markets")}><span>01</span> Markets <small>Discover and trade</small></button>
         <button role="tab" aria-selected={marketView === "arena"} className={marketView === "arena" ? "active" : ""} onClick={() => setMarketView("arena")}><span>02</span> Coin Arena <small>Weekly onchain contest</small></button>
       </div>
+      <section className="market-proof-strip" aria-label="Canonical market proof">
+        <span><small>ENGINE</small><b>v{ENGINE_VERSION}</b></span>
+        <span><small>FACTORIES</small><b>USDC + EURC canonical</b></span>
+        <span><small>GRADUATION</small><b>4,500 stablecoin reserve</b></span>
+        <a href="/contracts">Verify deployment →</a>
+      </section>
       {marketView === "arena" && <div className="arena-workspace">
       <section className="coin-arena" aria-label="Coin Arena">
         <div className="arena-head">
@@ -542,7 +552,7 @@ export default function Screener({
               {"progress" in item ? (
                 <>
                   <div className="coin-discovery-metrics">
-                    <span><small>24h volume</small><b>{Number(formatEther(BigInt(item.volume24h || item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span>
+                    <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span>
                     <span><small>Holders</small><b>{item.holderCount || 0}</b></span>
                     <span><small>24h</small><b className={(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</b></span>
                   </div>
@@ -1083,6 +1093,9 @@ function TradingDesk({
   // Constant-product pairs hold equal value on both sides. `reserve` is the
   // normalized quote side, so Dexscreener-style pool liquidity is 2x quote.
   const dexLiquidity = graduated ? reserve * 2n : reserve;
+  const burnedPct = asset.lpSupply && BigInt(asset.lpSupply) > 0n
+    ? Number((BigInt(asset.lpBurned || "0") * 10_000n) / BigInt(asset.lpSupply)) / 100
+    : 0;
   const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: Number(BigInt(trade.native)) / Math.max(1, Number(BigInt(trade.tokens))), volume: Number(formatEther(BigInt(trade.native))) }));
   const candleMap = new Map<number, Array<{price:number;volume:number}>>();
   for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
@@ -1217,7 +1230,7 @@ function TradingDesk({
           </div>
           {graduated && pair ? <>
             <span><small>Canonical pair</small><a href={`${ARC.explorer}/address/${pair}`} target="_blank" rel="noreferrer">{short(pair)} ↗</a></span>
-            <span><small>LP status</small><b>{asset.lpSupply && asset.lpSupply === asset.lpBurned ? "Burned permanently" : "Verify onchain"}</b></span>
+            <span><small>LP status</small><b>{burnedPct >= 99.99 ? `${burnedPct.toFixed(4)}% burned` : "Verify onchain"}</b></span>
             <span><small>DEX liquidity</small><b>{Number(formatEther(dexLiquidity)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b></span>
           </> : <>
             <span><small>Raised</small><b>{Number(formatEther(reserve)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>

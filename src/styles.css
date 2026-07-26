@@ -4334,6 +4334,31 @@ footer::before {
 .launch-submit { display: grid; justify-items: center; gap: 8px; margin-top: 14px; }.launch-submit .primary { width: min(480px,100%); min-height: 52px; margin: 0; color: #061019; background: linear-gradient(135deg,#5ad6f7,#5a91ff); box-shadow: 0 14px 36px rgba(21,154,255,.22); }.launch-submit .primary:disabled { color: #6f819f; background: rgba(255,255,255,.06); box-shadow: none; }.launch-submit>small { color: #637594; font: 600 8px var(--f-mono); text-transform: uppercase; }.create-modal .fine { color: #637594; }
 @media (max-width:760px) { .trade-overlay:has(.create-modal) { padding: 0; align-items: end; }.create-modal { max-height: 94vh; border-radius: 24px 24px 0 0; }.create-modal .launch-state { padding: 20px 14px 28px; }.launch-hero { align-items: flex-start; flex-direction: column; }.launch-network { display: none; }.create-modal .pump-flow { grid-template-columns: 1fr 1fr; }.create-modal .launch-studio-workspace { grid-template-columns: 1fr; }.create-modal .launch-form { grid-template-columns: 1fr; padding: 15px; }.create-modal .launch-form label,.launch-section-title { grid-column: 1; }.create-modal .launch-live-preview { position: static; }.create-modal .factory-proof { margin-right: 48px; }.launch-hero h3 { font-size: 38px; } }
 
+.market-proof-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 1px;
+  margin: 0;
+  border-block: 1px solid var(--f-hair);
+  overflow: hidden;
+  background: var(--f-hair);
+}
+.market-proof-strip span,.market-proof-strip a {
+  display: grid;
+  gap: 4px;
+  padding: 13px 18px;
+  background: var(--f-ink2);
+  text-decoration: none;
+}
+.market-proof-strip small { color: var(--f-faint); font: 700 9px var(--f-mono); letter-spacing: .12em; }
+.market-proof-strip b { color: var(--f-bone); font-size: 13px; }
+.market-proof-strip a { place-items: center; color: var(--f-amber); font-weight: 800; }
+@media (max-width:700px) {
+  .market-proof-strip { grid-template-columns: 1fr 1fr; }
+  .market-proof-strip span:nth-child(3) { grid-column: 1/-1; }
+  .market-proof-strip a { grid-column: 1/-1; }
+}
+
 /* Market Terminal v2 — one coherent Arcodian surface, no inherited light cards */
 .coin-page-shell > .trade-desk { border-color: rgba(90,176,255,.16); background: #080f22; box-shadow: 0 34px 110px rgba(0,0,0,.58); }
 .coin-route > .trade-identity { background: radial-gradient(80% 180% at 0 50%,rgba(90,176,255,.13),transparent 62%),#0a1328; }
