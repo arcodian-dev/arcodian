@@ -1,7 +1,8 @@
 import {useCallback,useEffect,useState} from "react";
-import {BrowserProvider,Contract,formatEther,id,isAddress} from "ethers";
+import {BrowserProvider,Contract,JsonRpcProvider,formatEther,id,isAddress} from "ethers";
 import {AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,ARC,REPUTATION_REGISTRY_ADDRESS,REPUTATION_REGISTRY_ABI,VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI} from "../config";
 import {readJob,fetchJobsFeed,type OnchainJob,type FeedJob} from "../lib/jobs";
+import {describeTxError} from "../txError";
 import "./AgentPay.css";
 import "./Jobs.css";
 
@@ -17,15 +18,19 @@ export default function JobDetail({jobId,account,chainId,activeProvider,connect}
   const [err,setErr]=useState("");const [status,setStatus]=useState("");const [busy,setBusy]=useState(false);
   const [fbScore,setFbScore]=useState("90");const [validator,setValidator]=useState("");const [valScore,setValScore]=useState("80");
   const [repScore,setRepScore]=useState<number|null>(null);
+  const [assignedValidator,setAssignedValidator]=useState("");
 
   const load=useCallback(async()=>{
     try{
       const j=await readJob(jobId);setJob(j);
       const all=await fetchJobsFeed();setFeed(all.find(f=>f.jobId===String(jobId))||null);
-    }catch(e){setErr(e instanceof Error?e.message:"Failed to load job");}
+    }catch(e){setErr(describeTxError(e));}
   },[jobId]);
   useEffect(()=>{void load();},[load,status]);
   useEffect(()=>{if(!job||job.providerAgentId==="0")return;fetch("/developers/reputation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{const a=(d?.agents||[]).find((a:any)=>String(a.agentId)===job.providerAgentId);setRepScore(a?a.score:null);}).catch(()=>{});},[job]);
+  // Read who validationRequest() actually assigned, so the response form can warn
+  // *before* a mismatched wallet submits and gets a plain contract revert.
+  useEffect(()=>{if(!job?.deliverableHash)return;const registry=new Contract(VALIDATION_REGISTRY_ADDRESS,VALIDATION_REGISTRY_ABI,new JsonRpcProvider(ARC.rpc,undefined,{batchMaxCount:1}));registry.getValidationStatus(job.deliverableHash).then((r:any)=>setAssignedValidator(r?.validator&&r.validator!=="0x0000000000000000000000000000000000000000"?r.validator:"")).catch(()=>setAssignedValidator(""));},[job?.deliverableHash,status]);
 
   async function signer(){
     if(!activeProvider){connect();throw new Error("Connect wallet first");}
@@ -35,7 +40,7 @@ export default function JobDetail({jobId,account,chainId,activeProvider,connect}
   async function run(label:string,fn:(s:any)=>Promise<any>){
     setBusy(true);setStatus(`${label}: waiting for wallet…`);
     try{const s=await signer();const tx=await fn(s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);}
-    catch(e){setStatus(e instanceof Error?e.message:`${label} failed`);}finally{setBusy(false);}
+    catch(e){setStatus(describeTxError(e));}finally{setBusy(false);}
   }
   const reclaim=()=>run("Reclaim",s=>new Contract(AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,s).reclaimExpired(BigInt(jobId)));
   const leaveFeedback=()=>run("Feedback",s=>new Contract(REPUTATION_REGISTRY_ADDRESS,REPUTATION_REGISTRY_ABI,s).giveFeedback(BigInt(job!.providerAgentId),BigInt(Math.round(Number(fbScore))),0,"arcjob",jobId,`${location.origin}/job/${jobId}`,"",feed?.evidenceHash&&/^0x[0-9a-fA-F]{64}$/.test(feed.evidenceHash)?feed.evidenceHash:id(`arcjob:${jobId}`)));
@@ -105,7 +110,8 @@ export default function JobDetail({jobId,account,chainId,activeProvider,connect}
             <div className="agent-row"><label>Validator address<input value={validator} onChange={e=>setValidator(e.target.value)} placeholder="0x… independent validator"/></label></div>
             <button disabled={busy||!isAddress(validator)} onClick={()=>void requestValidation()}>Request validation (owner)</button>
           </>:<span className="rep-muted">Connect as the provider ({short(job.provider)}) to request a validator. Only the agent owner is authorized.</span>}
-          <div className="jobs-decision"><button disabled={busy} onClick={()=>void submitValidation()}>Submit response ({valScore}/100) — validator</button></div>
+          {assignedValidator&&!eqAddr(account,assignedValidator)&&<span className="rep-muted">Connect as the requested validator ({short(assignedValidator)}) to submit a response — any other wallet will revert.</span>}
+          <div className="jobs-decision"><button disabled={busy||!assignedValidator||!eqAddr(account,assignedValidator)} onClick={()=>void submitValidation()}>Submit response ({valScore}/100) — validator</button></div>
           <label>Validator response (0–100)<input value={valScore} onChange={e=>setValScore(e.target.value)} placeholder="80"/></label>
         </>}
       </section>

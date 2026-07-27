@@ -5,6 +5,7 @@ import { isCircleAsset, isTokenAddress, shortAddress, shortfallBps } from "../de
 import { ERC20_META_ABI, PAIR_ABI, isZeroForOne, readToken, type TokenMeta } from "../dexReads";
 import { findBestRoute, ROUTER_ABI } from "../routingReads";
 import { routeGainBps, routeLabel, type DirectRoute, type Route } from "../routing";
+import { describeTxError } from "../txError";
 
 const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
 const PINNED_TOKENS: TokenMeta[] = TOKENS.map((token) => ({ ...token }));
@@ -205,7 +206,7 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
       setAmount(""); setRoute(null); setDirect(null);
       setBalance(await erc20.balanceOf(account) as bigint);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message.slice(0, 140) : "Swap failed");
+      setStatus(describeTxError(error));
     } finally { setBusy(false); }
   }
 

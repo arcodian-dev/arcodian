@@ -7,6 +7,7 @@ import {
   bridgeAttention, clearPendingClaim, fetchCctpAttestation, loadBridgeHistory, loadPendingClaims, recordBridgeHistory, savePendingClaim,
   type Attestation, type BridgeHistoryItem, type PendingClaim,
 } from "../bridgeRecovery";
+import { describeTxError } from "../txError";
 
 type Eip1193 = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
 
@@ -131,7 +132,7 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
       } else if (/insufficient funds|gas required/i.test(message)) {
         setStatus(`Not enough ${CHAINS.find((c) => c.id === target.toChainId)?.gasSymbol || "gas"} on ${chainName(target.toChainId)} to pay the mint gas — top it up and try again.`);
       } else {
-        setStatus(message.slice(0, 150));
+        setStatus(describeTxError(error));
       }
     } finally {
       setBusyHash(null);

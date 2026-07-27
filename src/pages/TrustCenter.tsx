@@ -126,7 +126,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
           // force while the authority points back at this launch factory.
           { label: "Graduation authority sealed", value: short(authority), ok: same(authority, PUMP_FACTORY_ADDRESS) },
           { label: "Treasury agreement", value: short(pumpTreasury), ok: [pumpTreasury, pairTreasury].every((value) => same(value, FEE_TREASURY)) },
-          { label: "Graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("4500") },
+          { label: "Graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("12000") },
         ]);
         setCheckedAt(new Date().toLocaleString());
       } catch { setChecks([]); }

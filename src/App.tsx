@@ -40,6 +40,7 @@ const CCTP_USDC_ABI = [
   "function allowance(address,address) view returns(uint256)",
 ];
 import { BrandMark, FAQ_ITEMS, short, type WalletOption } from "./shared";
+import { describeTxError } from "./txError";
 
 const Screener = lazy(() => import("./pages/Market"));
 const FxDesk = lazy(() => import("./components/FxDesk"));
@@ -309,9 +310,7 @@ export default function App() {
       setWalletOpen(false);
       setStatus("");
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Wallet connection rejected",
-      );
+      setStatus(describeTxError(error));
     }
   }
 
@@ -348,7 +347,7 @@ export default function App() {
       setAccount(accounts[0] || "");
       setWalletOpen(false);
       setStatus("");
-    } catch (error) { setStatus(error instanceof Error ? error.message : "WalletConnect failed"); }
+    } catch (error) { setStatus(describeTxError(error)); }
   }
 
   async function deployMainnetSuite() {
@@ -543,7 +542,7 @@ export default function App() {
       setStatus(`Burned on ${from.name}. Circle is attesting — the claim panel below auto-switches to ${to.name} and mints your USDC once ready. Keep a little ${to.gasSymbol} on ${to.name} for the mint.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatus(/exceeds allowance/i.test(message) ? "Approval didn't register — try the bridge again to re-approve." : message.slice(0, 180));
+      setStatus(/exceeds allowance/i.test(message) ? "Approval didn't register — try the bridge again to re-approve." : describeTxError(error));
     } finally {
       setBusy(false);
     }

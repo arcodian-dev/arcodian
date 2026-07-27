@@ -1,6 +1,7 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {BrowserProvider,Contract,JsonRpcProvider,ZeroAddress,formatEther,id,isAddress,parseEther} from "ethers";
 import {AGENT_PAY_ADDRESS,AGENT_PAY_FACTORY_ADDRESS,ARC,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,AGENT_PAY_V3_VAULT_ABI,AGENT_METADATA_ENDPOINT} from "../config";
+import {describeTxError} from "../txError";
 import "./AgentPay.css";
 
 const VAULT_ABI=["function owner() view returns(address)","function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function setPolicy(address,uint128,uint128,uint64,bool)","function setMerchant(address,address,bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)","function withdraw(address,uint256)"];
@@ -17,7 +18,7 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  useEffect(()=>{void refresh()},[refresh]);
  useEffect(()=>{fetch("/data/agentpay-index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(setIndex).catch(()=>{})},[status]);
  async function signer(){if(!activeProvider){connect();throw Error("Connect wallet first")}if(chainId!==ARC.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:ARC.hexId}]});throw Error("Network switched. Review and submit again.")}return new BrowserProvider(activeProvider).getSigner()}
- async function submit(label:string,target:string,abi:string[],fn:(c:Contract,s:any)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const tx=await fn(new Contract(target,abi,s),s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh()}catch(e){setStatus(e instanceof Error?e.message:"Action failed")}finally{setBusy(false)}}
+ async function submit(label:string,target:string,abi:string[],fn:(c:Contract,s:any)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const tx=await fn(new Contract(target,abi,s),s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh()}catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
  async function registerPassport(){setBusy(true);setStatus("Passport: pinning metadata to IPFS…");try{
   const meta={name:agentName,description:agentDesc,image:agentImage,version:"1",capabilities:agentCaps.split(",").map(s=>s.trim()).filter(Boolean),supportedPaymentModes:agentModes.split(",").map(s=>s.trim()).filter(Boolean)};
   const res=await fetch(AGENT_METADATA_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(meta)});
@@ -27,7 +28,7 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
   setStatus("Passport: waiting for wallet…");const tx=await reg.register(url);setStatus(`Registering ${short(tx.hash)}…`);const rc=await tx.wait();
   const mint=rc.logs.map((l:any)=>{try{return reg.interface.parseLog(l)}catch{return null}}).find((e:any)=>e&&e.name==="Transfer"&&e.args.from===ZeroAddress);
   const aid=mint?mint.args.tokenId.toString():"";setNewAgentId(aid);setBindAgentId(aid);setStatus(`Passport registered — Agent ID ${aid} · ${url}`)
- }catch(e){setStatus(e instanceof Error?e.message:"Registration failed")}finally{setBusy(false)}}
+ }catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
  const bindAgentWallet=()=>submit("Bind wallet",AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,c=>c.bindWallet(BigInt(bindAgentId),bindWalletAddr));
  const invoiceId=useMemo(()=>/^0x[0-9a-fA-F]{64}$/.test(invoice)?invoice:id(`${selectedVault}:${merchant}:${invoice}`),[invoice,merchant,selectedVault]);
  const create=()=>submit("Vault creation",AGENT_PAY_FACTORY_ADDRESS,FACTORY_ABI,c=>c.createVault({value:parseEther(initialFunding||"0")}));
