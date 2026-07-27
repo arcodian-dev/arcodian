@@ -97,6 +97,30 @@ contract ArcAgentJobsV2Test is Test {
         assertEq(agentId, 0);
     }
 
+    function testRejectsClientAsEvaluator() public {
+        vm.prank(client);
+        vm.expectRevert(ArcAgentJobsV2.SelfDealing.selector);
+        jobs.createJob{value: 1 ether}(
+            provider,
+            client,
+            uint64(block.timestamp + 7 days),
+            DESC,
+            0
+        );
+    }
+
+    function testRejectsProviderAsEvaluator() public {
+        vm.prank(client);
+        vm.expectRevert(ArcAgentJobsV2.SelfDealing.selector);
+        jobs.createJob{value: 1 ether}(
+            provider,
+            provider,
+            uint64(block.timestamp + 7 days),
+            DESC,
+            0
+        );
+    }
+
     function testRotationRequiresCurrentBoundWallet() public {
         passport.bind(AGENT_ID, attacker);
         vm.prank(client);

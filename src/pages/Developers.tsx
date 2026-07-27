@@ -24,9 +24,10 @@ const entries=[
  ["Governance multisig","0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa","2-of-2 testnet governance canary controlling the 24-hour timelock."],
  ["Stablecoin FX","0x982D61ddCAb6169d82B3e37A4E4158f1982E5447","Permissionless USDC/EURC AMM with 8 bps LP + 2 bps protocol fee."],
  ["Agent Passport · ERC-8004","0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf","Binds an Agent ID to an authorized wallet with owner-only rotation; identity alone never grants spend."],
- ["Agent Jobs v2","0x33f54C516107A8c67d9Dc245f00E253132a6D15A","Escrowed USDC job lifecycle; a nonzero provider Agent ID is accepted only from the current Passport wallet."],
+ ["Agent Pay Factory v4","0x8F4Ba684C7c294DF3Af50AC023975F6695CA4299","Identity-aware vault template; a policy for an agentId goes inert the instant that agentId's Identity Registry ownership changes, not just when the passport wallet rotates."],
+ ["Agent Jobs v2 (self-dealing fixed)","0xfFdb3EC041DC1Cad062F0F80FF1a6F8292f21Df2","Escrowed USDC job lifecycle; a nonzero provider Agent ID is accepted only from the current Passport wallet; evaluator can no longer be the client or provider."],
  ["Session-Key Account · F4","0x06e26288AeC908c926A8e2466d9543e997f59d7C","Scoped session key executes autonomously within target, function, per-call/daily caps, and time window — enforced on-chain, owner keeps custody. Spike."],
- ["Admin Timelock · F5","0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac","Governed administration: schedule → enforced delay → execute, with cancel and a self-governed delay. Spike."],
+ ["Admin Timelock · F5","0x8baC8017081134f02065fFefa340837278C03052","Governed administration: schedule → enforced delay → execute, with cancel, a self-governed delay, and a two-step admin handoff. Spike."],
 ] as const;
 
 export default function Developers(){

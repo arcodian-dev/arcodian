@@ -45,4 +45,16 @@ describe("describeTxError", () => {
     const message = describeTxError({ code: "CALL_EXCEPTION", message: "missing revert data (could not coalesce error)" });
     expect(message).toContain("busy");
   });
+
+  it("decodes the ArcAgentJobsV2 self-dealing guard", () => {
+    expect(describeTxError({ code: "CALL_EXCEPTION", data: "0x74ca9bd8" })).toContain("neutral third party");
+  });
+
+  it("decodes the ArcAgentPayV4 stale-ownership guard", () => {
+    expect(describeTxError({ code: "CALL_EXCEPTION", data: "0x4867df74" })).toContain("current holder");
+  });
+
+  it("decodes the ArcAdminTimelock two-step admin-accept guard", () => {
+    expect(describeTxError({ code: "CALL_EXCEPTION", data: "0x058d9a1b" })).toContain("proposed as the new admin");
+  });
 });

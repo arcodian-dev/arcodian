@@ -58,6 +58,7 @@ contract ArcAgentJobsV2 {
     error IdentityMismatch();
     error Reentrancy();
     error TransferFailed();
+    error SelfDealing();
 
     event JobCreated(
         uint256 indexed jobId,
@@ -112,6 +113,12 @@ contract ArcAgentJobsV2 {
         if (expiry <= block.timestamp || expiry > block.timestamp + MAX_EXPIRY) {
             revert Invalid();
         }
+        // The escrow's entire fairness guarantee is a neutral evaluator: the
+        // client can't unilaterally reject a legitimate delivery, and the
+        // provider can't self-approve their own work. Naming either party as
+        // evaluator defeats that purpose, so it's rejected at creation rather
+        // than left as a silent trap only visible after the fact.
+        if (evaluator == msg.sender || evaluator == provider) revert SelfDealing();
         if (providerAgentId != 0 && passport.walletOf(providerAgentId) != provider) {
             revert IdentityMismatch();
         }

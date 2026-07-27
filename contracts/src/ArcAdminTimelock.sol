@@ -13,6 +13,7 @@ contract ArcAdminTimelock {
 
     uint256 public minDelay;
     address public admin;
+    address public pendingAdmin;
     mapping(bytes32 => uint256) public timestamps; // op id => 0 unset, 1 done, else eta
     mapping(address => bool) public isProposer;
     mapping(address => bool) public isExecutor;
@@ -24,6 +25,7 @@ contract ArcAdminTimelock {
     event ProposerSet(address indexed account, bool enabled);
     event ExecutorSet(address indexed account, bool enabled);
     event AdminChanged(address indexed oldAdmin, address indexed newAdmin);
+    event AdminTransferStarted(address indexed oldAdmin, address indexed pendingAdmin);
 
     error NotAdmin();
     error NotProposer();
@@ -37,6 +39,7 @@ contract ArcAdminTimelock {
     error PredecessorNotDone();
     error CallReverted();
     error Invalid();
+    error NotPendingAdmin();
 
     modifier onlyAdmin() { if (msg.sender != admin) revert NotAdmin(); _; }
     modifier onlyProposer() { if (!isProposer[msg.sender]) revert NotProposer(); _; }
@@ -107,6 +110,30 @@ contract ArcAdminTimelock {
     function setProposer(address account, bool enabled) external onlyAdmin { if (account == address(0)) revert Invalid(); isProposer[account] = enabled; emit ProposerSet(account, enabled); }
     function setExecutor(address account, bool enabled) external onlyAdmin { if (account == address(0)) revert Invalid(); isExecutor[account] = enabled; emit ExecutorSet(account, enabled); }
 
-    /// @notice Hand administration to the multisig, or renounce to address(0).
-    function transferAdmin(address newAdmin) external onlyAdmin { emit AdminChanged(admin, newAdmin); admin = newAdmin; }
+    /// @notice Step 1 of 2: propose a new admin. Nothing changes until that
+    /// address calls acceptAdmin — a typo'd or unreachable address just sits
+    /// as a no-op pending proposal instead of permanently bricking admin
+    /// control the way a single-step transfer would.
+    function transferAdmin(address newAdmin) external onlyAdmin {
+        if (newAdmin == address(0)) revert Invalid();
+        pendingAdmin = newAdmin;
+        emit AdminTransferStarted(admin, newAdmin);
+    }
+
+    /// @notice Step 2 of 2: only the proposed address can complete the handoff.
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        emit AdminChanged(admin, pendingAdmin);
+        admin = pendingAdmin;
+        pendingAdmin = address(0);
+    }
+
+    /// @notice Renounce admin entirely. Separate from transferAdmin so
+    /// giving up control is always a deliberate, single-purpose call — never
+    /// a side effect of a mistyped address.
+    function renounceAdmin() external onlyAdmin {
+        emit AdminChanged(admin, address(0));
+        admin = address(0);
+        pendingAdmin = address(0);
+    }
 }

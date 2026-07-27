@@ -63,6 +63,10 @@ const CUSTOM_ERRORS: Record<string, string> = {
   "0xd92e233d": "A required address is missing.",
   "0x46c2cca1": "A required target address is missing.",
   "0x2033e238": "A required wallet address is missing.",
+  "0x74ca9bd8": "The evaluator can't be the client or the provider — an escrow needs a neutral third party to release or refund it.",
+  "0x4867df74": "This wallet's owner is no longer the current holder of that agent identity in the registry, so this policy is inert until re-set by whoever holds it now.",
+  "0x058d9a1b": "Only the address that was proposed as the new admin can accept that role.",
+  "0x624d4236": "That price update is larger than this oracle's allowed single-update move. Wait and update again in smaller steps, or use a real price feed.",
 };
 
 const REASON_STRINGS: Record<string, string> = {

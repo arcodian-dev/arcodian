@@ -14,14 +14,15 @@
     "agentPayInternal": "0xBEB0D78FD10474eb9Ef27D24600bACe9A1F13026",
     "identityRegistry": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
     "agentPassport": "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf",
-    "agentPayFactoryV3": "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5",
-    "agentJobs": "0x33f54C516107A8c67d9Dc245f00E253132a6D15A",
+    "agentPayFactoryV4": "0x8F4Ba684C7c294DF3Af50AC023975F6695CA4299",
+    "agentJobs": "0xfFdb3EC041DC1Cad062F0F80FF1a6F8292f21Df2",
     "reputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
     "validationRegistry": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
     "sessionKeyAccount": "0x06e26288AeC908c926A8e2466d9543e997f59d7C",
-    "adminTimelock": "0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac",
+    "adminTimelock": "0x8baC8017081134f02065fFefa340837278C03052",
     "arcLendV2Market": "0x571493d389862c2AF13985357b11916E5E54365d",
     "arcLendPythOracle": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
+    "arcManualOracleV2Fallback": "0x393Af549387f98b69dC0e5993F4Ed2934607A4AF",
     "governanceMultisig": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
     "governanceTimelock": "0x4e15d1f1211d3Ce6Cf24f4E10c159C485cf8AaCD",
     "pyth": "0x2880aB155794e7179c9eE2e38200202908C17B43",
@@ -33,8 +34,7 @@
   "verification": {
     "governanceMultisig": "verified",
     "governanceTimelock": "verified",
-    "agentPassport": "verified",
-    "agentPayFactoryV3": "verified"
+    "agentPassport": "verified"
   },
   "migrationManifest": "/developers/legacy-migration.json"
 }

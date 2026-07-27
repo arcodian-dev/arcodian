@@ -155,6 +155,53 @@ contract ArcAdminTimelockTest is Test {
         assertTrue(tl.isProposer(address(9)));
         vm.prank(admin);
         tl.transferAdmin(address(4));
+        assertEq(tl.admin(), admin); // unchanged until accepted
+        assertEq(tl.pendingAdmin(), address(4));
+        vm.prank(address(4));
+        tl.acceptAdmin();
         assertEq(tl.admin(), address(4));
+        assertEq(tl.pendingAdmin(), address(0));
+    }
+
+    function testTransferAdminRejectsZeroAddress() public {
+        vm.prank(admin);
+        vm.expectRevert(ArcAdminTimelock.Invalid.selector);
+        tl.transferAdmin(address(0));
+    }
+
+    function testOnlyPendingAdminMayAccept() public {
+        vm.prank(admin);
+        tl.transferAdmin(address(4));
+        vm.prank(address(5));
+        vm.expectRevert(ArcAdminTimelock.NotPendingAdmin.selector);
+        tl.acceptAdmin();
+    }
+
+    function testMistypedTransferIsHarmlessUntilAccepted() public {
+        vm.prank(admin);
+        tl.transferAdmin(address(0xDEAD));
+        // Admin retains full control — a typo never bricks the contract.
+        assertEq(tl.admin(), admin);
+        vm.prank(admin);
+        tl.setProposer(address(9), true);
+        assertTrue(tl.isProposer(address(9)));
+    }
+
+    function testRenounceAdminIsSeparateFromTransfer() public {
+        vm.prank(admin);
+        tl.transferAdmin(address(4)); // pending, not yet accepted
+        vm.prank(admin);
+        tl.renounceAdmin();
+        assertEq(tl.admin(), address(0));
+        assertEq(tl.pendingAdmin(), address(0)); // pending proposal cleared too
+        vm.prank(address(4));
+        vm.expectRevert(ArcAdminTimelock.NotPendingAdmin.selector);
+        tl.acceptAdmin();
+    }
+
+    function testRenounceAdminRequiresCurrentAdmin() public {
+        vm.prank(address(9));
+        vm.expectRevert(ArcAdminTimelock.NotAdmin.selector);
+        tl.renounceAdmin();
     }
 }

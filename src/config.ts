@@ -61,14 +61,30 @@ export const AGENT_PAY_FACTORY_ADDRESS = import.meta.env.VITE_AGENT_PAY_FACTORY_
 // ERC-8004 Agent Passport (Phase A) — Arc Testnet 5042002, verified on-chain 2026-07-24.
 export const IDENTITY_REGISTRY_ADDRESS = "0x8004A818BFB912233c491871b3d84c89A494BD9e";
 export const AGENT_PASSPORT_ADDRESS = "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf";
-export const AGENT_PAY_V3_FACTORY_ADDRESS = "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5";
+// V4 factory/vault template (2026-07-27): V3 only checked the passport's
+// CURRENT wallet binding for an agentId at payment time, which stays valid
+// even after the agentId's real Identity Registry ownership has moved on —
+// nobody's forced to call bindWallet/unbind on a sale. V4 additionally
+// requires the vault owner to still be the agentId's current registry owner
+// (checked at both setPolicy and payInvoice), so a sold agentId's policies
+// go inert on their own instead of silently keeping a stale wallet's spend
+// authority alive. Old V3 vaults keep working as before (immutable, no
+// forced migration) — this is the template for new ones only.
+export const AGENT_PAY_V3_FACTORY_ADDRESS = "0x8F4Ba684C7c294DF3Af50AC023975F6695CA4299";
 export const AGENT_METADATA_ENDPOINT = "https://arcodian.fun/api/agent-metadata.php";
 export const IDENTITY_REGISTRY_ABI = ["function register(string metadataURI) returns(uint256)","function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)","event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"];
 export const AGENT_PASSPORT_ABI = ["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)","function ownerOfAgent(uint256) view returns(address)","function bindWallet(uint256,address)","function unbind(uint256)","event WalletBound(uint256 indexed agentId,address indexed oldWallet,address indexed newWallet,address owner)"];
 export const AGENT_PAY_V3_VAULT_ABI = ["function owner() view returns(address)","function policies(uint256) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(uint256,address) view returns(bool)","function setPolicy(uint256,uint128,uint128,uint64,bool)","function setMerchant(uint256,address,bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)","function withdraw(address,uint256)"];
 export const AGENT_PAY_V3_FACTORY_ABI = ["function arcPay() view returns(address)","function passport() view returns(address)","function vaultOf(address) view returns(address)","function vaultCount() view returns(uint256)","function createVault() payable returns(address)"];
 // Phase B — Agent Jobs (outcome-based USDC escrow, shared multi-tenant registry).
-export const AGENT_JOBS_ADDRESS = "0x33f54C516107A8c67d9Dc245f00E253132a6D15A";
+// Redeployed 2026-07-27: the prior version let a client name themselves (or
+// the provider) as evaluator, defeating the whole point of a neutral
+// evaluator — a client could unilaterally reject legitimate work, or a
+// provider could self-approve. createJob now reverts SelfDealing() for
+// either case. Old contract (RETIRED_DEPLOYMENTS.agentJobsV2SelfDealing) had
+// exactly 2 jobs ever created on testnet; not migrated, still readable
+// directly on-chain, just not reachable through this app's /job/:id route.
+export const AGENT_JOBS_ADDRESS = "0xfFdb3EC041DC1Cad062F0F80FF1a6F8292f21Df2";
 export const JOB_METADATA_ENDPOINT = "https://arcodian.fun/api/job-metadata.php";
 export const AGENT_JOBS_ABI = ["function createJob(address provider,address evaluator,uint64 expiry,bytes32 descHash,uint256 providerAgentId) payable returns(uint256)","function submit(uint256 jobId,bytes32 deliverableHash)","function evaluate(uint256 jobId,bool approve,bytes32 evidenceHash)","function reclaimExpired(uint256 jobId)","function jobs(uint256) view returns(address client,address provider,address evaluator,uint128 budget,uint64 expiry,uint8 status,bytes32 descHash,bytes32 deliverableHash,uint256 providerAgentId)","function jobCount() view returns(uint256)","function arcPay() view returns(address)","event JobCreated(uint256 indexed jobId,address indexed client,address indexed provider,address evaluator,uint256 budget,uint64 expiry,bytes32 descHash,uint256 providerAgentId)","event JobSubmitted(uint256 indexed jobId,bytes32 deliverableHash)","event JobCompleted(uint256 indexed jobId,address indexed provider,uint256 budget,uint256 providerAgentId,bytes32 evidenceHash)","event JobRejected(uint256 indexed jobId,address indexed client,uint256 budget,bytes32 evidenceHash)","event JobExpired(uint256 indexed jobId,address indexed client,uint256 budget)"];
 // Phase C — official ERC-8004 Reputation + Validation registries (both wired to the Identity Registry).
@@ -79,7 +95,15 @@ export const REPUTATION_ENDPOINT = "https://arcodian.fun/developers/reputation.j
 // Phase F4/F5 operational-hardening spikes (Arc Testnet). Enforced scoped delegation
 // at execution time, and governed timelock administration. Not audited / not mainnet.
 export const SESSION_KEY_ACCOUNT_ADDRESS = "0x06e26288AeC908c926A8e2466d9543e997f59d7C";
-export const ADMIN_TIMELOCK_ADDRESS = "0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac";
+// Redeployed 2026-07-27: transferAdmin() was a single unchecked step with no
+// zero-address guard (unlike its sibling setProposer/setExecutor) — a typo'd
+// or unreachable new-admin address permanently bricked admin control. Now a
+// two-step propose/accept (transferAdmin sets pendingAdmin, only that address
+// can call acceptAdmin), plus a separate explicit renounceAdmin() so giving
+// up control is never a side effect of a mistake. Live-proven both halves:
+// proposed to a burn address (admin unaffected, unacceptable by anyone),
+// then a real propose->accept round-trip.
+export const ADMIN_TIMELOCK_ADDRESS = "0x8baC8017081134f02065fFefa340837278C03052";
 export const ARCODIAN_MCP_ENDPOINT = "https://arcodian.fun/mcp";
 // Signatures verified on-chain 2026-07-25 by decoding a live giveFeedback tx + raw readFeedback returns:
 // giveFeedback takes (int128 score, uint8 decimals) then 4 strings + filehash; readFeedback surfaces
@@ -145,6 +169,20 @@ export const RETIRED_DEPLOYMENTS = {
     oracle: "0x63951B73cD71Fbad20a68656a75bbb5dea68ccF3",
     retired: "2026-07-27",
     note: "First ArcLendV2 deploy, ~4 hours live. Two problems, both fixed in the current deployment rather than papered over: (1) supply/borrow caps of 100/50 USDC were too tight to test realistically; (2) it ran on ArcManualOracle believing Pyth's EUR/USD feed was broken — it wasn't. EUR/USD is a traditional-FX instrument that only publishes during NY market hours and goes fully quiet the whole weekend; the feed was fine, it was ArcLendV2's fixed 1-hour MAX_ORACLE_AGE constant that couldn't tolerate a multi-hour scheduled gap. Withdrawn to zero deposits/zero debt before retiring; nothing needed winding down for anyone else.",
+  },
+  agentJobsV2SelfDealing: {
+    contract: "0x33f54C516107A8c67d9Dc245f00E253132a6D15A",
+    retired: "2026-07-27",
+    note: "createJob() allowed evaluator == client or evaluator == provider — a client could unilaterally reject legitimate work, or a provider could self-approve their own delivery. Fixed by rejecting both at creation (SelfDealing()). Exactly 2 jobs were ever created; not migrated, still directly readable on-chain, just not reachable through /job/:id anymore.",
+  },
+  adminTimelockOneStepTransfer: {
+    contract: "0xefd956531dc0585d412d6fa4afcb8d940aa2b4ac",
+    retired: "2026-07-27",
+    note: "transferAdmin() changed the admin in one unchecked step, with no zero-address guard (its sibling setProposer/setExecutor both have one) — a typo'd or unreachable address permanently bricked admin control. Fixed with a two-step propose/accept pattern plus a separate explicit renounceAdmin(). This was always an F5 'spike' (deployer as admin/proposer/executor, not audited, not mainnet) — no real governance handoff had happened on it.",
+  },
+  agentPayFactoryV3Staleness: {
+    factory: "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5",
+    note: "V3 vaults only check the passport's current wallet binding at payment time, which stays valid even after the agentId's real Identity Registry ownership has moved on (nobody's forced to call bindWallet/unbind on a sale) — a stale binding can keep spend authority alive against the PREVIOUS owner's vault indefinitely. V4 additionally requires the vault owner to still be the agentId's current registry owner, checked at both setPolicy and payInvoice, so a sold agentId's old policies go inert on their own. Not retired — existing V3 vaults keep working exactly as before (immutable, no forced migration); V4 is only the template for new vaults going forward.",
   },
   v7: {
     suite: "0x59D8eDf019053c7D8fE48f906258960c092893AD",

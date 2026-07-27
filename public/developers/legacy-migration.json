@@ -17,7 +17,10 @@
     { "name": "Agent Pay internal v1", "action": "owner-withdraw-and-retire-after-zero-balance", "status": "planned", "automaticMigration": false },
     { "name": "Agent Pay public factory v2", "action": "vault-owners-retain-control; no factory custody migration", "status": "retain", "automaticMigration": false },
     { "name": "Legacy market and bridge fee recipients", "action": "parallel-version-and-explicit-canonical-cutover", "status": "inventory-required", "automaticMigration": false },
-    { "name": "Launchpad v9 (4,500 threshold, sealed hub)", "action": "graduated-pairs-remain-tradable-forever-LP-burned; new launches moved to v10 hub since a sealed hub's membership cannot change", "status": "retired-2026-07-26", "automaticMigration": false }
+    { "name": "Launchpad v9 (4,500 threshold, sealed hub)", "action": "graduated-pairs-remain-tradable-forever-LP-burned; new launches moved to v10 hub since a sealed hub's membership cannot change", "status": "retired-2026-07-26", "automaticMigration": false },
+    { "name": "Agent Jobs v2 (self-dealing not prevented)", "action": "only-2-jobs-ever-created-not-migrated-still-directly-readable-onchain; superseded-by-SelfDealing-guard-rejecting-evaluator-equals-client-or-provider", "status": "retired-2026-07-27", "automaticMigration": false },
+    { "name": "Admin Timelock spike (one-step transferAdmin)", "action": "was-deployer-as-admin-proposer-executor-no-real-handoff-had-happened; superseded-by-two-step-propose-accept-plus-separate-renounce", "status": "retired-2026-07-27", "automaticMigration": false },
+    { "name": "Agent Pay Factory v3 (passport-staleness on agentId resale)", "action": "existing-v3-vaults-continue-working-unchanged-no-forced-migration; v4-adds-current-registry-ownership-check-for-new-vaults-only", "status": "superseded-not-retired-2026-07-27", "automaticMigration": false }
   ],
   "requiredBeforeCutover": [
     "independent audit sign-off",
