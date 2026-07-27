@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh Arcodian monitoring feed every two minutes
+
+[Timer]
+OnBootSec=90s
+OnUnitActiveSec=2min
+RandomizedDelaySec=10s
+Persistent=true
+Unit=arcodian-monitor.service
+
+[Install]
+WantedBy=timers.target

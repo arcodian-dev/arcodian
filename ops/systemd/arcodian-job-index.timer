@@ -1,0 +1,8 @@
+[Unit]
+Description=Run Arcodian agent-jobs indexer every 2 minutes
+[Timer]
+OnBootSec=100
+OnUnitActiveSec=120
+RandomizedDelaySec=15
+[Install]
+WantedBy=timers.target

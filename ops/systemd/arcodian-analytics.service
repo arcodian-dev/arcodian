@@ -1,0 +1,10 @@
+[Unit]
+Description=Arcodian unified public analytics indexer
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URLS=https://arcodian.fun/api/rpc.php,https://rpc.testnet.arc.network/,https://rpc.drpc.testnet.arc.io
+ExecStart=/usr/bin/node scripts/unified-analytics.mjs
+User=root

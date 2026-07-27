@@ -1,0 +1,11 @@
+[Unit]
+Description=Arcodian unified notifications and monitoring
+After=network-online.target arcodian-analytics.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+ExecStart=/usr/bin/node scripts/unified-monitor.mjs
+User=root
+

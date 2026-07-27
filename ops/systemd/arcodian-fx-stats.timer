@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Arcodian FX stats indexer every 3 minutes
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=3min
+RandomizedDelaySec=20s
+Persistent=true
+[Install]
+WantedBy=timers.target

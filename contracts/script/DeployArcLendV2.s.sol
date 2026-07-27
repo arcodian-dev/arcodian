@@ -3,10 +3,13 @@ pragma solidity ^0.8.24;
 import "forge-std/Script.sol";
 import {ArcLendV2, IERC20Collateral, IArcPriceOracle} from "../src/ArcLendV2.sol";
 
-/// Deploys the utilization-rate ArcLend market, reusing the live ArcLendPyth
-/// market's oracle, admin (governance timelock), guardian, and caps — only
-/// the interest model changes. The prior market held zero deposits and zero
-/// borrows at migration time, so nothing needed a withdraw-only wind-down.
+/// Deploys the utilization-rate ArcLend market against a real IArcPriceOracle
+/// (ArcPythOracle in practice), reusing the governance timelock as admin and
+/// the existing guardian/collateral/caps. LEND_MAX_ORACLE_AGE must be sized to
+/// the feed's real publish cadence — a traditional FX feed (EUR/USD) only
+/// updates during NY market hours and goes quiet the full weekend, so a
+/// crypto-feed-style 1-hour bound would falsely revert OracleStale() every
+/// Friday close through Sunday reopen.
 contract DeployArcLendV2 is Script {
     function run() external returns (ArcLendV2 market) {
         uint256 key = vm.envUint("PRIVATE_KEY");
@@ -21,7 +24,8 @@ contract DeployArcLendV2 is Script {
             vm.envUint("LEND_BASE_RATE_WAD"),
             vm.envUint("LEND_MULTIPLIER_WAD"),
             vm.envUint("LEND_JUMP_MULTIPLIER_WAD"),
-            vm.envUint("LEND_KINK_WAD")
+            vm.envUint("LEND_KINK_WAD"),
+            vm.envUint("LEND_MAX_ORACLE_AGE")
         );
         vm.stopBroadcast();
 

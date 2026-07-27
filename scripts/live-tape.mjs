@@ -1,11 +1,22 @@
 import { Interface, JsonRpcProvider } from "ethers";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { rpcCandidates } from "./rpc-failover.mjs";
 
-const rpc = process.env.ARC_RPC_URL || "https://rpc.testnet.arc.network/";
+const rpcs = rpcCandidates("https://rpc.testnet.arc.network/");
 const marketPath = process.env.INDEX_OUTPUT || "/www/wwwroot/arcodian.fun/shared/data/market-index.json";
 const output = process.env.TAPE_OUTPUT || "/www/wwwroot/arcodian.fun/shared/data/live-tape.json";
-const provider = new JsonRpcProvider(rpc, undefined, { batchMaxCount: 1, staticNetwork: true });
+// One long-lived provider per candidate, reused across ticks (a fresh
+// provider + health round-trip every ~1s would double the RPC load this
+// service exists to keep light). On a tick error, rotate to the next
+// candidate instead of hammering the one that just failed.
+let rpcIndex = 0;
+let provider = new JsonRpcProvider(rpcs[rpcIndex], undefined, { batchMaxCount: 1, staticNetwork: true });
+function rotateProvider() {
+  try { provider.destroy(); } catch {}
+  rpcIndex = (rpcIndex + 1) % rpcs.length;
+  provider = new JsonRpcProvider(rpcs[rpcIndex], undefined, { batchMaxCount: 1, staticNetwork: true });
+}
 const curveInterface = new Interface([
   "event Bought(address indexed buyer,uint256 nativeIn,uint256 tokensOut,uint256 protocolFee)",
   "event Sold(address indexed seller,uint256 tokensIn,uint256 nativeOut,uint256 protocolFee)",
@@ -76,7 +87,8 @@ while (true) {
   try { await tick(); }
   catch (error) {
     const message = String(error?.shortMessage || error?.message || error);
-    console.error(`Live tape retry: ${message}`);
+    console.error(`Live tape retry (${new URL(rpcs[rpcIndex]).hostname} -> rotating): ${message}`);
+    if (rpcs.length > 1) rotateProvider();
   }
   await sleep(Math.max(100, 1_000 - (Date.now() - started)));
 }

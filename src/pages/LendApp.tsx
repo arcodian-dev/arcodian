@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatEther, formatUnits, parseUnits } from "ethers";
 import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS } from "../config";
 import { LEND_MARKETS, OFFICIAL_ARC_ASSET_STATUS } from "../lendMarkets";
+import { describeTxError } from "../txError";
 import "./LendApp.css";
 
 type Props = { account: string; chainId: number | null; activeProvider: EthereumProvider | null; connect: () => void; disconnect: () => void };
@@ -63,7 +64,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
     try { await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] }); }
     catch (error) {
       const code = typeof error === "object" && error && "code" in error ? Number((error as { code?: unknown }).code) : 0;
-      if (code !== 4902) return setStatus(error instanceof Error ? error.message : "Could not switch to Arc");
+      if (code !== 4902) return setStatus(describeTxError(error));
       await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: ARC.hexId, chainName: ARC.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC.rpc], blockExplorerUrls: [ARC.explorer] }] });
     }
   }
@@ -88,7 +89,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
         tx = await market.depositCollateral(value);
       }
       setStatus(`Submitted ${tx.hash.slice(0, 10)}…`); await tx.wait(); setStatus(`${kind} confirmed on Arc.`); await refresh();
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Transaction failed"); }
+    } catch (error) { setStatus(describeTxError(error)); }
     finally { setBusy(false); }
   }
 

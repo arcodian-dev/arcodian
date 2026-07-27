@@ -46,6 +46,7 @@ contract ArcLendV2Test is Test {
     uint256 constant MULT = 1e17; // 10%
     uint256 constant JUMP = 2e18; // 200%
     uint256 constant KINK = 8e17; // 80%
+    uint256 constant MAX_ORACLE_AGE = 1 hours;
 
     LendToken token;
     ArcManualOracle oracle;
@@ -59,7 +60,7 @@ contract ArcLendV2Test is Test {
         oracle = new ArcManualOracle(address(this), 2 ether);
         market = new ArcLendV2(
             IERC20Collateral(address(token)), oracle, address(this), address(this), 1_000 ether, 800 ether,
-            BASE, MULT, JUMP, KINK
+            BASE, MULT, JUMP, KINK, MAX_ORACLE_AGE
         );
         vm.deal(supplier, 500 ether);
         vm.prank(supplier);
@@ -195,11 +196,35 @@ contract ArcLendV2Test is Test {
 
     function testConstructorRejectsBadIrmParams() public {
         vm.expectRevert(ArcLendV2.Invalid.selector);
-        new ArcLendV2(IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, 0, 0, 0, 0);
+        new ArcLendV2(IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, 0, 0, 0, 0, MAX_ORACLE_AGE);
         vm.expectRevert(ArcLendV2.Invalid.selector);
         new ArcLendV2(
-            IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, 0, 0, 0, WAD + 1
+            IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, 0, 0, 0, WAD + 1, MAX_ORACLE_AGE
         );
+    }
+
+    function testConstructorRejectsOracleAgeOutOfBounds() public {
+        vm.expectRevert(ArcLendV2.Invalid.selector);
+        new ArcLendV2(IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, BASE, MULT, JUMP, KINK, 1 minutes);
+        vm.expectRevert(ArcLendV2.Invalid.selector);
+        new ArcLendV2(IERC20Collateral(address(token)), oracle, address(this), address(this), 1 ether, 1 ether, BASE, MULT, JUMP, KINK, 8 days);
+    }
+
+    function testWeekendScheduledOracleDoesNotFalselyRevertStale() public {
+        // A traditional-FX feed publishes Friday close, then nothing for the
+        // ~48h weekend closure. A 90h window (covers weekend + a holiday
+        // buffer) must not treat that gap as OracleStale.
+        LendToken t3 = new LendToken(18);
+        ArcManualOracle o3 = new ArcManualOracle(address(this), 2 ether);
+        ArcLendV2 m3 = new ArcLendV2(
+            IERC20Collateral(address(t3)), o3, address(this), address(this), 1_000 ether, 800 ether,
+            BASE, MULT, JUMP, KINK, 90 hours
+        );
+        vm.warp(block.timestamp + 60 hours); // well past the old 1h bound, within the weekend-sized window
+        assertEq(m3.healthFactor(borrower), type(uint256).max); // no debt -> no OracleStale revert path exercised
+        vm.deal(supplier, 1 ether);
+        vm.prank(supplier);
+        m3.supply{value: 1 ether}(); // would revert OracleStale() under the old fixed 1h constant
     }
 
     function testFuzzUtilizationNeverExceedsWad(uint96 supplyRaw, uint96 borrowRaw) public {
@@ -209,7 +234,7 @@ contract ArcLendV2Test is Test {
         ArcManualOracle o2 = new ArcManualOracle(address(this), 2 ether);
         ArcLendV2 m2 = new ArcLendV2(
             IERC20Collateral(address(t2)), o2, address(this), address(this), type(uint128).max, type(uint128).max,
-            BASE, MULT, JUMP, KINK
+            BASE, MULT, JUMP, KINK, MAX_ORACLE_AGE
         );
         address s = address(0x999);
         vm.deal(s, supplyAmt);

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, formatEther } from "ethers";
 import { ARC, ARC_PAY_ADDRESS } from "../config";
+import { describeTxError } from "../txError";
 import "./ArcPayLanding.css";
 
 const APK_URL = "/downloads/arcodian-wallet-testnet-v0.5.3-debug.apk";
@@ -66,7 +67,7 @@ export default function ArcPayLanding({ account, activeProvider, connect }: Prop
       setWorkspaceStatus(`Refund submitted ${short(tx.hash)}. Waiting for confirmation…`);
       await tx.wait();
       setWorkspaceStatus(`Refund confirmed ${short(tx.hash)}. Dashboard will refresh after indexing.`);
-    } catch (error) { setWorkspaceStatus(error instanceof Error ? error.message : "Refund failed"); }
+    } catch (error) { setWorkspaceStatus(describeTxError(error)); }
     finally { setRefundBusy(""); }
   }
 

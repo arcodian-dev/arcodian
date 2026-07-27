@@ -1,0 +1,19 @@
+[Unit]
+Description=Arcodian Arc Pay public merchant metrics indexer
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.testnet.arc.network/
+Environment=ARC_PAY_DEPLOY_BLOCK=52739844
+Environment=ARC_PAY_STATS_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/arcpay-stats.json
+ExecStart=/usr/bin/node scripts/arcpay-stats.mjs
+TimeoutStartSec=180
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

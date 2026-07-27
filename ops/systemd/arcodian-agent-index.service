@@ -1,0 +1,12 @@
+[Unit]
+Description=Arcodian agent identity indexer
+After=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.testnet.arc.network/
+Environment=AGENT_PASSPORT_ADDRESS=0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf
+Environment=AGENT_DEPLOY_BLOCK=53508049
+Environment=AGENT_INDEX_OUT=/www/wwwroot/arcodian.fun/shared/developers/agents.json
+ExecStart=/usr/bin/node scripts/agent-index.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/developers/agents.json

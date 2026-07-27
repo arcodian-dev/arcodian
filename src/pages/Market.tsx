@@ -8,6 +8,7 @@ import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
+import { describeTxError } from "../txError";
 import {
   arcProvider,
   communitySigningMessage,
@@ -1059,23 +1060,8 @@ function TradingDesk({
       setStatus("Trade confirmed on Arc Testnet.");
     } catch (error) {
       setTradeStage("error");
-      const raw = error instanceof Error ? error.message : String(error);
-      const normalized = raw.toLowerCase();
-      setStatus(
-        normalized.includes("user rejected") || normalized.includes("user denied") || normalized.includes("action_rejected")
-          ? "Transaction cancelled in wallet."
-          : normalized.includes("request limit") || normalized.includes("missing revert data") || normalized.includes("could not coalesce")
-            ? "Arc RPC is busy. No funds were sent—please wait a few seconds and try again."
-            : normalized.includes("insufficient funds")
-              ? `${currency} balance is too low to cover this trade and network fee.`
-              : normalized.includes("slippage")
-                ? "Price changed beyond your slippage limit. Refresh the quote or increase slippage slightly."
-                : normalized.includes("curve_closed") || normalized.includes("bad_swap")
-                  ? "This market has changed venue. Refresh the page before trading again."
-                  : normalized.includes("no_liquidity")
-                    ? "This market does not currently have enough liquidity for that amount."
-                    : "Trade simulation failed. No funds were sent—refresh the quote and try again.",
-      );
+      const rawMessage = String((error as { message?: unknown })?.message || "").toLowerCase();
+      setStatus(rawMessage.includes("insufficient funds") ? `${currency} balance is too low to cover this trade and network fee.` : describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -1148,7 +1134,7 @@ function TradingDesk({
       setPosts((current) => [payload.post!, ...current].slice(0, 100));
       setPostText("");
       setStatus("Signed community post published.");
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Post failed"); }
+    } catch (error) { setStatus(describeTxError(error)); }
     finally { setPosting(false); }
   }
   async function shareCoin() {
@@ -1167,7 +1153,7 @@ function TradingDesk({
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "Report rejected");
       setReportOpen(false); setReportDetail(""); setStatus("Report recorded for review. The market remains visible while evidence is assessed.");
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Report failed"); }
+    } catch (error) { setStatus(describeTxError(error)); }
   }
   return (
     <section className="coin-page-shell">
@@ -1617,9 +1603,7 @@ function Launch({
         onCreated?.({ symbol: symbol.toUpperCase(), name: name.trim(), type: "Meme", risk: "Curve", address: tokenAddress, curve: curveAddress, image, creator: account, quoteKind: isEurc ? 1 : 0, currency: quoteChoice, progress: graduated ? 100 : Number((reserve * 10000n) / threshold) / 100, reserve, virtualReserve, threshold, inventory, graduated, tradeCount: 0, holderCount: 0, volume: "0", volume1h: "0", volume24h: "0", priceChange24h: 0, topHolders: [], trades: [] });
       }
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Launch creation rejected",
-      );
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }

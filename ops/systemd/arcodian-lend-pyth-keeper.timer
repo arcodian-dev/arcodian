@@ -1,0 +1,12 @@
+[Unit]
+Description=Refresh ArcLendV2 Pyth EUR/USD oracle every 3 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+RandomizedDelaySec=15s
+Persistent=true
+Unit=arcodian-lend-pyth-keeper.service
+
+[Install]
+WantedBy=timers.target

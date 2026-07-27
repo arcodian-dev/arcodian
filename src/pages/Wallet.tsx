@@ -56,6 +56,7 @@ import {
 } from "../nativeVault";
 import { DEFAULT_AUTO_LOCK_MS, mergeWalletNotices, parseWalletDeepLink, shouldAutoLock, systemAlertsToWalletNotices, type SystemAlert, type WalletNotice } from "../walletRc";
 import { walletFromRecoveryInput } from "../walletImport";
+import { describeTxError } from "../txError";
 import "./Wallet.css";
 
 type WalletView =
@@ -223,7 +224,7 @@ export default function Wallet({
       if (!(await authenticateWallet("Confirm it is you to unlock your wallet"))) return;
       const secret = await loadWalletSecret();
       setNativeSecret(secret); setLocked(false); setStatus("");
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Wallet unlock cancelled"); }
+    } catch (error) { setStatus(describeTxError(error)); }
   }
 
   function saveContact() {
@@ -234,7 +235,7 @@ export default function Wallet({
       const next = [{ name, address, favorite: false, lastUsedAt: Date.now() }, ...contacts.filter((item) => item.address.toLowerCase() !== address.toLowerCase())].slice(0, 100);
       localStorage.setItem(contactKey, JSON.stringify(next));
       setContacts(next); setContactName(""); setStatus(`${name} saved on this device`);
-    } catch (error) { setStatus(error instanceof Error ? error.message : "Could not save contact"); }
+    } catch (error) { setStatus(describeTxError(error)); }
   }
 
   useEffect(() => {
@@ -308,7 +309,7 @@ export default function Wallet({
       setView("payment");
       setStatus("Arc Pay request scanned and validated");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "QR scan failed");
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -547,7 +548,7 @@ export default function Wallet({
       );
       setBridgeAmount("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Bridge failed");
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -605,7 +606,7 @@ export default function Wallet({
         clearPendingClaim(walletAccount, claimHash);
         setAutoClaim(false);
         setStatus("Already claimed — the USDC is already on the destination chain.");
-      } else setStatus(message.slice(0, 160));
+      } else setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -658,9 +659,7 @@ export default function Wallet({
       setRecoveryPhrase(created.mnemonic.phrase);
       setSetupMode("backup");
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Wallet creation failed",
-      );
+      setStatus(describeTxError(error));
     }
   }
 
@@ -779,9 +778,7 @@ export default function Wallet({
           ? Number((error as { code?: unknown }).code)
           : 0;
       if (code !== 4902) {
-        setStatus(
-          error instanceof Error ? error.message : "Could not switch network",
-        );
+        setStatus(describeTxError(error));
         return;
       }
       try {
@@ -837,7 +834,7 @@ export default function Wallet({
       setAmount("");
       setRecipient("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Transaction failed");
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -889,7 +886,7 @@ export default function Wallet({
       localStorage.setItem(`arcodian-payment-receipt:${tx.hash}`, JSON.stringify(receipt));
       setPastedRequest("");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Payment failed");
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }
@@ -955,9 +952,7 @@ export default function Wallet({
       await tx.wait();
       setStatus(`${action} confirmed · ${tx.hash.slice(0, 10)}…`);
     } catch (error) {
-      setStatus(
-        error instanceof Error ? error.message : "Lending action failed",
-      );
+      setStatus(describeTxError(error));
     } finally {
       setBusy(false);
     }

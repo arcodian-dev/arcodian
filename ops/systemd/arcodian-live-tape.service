@@ -1,0 +1,22 @@
+[Unit]
+Description=Arcodian one-second live trade tape
+After=network-online.target arcodian-indexer.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/market-index.json
+Environment=TAPE_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/live-tape.json
+Environment=ARC_RPC_URLS=https://rpc.drpc.testnet.arc.io,https://rpc.blockdaemon.testnet.arc.io,https://rpc.testnet.arc.network/
+ExecStart=/usr/bin/node scripts/live-tape.mjs
+Restart=always
+RestartSec=2s
+User=root
+Group=root
+Nice=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

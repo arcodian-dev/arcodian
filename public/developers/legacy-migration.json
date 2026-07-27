@@ -12,6 +12,7 @@
   "components": [
     { "name": "ArcLend legacy markets", "action": "withdraw-repay-only", "status": "legacy-open", "automaticMigration": false },
     { "name": "ArcLendPyth v1 (fixed APR)", "action": "held-zero-deposits-and-zero-borrows-at-migration; superseded-by-ArcLendV2-utilization-curve", "status": "retired-2026-07-26", "automaticMigration": false },
+    { "name": "ArcLendV2 manual-oracle canary (100/50 USDC caps)", "action": "withdrawn-to-zero-before-retiring; superseded-by-larger-caps-and-real-ArcPythOracle-with-per-market-maxOracleAge", "status": "retired-2026-07-27", "automaticMigration": false },
     { "name": "Arc Pay", "action": "parallel-vNext-required-for-multisig-fees", "status": "planned", "automaticMigration": false },
     { "name": "Agent Pay internal v1", "action": "owner-withdraw-and-retire-after-zero-balance", "status": "planned", "automaticMigration": false },
     { "name": "Agent Pay public factory v2", "action": "vault-owners-retain-control; no factory custody migration", "status": "retain", "automaticMigration": false },

@@ -1,0 +1,12 @@
+[Unit]
+Description=Arcodian agent-jobs indexer
+After=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.testnet.arc.network/
+Environment=AGENT_JOBS_ADDRESS=0x33f54C516107A8c67d9Dc245f00E253132a6D15A
+Environment=JOB_DEPLOY_BLOCK=53683405
+Environment=JOB_INDEX_OUT=/www/wwwroot/arcodian.fun/shared/developers/jobs.json
+ExecStart=/usr/bin/node scripts/job-index.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/developers/jobs.json

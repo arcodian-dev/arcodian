@@ -1,0 +1,8 @@
+[Unit]
+Description=Run Arcodian reputation aggregator every 2 minutes
+[Timer]
+OnBootSec=170
+OnUnitActiveSec=120
+RandomizedDelaySec=15
+[Install]
+WantedBy=timers.target

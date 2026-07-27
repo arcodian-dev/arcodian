@@ -1,0 +1,11 @@
+[Unit]
+Description=Arcodian Agent Pay public onchain index
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=AGENTPAY_INDEX_OUT=/www/wwwroot/arcodian.fun/shared/data/agentpay-index.json
+ExecStart=/usr/bin/node scripts/agentpay-index.mjs
+

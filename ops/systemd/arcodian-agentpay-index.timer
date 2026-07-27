@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Arcodian Agent Pay index every 2 minutes
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+RandomizedDelaySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

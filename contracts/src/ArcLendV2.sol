@@ -19,7 +19,8 @@ contract ArcLendV2 {
     uint256 public constant MAX_LTV_BPS = 7_000;
     uint256 public constant LIQUIDATION_THRESHOLD_BPS = 8_000;
     uint256 public constant LIQUIDATION_BONUS_BPS = 500;
-    uint256 public constant MAX_ORACLE_AGE = 1 hours;
+    uint256 public constant MIN_ORACLE_AGE_BOUND = 5 minutes;
+    uint256 public constant MAX_ORACLE_AGE_BOUND = 7 days;
     uint256 public constant MAX_ORACLE_DEVIATION_BPS = 2_000;
     uint256 public constant CAP_INCREASE_DELAY = 48 hours;
     uint256 public constant PAUSE_SUPPLY = 1;
@@ -55,6 +56,14 @@ contract ArcLendV2 {
     uint256 public immutable multiplierPerYear;
     uint256 public immutable jumpMultiplierPerYear;
     uint256 public immutable kink;
+
+    /// Sized per market at deploy time, not a shared constant — a 24/7 crypto
+    /// price feed and a traditional-FX feed need very different staleness
+    /// windows. EUR/USD specifically only publishes during NY FX market hours
+    /// (Mon-Fri, closed the full weekend Fri 21:00 UTC - Sun 21:00 UTC) — a
+    /// fixed 1-hour bound would revert OracleStale() on new borrows and
+    /// collateral-sensitive actions for two full days, every single week.
+    uint256 public immutable maxOracleAge;
 
     mapping(address => uint256) public supplyShares;
     mapping(address => uint256) public debtShares;
@@ -106,12 +115,14 @@ contract ArcLendV2 {
         uint256 baseRatePerYear_,
         uint256 multiplierPerYear_,
         uint256 jumpMultiplierPerYear_,
-        uint256 kink_
+        uint256 kink_,
+        uint256 maxOracleAge_
     ) {
         if (
             address(collateral_) == address(0) || address(oracle_) == address(0) || admin_ == address(0)
                 || guardian_ == address(0) || supplyCap_ == 0 || borrowCap_ == 0 || kink_ == 0 || kink_ > WAD
                 || baseRatePerYear_ > WAD || multiplierPerYear_ > 10 * WAD || jumpMultiplierPerYear_ > 100 * WAD
+                || maxOracleAge_ < MIN_ORACLE_AGE_BOUND || maxOracleAge_ > MAX_ORACLE_AGE_BOUND
         ) revert Invalid();
         collateralToken = collateral_;
         uint8 collateralDecimals = collateral_.decimals();
@@ -126,9 +137,10 @@ contract ArcLendV2 {
         multiplierPerYear = multiplierPerYear_;
         jumpMultiplierPerYear = jumpMultiplierPerYear_;
         kink = kink_;
+        maxOracleAge = maxOracleAge_;
         lastAccrual = uint64(block.timestamp);
         (uint256 initialPrice, uint64 initialUpdatedAt) = oracle_.price();
-        if (initialPrice == 0 || initialUpdatedAt > block.timestamp || block.timestamp - initialUpdatedAt > MAX_ORACLE_AGE) revert OracleStale();
+        if (initialPrice == 0 || initialUpdatedAt > block.timestamp || block.timestamp - initialUpdatedAt > maxOracleAge_) revert OracleStale();
         lastGoodPrice = initialPrice;
         lastGoodPriceAt = initialUpdatedAt;
     }
@@ -181,14 +193,14 @@ contract ArcLendV2 {
 
     function _price() internal view returns (uint256 value) {
         value = lastGoodPrice;
-        if (value == 0 || lastGoodPriceAt > block.timestamp || block.timestamp - lastGoodPriceAt > MAX_ORACLE_AGE) {
+        if (value == 0 || lastGoodPriceAt > block.timestamp || block.timestamp - lastGoodPriceAt > maxOracleAge) {
             revert OracleStale();
         }
     }
 
     function syncOracle() public {
         (uint256 next, uint64 updatedAt) = oracle.price();
-        if (next == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > MAX_ORACLE_AGE) revert OracleStale();
+        if (next == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > maxOracleAge) revert OracleStale();
         uint256 delta = next > lastGoodPrice ? next - lastGoodPrice : lastGoodPrice - next;
         if (delta * BPS > lastGoodPrice * MAX_ORACLE_DEVIATION_BPS) revert OracleDeviation();
         lastGoodPrice = next; lastGoodPriceAt = updatedAt;
@@ -198,7 +210,7 @@ contract ArcLendV2 {
     function acceptOraclePrice() external {
         if (msg.sender != admin) revert Unauthorized();
         (uint256 next, uint64 updatedAt) = oracle.price();
-        if (next == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > MAX_ORACLE_AGE) revert OracleStale();
+        if (next == 0 || updatedAt > block.timestamp || block.timestamp - updatedAt > maxOracleAge) revert OracleStale();
         lastGoodPrice = next; lastGoodPriceAt = updatedAt;
         emit OracleSynced(next, updatedAt);
     }

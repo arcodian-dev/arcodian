@@ -1,0 +1,16 @@
+[Unit]
+Description=Arcodian ArcLendV2 Pyth EUR/USD price keeper
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URLS=https://rpc.testnet.arc.network/,https://arcodian.fun/api/rpc.php,https://rpc.drpc.testnet.arc.io
+Environment=ARC_LEND_ADDRESS=0x571493d389862c2AF13985357b11916E5E54365d
+Environment=PYTH_ADDRESS=0x2880aB155794e7179c9eE2e38200202908C17B43
+Environment=PYTH_EUR_USD_ID=a995d00bb36a63cef7fd2c287dc105fc8f3d93779f062f09551b0af3e81ec30b
+ExecStart=/bin/bash -c 'export PRIVATE_KEY="$(jq -r .PRIVATE_KEY /root/.config/arcodian/lend-keeper.json)"; exec /usr/bin/node scripts/lend-pyth-keeper.mjs'
+
+[Install]
+WantedBy=multi-user.target

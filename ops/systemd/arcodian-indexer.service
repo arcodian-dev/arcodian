@@ -1,0 +1,16 @@
+[Unit]
+Description=Refresh Arcodian onchain market index
+After=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=90s
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/market-index.json
+Environment=ARC_RPC_URL=https://rpc.drpc.testnet.arc.io
+ExecStart=/usr/bin/npm run index:market
+User=root
+Group=root
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
