@@ -11,6 +11,95 @@ After reviewing the simulation, the operator can broadcast with a hardware-walle
 
 Production gates: independent review, Arc fork test at a pinned block, native-USDC decimal confirmation, explorer verification, and a small-value canary launch.
 
+## How to deploy + verify (current pattern, proven 2026-07-27)
+
+Every deploy below follows the same shape. Do not skip the dry-run — it is
+the same command minus `--broadcast`, costs nothing, and catches a bad
+constructor arg before it's permanent.
+
+```bash
+cd contracts
+forge build   # must be clean before touching a live network
+
+# 1. Dry-run (simulation only, no broadcast, no key required beyond a read)
+forge script script/DeployX.s.sol:DeployX --rpc-url $RPC
+
+# 2. Broadcast for real
+export PRIVATE_KEY=<deployer key, never hard-coded, never committed>
+forge script script/DeployX.s.sol:DeployX --rpc-url $RPC --broadcast
+
+# 3. Read back the constructor-set state directly with `cast call` — never
+#    trust the deploy script's own log as proof. Every deploy this session
+#    was followed by a live E2E smoke test (a real supply/borrow/repay,
+#    createJob/evaluate, setPolicy/payInvoice, etc.) before being wired into
+#    the frontend, not just an on-chain getter check.
+```
+
+Current live RPC used for all of the above: `https://rpc.blockdaemon.testnet.arc.io`
+(the Arc RPC that has held up best under repeated `eth_getLogs`/`eth_call`
+load this session — public endpoints do rate-limit, `rpc-failover.mjs` exists
+for scripts that need to survive that).
+
+### Source verification
+
+The Arcscan (Blockscout) API had a multi-day HTTP 503 outage through
+2026-07-26; it resolved 2026-07-27. The working invocation, once bytecode is
+on chain:
+
+```bash
+forge verify-contract <deployed-address> src/File.sol:ContractName \
+  --chain 5042002 \
+  --verifier blockscout \
+  --verifier-url https://testnet.arcscan.app/api/ \
+  --constructor-args $(cast abi-encode "constructor(<types>)" <values in order>) \
+  --watch
+```
+
+Notes that cost real time to learn:
+
+- `--verifier-url` needs the trailing `/api/` — Blockscout's v1-compatible
+  Etherscan-shaped endpoint, not the bare domain or the `/api/v2/` path
+  `scripts/verify-canonical-contracts.mjs` reads status from.
+- `--constructor-args` must be the raw ABI-encoded hex, built with
+  `cast abi-encode "constructor(<exact types>)" <values>` — get the type
+  string and argument order from the actual `constructor(...)` signature in
+  source, not from memory. For an array argument, quote it:
+  `"[0xAddr1,0xAddr2]"`.
+- If a contract shares a source file with others (e.g. `ArcPumpFactoryV8` and
+  `ArcPumpCurveV8` both live in `src/ArcPumpV8.sol`), the path:name form is
+  required — bare `ContractName` alone is ambiguous or wrong.
+- Verification is asynchronous even on success — `--watch` polls
+  `Pending in queue` → `Pass - Verified`, typically under 30 seconds. Don't
+  assume failure from one "still pending" line.
+- After verifying everything you touched, re-run
+  `node scripts/verify-canonical-contracts.mjs` from the repo root and check
+  its `verified`/`unverified` counts before calling the pass done — that's
+  the tool `docs/ARCODIAN-AUDIT-READINESS.md` cites as the source of truth,
+  and it also catches any address that's in `contracts.json` but was never
+  actually deployed (or typo'd).
+
+### After any redeploy, before calling it done
+
+1. Update the address in `src/config.ts` (with a comment explaining what
+   changed and why) and in `public/developers/contracts.json`.
+2. Move the old address into `RETIRED_DEPLOYMENTS` (config.ts) and add a row
+   to `public/developers/legacy-migration.json` — never just delete a
+   superseded address; a future reader needs to know it existed and why it
+   stopped being canonical.
+3. `npx tsc --noEmit -p .`, `npm run build`, `npx vitest run` — all clean.
+4. `forge test` (from `contracts/`) — full suite green, not just the
+   contract(s) touched.
+5. Cut a new timestamped release under
+   `/www/wwwroot/arcodian.fun/releases/<STAMP>/`, symlink `data`/`downloads`/
+   `uploads` back to `shared/` (⚠️ `rm -rf` the release's own `data/` dir
+   first — Vite bundles a stale copy of `public/data/*` into `dist/data`,
+   and `ln -sfn` will nest a symlink one level too deep inside it instead of
+   replacing it if you don't), copy `contracts.json`/`legacy-migration.json`
+   in fresh (they are not symlinked), `chown -R www:www`, then flip the
+   `current` symlink.
+6. Verify the new addresses reach the live site:
+   `curl -s https://arcodian.fun/developers/contracts.json | jq .contracts`.
+
 ## Graduation V8 — Arc Testnet 5042002 (2026-07-19)
 
 | Contract | Address |

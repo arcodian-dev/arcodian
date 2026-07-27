@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./Developers.css";
 
 const REGISTRY="/developers/contracts.json";
@@ -30,10 +30,20 @@ const entries=[
  ["Admin Timelock · F5","0x8baC8017081134f02065fFefa340837278C03052","Governed administration: schedule → enforced delay → execute, with cancel, a self-governed delay, and a two-step admin handoff. Spike."],
 ] as const;
 
+type VerificationStatus={counts?:{verified?:number;unverified?:number};contracts?:Array<{verification:string}>};
+
 export default function Developers(){
  const [copied,setCopied]=useState(""); const copy=async(name:string,value:string)=>{await navigator.clipboard.writeText(value);setCopied(name);setTimeout(()=>setCopied(""),1200)};
+ // Pulled live rather than hardcoded — a stale "3/3 verified" string here
+ // would be exactly the kind of self-defeating bug this page exists to catch
+ // (see TrustCenter's own wiring-proof self-check, which had the same class
+ // of staleness bug from an earlier threshold migration).
+ const [verification,setVerification]=useState<VerificationStatus|null>(null);
+ useEffect(()=>{fetch("/developers/verification-status.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(setVerification).catch(()=>setVerification(null))},[]);
+ const totalContracts=verification?.contracts?.length;
+ const verifiedCount=verification?.counts?.verified;
  return <main className="developers">
-  <header className="dev-hero"><div className="dev-hero-copy"><p>ARCODIAN / BUILD SYSTEMS / 5042002</p><h1>Money rails for<br/><em>machines with limits.</em></h1><span>Compose exact-value payments, isolated agent vaults, and governed credit without giving software an unrestricted wallet.</span><nav><a className="dev-primary" href={SDK}>Open Agent Pay SDK ↗</a><a href="/docs">Read the protocol</a></nav></div><aside aria-label="Deployment status"><small>PUBLIC TESTNET</small><strong>05</strong><span>canonical surfaces</span><hr/><b>3 / 3 governed contracts verified</b><i>RPC transport failover active</i></aside></header>
+  <header className="dev-hero"><div className="dev-hero-copy"><p>ARCODIAN / BUILD SYSTEMS / 5042002</p><h1>Money rails for<br/><em>machines with limits.</em></h1><span>Compose exact-value payments, isolated agent vaults, and governed credit without giving software an unrestricted wallet.</span><nav><a className="dev-primary" href={SDK}>Open Agent Pay SDK ↗</a><a href="/docs">Read the protocol</a></nav></div><aside aria-label="Deployment status"><small>PUBLIC TESTNET</small><strong>{entries.length}</strong><span>canonical surfaces</span><hr/><b>{verifiedCount!==undefined&&totalContracts!==undefined?`${verifiedCount} / ${totalContracts} contracts verified`:"Checking verification…"}</b><i>RPC transport failover active</i></aside></header>
   <details className="dev-resources"><summary><span><b>Build resources</b><small>Machine-readable registry, schemas, migration state, and SDK</small></span><i>Open technical drawer +</i></summary><div><a href={REGISTRY}><b>contracts.json</b><small>Canonical addresses + verification</small></a><a href="/developers/events.json"><b>events.json</b><small>Indexer event schemas</small></a><a href="/developers/agents.json"><b>agents.json</b><small>Indexed Agent Passport registry</small></a><a href="/developers/jobs.json"><b>jobs.json</b><small>Indexed Agent Jobs feed</small></a><a href="/developers/reputation.json"><b>reputation.json</b><small>Objective reputation + validation tiers</small></a><a href="/developers/verification-status.json"><b>verification-status.json</b><small>Per-contract source-verification state</small></a><a href="https://arcodian.fun/mcp"><b>MCP endpoint</b><small>Read + unsigned builders · never signs</small></a><a href={SDK}><b>agentpay-sdk.mjs</b><small>Signer-bound integration module</small></a></div></details>
   <section className="dev-quick"><p>SIGNER TOPOLOGY</p><h2>Three roles. No shared authority.</h2><div><article><i>01</i><b>Owner / policy</b><span>Funds one isolated vault, then defines caps, expiry, and merchant permissions.</span></article><article><i>02</i><b>Agent / execution</b><span>Inspects policy and pays one permitted invoice. It cannot configure or withdraw.</span></article><article><i>03</i><b>Merchant / settlement</b><span>Receives Arc Pay settlement and may return the exact gross amount once.</span></article></div></section>
   <section className="dev-registry"><header><p>CANONICAL REGISTRY</p><h2>Verify before integrating.</h2></header>{entries.map(([name,address,note])=><article key={address}><div><b>{name}</b><span>{note}</span></div><code>{address}</code><button onClick={()=>copy(name,address)}>{copied===name?"Copied":"Copy"}</button><a href={`https://testnet.arcscan.app/address/${address}`} target="_blank" rel="noreferrer">Arcscan ↗</a></article>)}</section>

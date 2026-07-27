@@ -1,165 +1,177 @@
 {
   "version": 1,
-  "generatedAt": "2026-07-26T05:57:59.851Z",
+  "generatedAt": "2026-07-27T04:18:02.688Z",
   "network": {
     "rpc": "https://rpc.blockdaemon.testnet.arc.io",
     "blockscout": "https://testnet.arcscan.app",
     "chainId": 5042002
   },
   "counts": {
-    "unavailable": 25
+    "verified": 27
   },
-  "apiReachable": false,
+  "apiReachable": true,
   "contracts": [
     {
       "name": "usdc",
       "address": "0x3600000000000000000000000000000000000000",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "eurc",
       "address": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
-      "name": "marketUsdcFactoryV9",
-      "address": "0x0604f54450565B393e8F52078a28F260845e3064",
+      "name": "marketUsdcFactoryV10",
+      "address": "0x453a38aB960137e0294665d7C5A1BC0B1C41b9cc",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
-      "name": "marketEurcFactoryV9",
-      "address": "0xcEBdF68043b73cff75c4ea5872A24a4998B51774",
+      "name": "marketEurcFactoryV10",
+      "address": "0x171033cA9A61C71A73e0f68FfA3BEEFFEA44f2ef",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "marketPairFactory",
-      "address": "0x4B71169F63A36d819421F10C0436A6A7d3C7253f",
+      "address": "0x0540915768713dFd4436D0D2669129BA6809d1A5",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "marketGraduationHub",
-      "address": "0x39e146c99a774d7213Cc95F51C8Db7c2a3Ff7c43",
+      "address": "0x8a6d61a12D31BBBf5c011fa70c2f4802377D60c9",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "marketRouter",
-      "address": "0xa0da11008439829A37e01d0B9973F9199bB59DC2",
+      "address": "0x84bC0825c1A7FC72AbD07967B9F910E8ff5bC650",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "arcPay",
       "address": "0x5E3d1B63213B8608539116D1C6248A36819684b5",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "agentPayFactory",
       "address": "0x27c722F643ea787f7425449AF8B03601B90815eD",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "agentPayInternal",
       "address": "0xBEB0D78FD10474eb9Ef27D24600bACe9A1F13026",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "identityRegistry",
       "address": "0x8004A818BFB912233c491871b3d84c89A494BD9e",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "agentPassport",
       "address": "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
-      "name": "agentPayFactoryV3",
-      "address": "0xE39bae31254C45151ABd9dC53dA3C0c92B529Ad5",
+      "name": "agentPayFactoryV4",
+      "address": "0x8F4Ba684C7c294DF3Af50AC023975F6695CA4299",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "agentJobs",
-      "address": "0x33f54C516107A8c67d9Dc245f00E253132a6D15A",
+      "address": "0xfFdb3EC041DC1Cad062F0F80FF1a6F8292f21Df2",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "reputationRegistry",
       "address": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "validationRegistry",
       "address": "0x8004Cb1BF31DAf7788923b405b754f57acEB4272",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "sessionKeyAccount",
       "address": "0x06e26288AeC908c926A8e2466d9543e997f59d7C",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
-      "name": "arcLendPythMarket",
-      "address": "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637",
+      "name": "adminTimelock",
+      "address": "0x8baC8017081134f02065fFefa340837278C03052",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
-      "name": "arcLendPythAdapter",
+      "name": "arcLendV2Market",
+      "address": "0x571493d389862c2AF13985357b11916E5E54365d",
+      "deployed": true,
+      "verification": "verified"
+    },
+    {
+      "name": "arcLendPythOracle",
       "address": "0xBbCE55016E46b97d3a44ff3a3ac557A42Ea30E4C",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
+    },
+    {
+      "name": "arcManualOracleV2Fallback",
+      "address": "0x393Af549387f98b69dC0e5993F4Ed2934607A4AF",
+      "deployed": true,
+      "verification": "verified"
     },
     {
       "name": "governanceMultisig",
       "address": "0x4EA32e81a277aECE213602eA757a5ca3144Aa3aa",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "governanceTimelock",
       "address": "0x4e15d1f1211d3Ce6Cf24f4E10c159C485cf8AaCD",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "pyth",
       "address": "0x2880aB155794e7179c9eE2e38200202908C17B43",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "fxPool",
       "address": "0x982D61ddCAb6169d82B3e37A4E4158f1982E5447",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "cctpTokenMessengerV2",
       "address": "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     },
     {
       "name": "cctpMessageTransmitterV2",
       "address": "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
       "deployed": true,
-      "verification": "unavailable"
+      "verification": "verified"
     }
   ]
 }
