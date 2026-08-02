@@ -105,7 +105,7 @@ function PoolInfo({ market }: { market: MarketRecord }) {
 
 export default function TradingTerminal({ account, activeProvider, chainId, connect }: {
   account: string;
-  activeProvider: unknown;
+  activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   chainId?: number | null;
   connect: () => void;
 }) {
@@ -170,6 +170,28 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
     return () => { alive = false; window.clearInterval(timer); };
   }, [tokenAddress]);
 
+  // Every price/chart/trade shown here is Arc Mainnet data — but SwapPanel
+  // silently mirrors whatever chain the connected wallet reports (needed so
+  // it also works for Arc Testnet elsewhere in the app). Without this check,
+  // a wallet left on Arc Testnet would show real testnet balances/tokens
+  // right next to mainnet market data with no indication anything was
+  // wrong (found 2026-08-02: a connected testnet wallet "read testnet
+  // balance" here with no warning at all).
+  const wrongNetwork = Boolean(account) && chainId != null && chainId !== ARC_MAINNET.id;
+  async function switchToArcMainnet() {
+    if (!activeProvider) { connect(); return; }
+    try {
+      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_MAINNET.hexId }] });
+    } catch {
+      try {
+        await activeProvider.request({
+          method: "wallet_addEthereumChain",
+          params: [{ chainId: ARC_MAINNET.hexId, chainName: ARC_MAINNET.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC_MAINNET.rpc], blockExplorerUrls: [ARC_MAINNET.explorer] }],
+        });
+      } catch { /* user declined or wallet doesn't support programmatic network add */ }
+    }
+  }
+
   const price = market?.price || tradePrice(tapeTrades.at(-1)) || 0;
   const feedLabel = tapeHealth === "live" ? "Live" : tapeHealth === "delayed" ? "Delayed" : "Offline";
   if (marketLoading) return <main className="trading-terminal-page"><div className="terminal-data-empty">Loading selected Arc Mainnet market…</div></main>;
@@ -179,8 +201,9 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
       <a className="terminal-brand" href="/market"><span>{market.image ? <img src={imageUrl(market.image)} alt="" /> : market.symbol.slice(0, 2)}</span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
       <div className="terminal-price"><strong>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
       <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity))}</b></span></div>
-      <div className="terminal-actions"><span className={mobileChain ? "terminal-network online" : "terminal-network"}>● {mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>
+      <div className="terminal-actions"><span className={wrongNetwork ? "terminal-network wrong" : mobileChain ? "terminal-network online" : "terminal-network"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>
     </header>
+    {wrongNetwork && <div className="terminal-network-banner">Your wallet is on a different network than this market. {market.symbol} trades on <b>Arc Mainnet</b> — switch to see your real balance and trade. <button onClick={() => void switchToArcMainnet()}>Switch to Arc Mainnet</button></div>}
     <div className="terminal-layout">
       <section className="terminal-main-column">
         <div className="terminal-card terminal-chart-card">
@@ -198,7 +221,11 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
       <aside className="terminal-execution terminal-card">
         <div className="execution-tabs"><button className={activeSide === "buy" ? "active buy" : ""} onClick={() => setActiveSide("buy")}>Buy</button><button className={activeSide === "sell" ? "active sell" : ""} onClick={() => setActiveSide("sell")}>Sell</button></div>
         <div className="execution-context"><span>Arcodian route engine</span><b>{activeSide === "buy" ? `Buy ${market.symbol}` : `Sell ${market.symbol}`}</b><small>Best executable route · 0.30% protocol fee where applicable</small></div>
-        <SwapPanel account={account} activeProvider={activeProvider as never} onConnect={connect} chainId={chainId} initialTokenAddress={market.address} />
+        {wrongNetwork ? (
+          <div className="terminal-data-empty">Switch your wallet to Arc Mainnet (banner above) to trade {market.symbol} — it doesn't exist on the network your wallet is currently connected to.</div>
+        ) : (
+          <SwapPanel account={account} activeProvider={activeProvider} onConnect={connect} chainId={chainId} initialTokenAddress={market.address} />
+        )}
       </aside>
     </div>
   </main>;

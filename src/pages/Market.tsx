@@ -32,7 +32,6 @@ import {
 // infinite refetch loop for the entire time the app was defaulting to
 // mainnet with no legacy factories (found 2026-07-31: mainnet Market never
 // finished loading, stuck on "Reading canonical factories onchain…").
-const NO_LEGACY_FACTORIES: string[] = [];
 // Only compacts once a value is large enough that "1.2K" is actually more
 // legible than the exact figure — a freshly-launched coin's numbers are
 // still small enough that compacting them ("1K" for 1,003.96) throws away
@@ -68,8 +67,12 @@ function displayVolume24h(item: LaunchAsset): number {
     : Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
 }
 // V8 (marketUsdcFactory, ARCD) is retired — no longer read at all, mainnet
-// Market only ever lists V9 launches now.
-const MAINNET_LEGACY_FACTORIES: string[] = NO_LEGACY_FACTORIES;
+// Market only ever lists V9 launches now. The original V9 factory
+// (0x071f978A...327066) was retired 2026-08-02 for a treasury-address bug
+// (fee went to the deployer EOA, not the treasury multisig) — its one live
+// launch ("Architects") stays readable here as a legacy factory since it
+// can't migrate to the corrected one.
+const MAINNET_LEGACY_FACTORIES: string[] = ["0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066"];
 
 export default function Screener({
   account,
@@ -673,7 +676,7 @@ export default function Screener({
               <span className={`mt-status ${item.graduated ? "dex" : "curve"}`}>{item.graduated ? "Arcodian DEX" : item.risk}</span>
               <button className={watchlist.has(item.address.toLowerCase()) ? "mt-watch active" : "mt-watch"} aria-label={`Toggle ${item.symbol} watchlist`} onClick={(event) => { event.stopPropagation(); toggleWatch(item.address); }}>{watchlist.has(item.address.toLowerCase()) ? "★" : "☆"}</button>
             </div>
-          ) : "curve" in item && item.globalPool ? (
+          ) : isGlobalPool(item) ? (
             <div className="mt-row mt-global-pool" role="row" tabIndex={0} key={`p-${item.pool || item.address}`}
               onClick={() => openMarketAsset(item)}
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
