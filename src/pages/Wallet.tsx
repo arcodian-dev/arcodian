@@ -21,20 +21,27 @@ import {
 } from "@capacitor-mlkit/barcode-scanning";
 import {
   ARC,
+  ARC_EURC_ADDRESS,
   ARC_LEND_ADDRESS,
   ARC_LEND_COLLATERAL_ADDRESS,
+  ARC_MAINNET,
+  ARC_MAINNET_CONTRACTS,
   ARC_PAY_ADDRESS,
   CHAINS,
+  MAINNET_CHAINS,
+  PUMP_FACTORY_ADDRESS,
 } from "../config";
+import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import {
   CCTP_DOMAIN,
-  MESSAGE_TRANSMITTER_V2,
   MESSAGE_TRANSMITTER_ABI,
   fetchCctpAttestation,
   fetchCctpFee,
   clearPendingClaim,
+  messageTransmitterFor,
   recordBridgeHistory,
   savePendingClaim,
+  tokenMessengerFor,
 } from "../bridgeRecovery";
 import {
   arcPayFee,
@@ -114,18 +121,25 @@ const LEND_ABI = [
 ];
 const ERC20_ABI = ["function approve(address,uint256) returns(bool)"];
 
-// Circle CCTP v2 — deterministic addresses across every supported testnet chain.
-const TOKEN_MESSENGER_V2 = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA";
+// Circle CCTP v2 — deterministic messenger addresses, resolved per chain via
+// tokenMessengerFor/messageTransmitterFor since testnet and mainnet are
+// separate deployments (see bridgeRecovery.ts).
+// The real depositForBurn (verified against the deployed, verified
+// TokenMessengerV2 implementation ABI, both testnet and mainnet) returns
+// nothing — declaring uint64 here was harmless for ethers (only ever used
+// to send a tx, never a static call) but wrong; kept accurate.
 const TOKEN_MESSENGER_ABI = [
-  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold) returns (uint64)",
+  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold)",
 ];
 const CCTP_USDC_ABI = [
   "function approve(address,uint256) returns(bool)",
   "function allowance(address,address) view returns(uint256)",
 ];
-// Every chain Circle can burn-and-mint between. The wallet auto-selects the
-// right one for each step, so the person never switches networks by hand.
-const BRIDGE_CHAINS = CHAINS.filter((c) => CCTP_DOMAIN[c.id] !== undefined);
+// Every chain Circle can burn-and-mint between — testnet and real mainnet
+// (Ethereum, Arbitrum One, Optimism, Base, Arc Mainnet) side by side. The
+// wallet auto-selects the right one for each step, so the person never
+// switches networks by hand.
+const BRIDGE_CHAINS = [...CHAINS, ...MAINNET_CHAINS].filter((c) => CCTP_DOMAIN[c.id] !== undefined);
 const chainById = (id: number) => BRIDGE_CHAINS.find((c) => c.id === id);
 const chainLabel = (id: number) => chainById(id)?.name.replace(/\s*(Testnet|Sepolia)$/i, "") || "another chain";
 
@@ -164,6 +178,8 @@ export default function Wallet({
     return "home";
   });
   const [balance, setBalance] = useState("0.00");
+  const [holdings, setHoldings] = useState<Array<{ symbol: string; name: string; balance: string; address: string }>>([]);
+  const [holdingsLoading, setHoldingsLoading] = useState(false);
   const [recipient, setRecipient] = useState("");
   const [contacts, setContacts] = useState<WalletContact[]>([]);
   const [contactName, setContactName] = useState("");
@@ -193,7 +209,22 @@ export default function Wallet({
   const [busy, setBusy] = useState(false);
   const [walletMarkets, setWalletMarkets] = useState<WalletMarket[]>([]);
   const [selectedMarket, setSelectedMarket] = useState<WalletMarket | null>(null);
-  const onArc = native || chainId === ARC.id;
+  // Wallet balance/holdings must read correctly on either Arc network — a
+  // connected wallet already switched to Arc Mainnet (5042) was previously
+  // treated as "off Arc" here (only chainId === ARC.id, the testnet id, was
+  // recognized), which zeroed the displayed balance and showed a bogus
+  // "switch to Arc Testnet" prompt even though the wallet was validly on
+  // Arc Mainnet. Native (embedded, custodial) wallets stay testnet-only by
+  // design — there is no mainnet private-key-in-browser flow.
+  const isArcMainnetChain = chainId === ARC_MAINNET.id;
+  const onArc = native || chainId === ARC.id || isArcMainnetChain;
+  // Arc Pay requests/settlement were hardcoded to the testnet contract and
+  // chain id regardless of which network the wallet was actually on — Arc
+  // Pay has been live on mainnet since 2026-07-30 (ARC_MAINNET_CONTRACTS.arcPay)
+  // but every request generated or accepted here still pointed at testnet,
+  // so a mainnet Arc Pay request always failed with "wrong network."
+  const activeArc = isArcMainnetChain ? ARC_MAINNET : ARC;
+  const activeArcPay = isArcMainnetChain ? ARC_MAINNET_CONTRACTS.arcPay : ARC_PAY_ADDRESS;
   const contactKey = walletAccount ? `arcodian-address-book-v1:${walletAccount.toLowerCase()}` : "";
   const activityKey = walletAccount ? `arcodian-p2p-activity-v1:${walletAccount.toLowerCase()}` : "";
   const noticeKey = walletAccount ? `arcodian-wallet-notices-v1:${walletAccount.toLowerCase()}` : "";
@@ -433,16 +464,31 @@ export default function Wallet({
           typeof error === "object" && error && "code" in error
             ? Number((error as { code?: unknown }).code)
             : 0;
-        if (code === 4902 && targetChainId === ARC.id) {
+        if (code === 4902 && (targetChainId === ARC.id || targetChainId === ARC_MAINNET.id)) {
+          const isArcMainnet = targetChainId === ARC_MAINNET.id;
           await activeProvider.request({
             method: "wallet_addEthereumChain",
             params: [
               {
                 chainId: hex,
-                chainName: ARC.name,
+                chainName: isArcMainnet ? ARC_MAINNET.name : ARC.name,
                 nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-                rpcUrls: [ARC.rpc],
-                blockExplorerUrls: [ARC.explorer],
+                rpcUrls: [isArcMainnet ? ARC_MAINNET.rpc : ARC.rpc],
+                blockExplorerUrls: [isArcMainnet ? ARC_MAINNET.explorer : ARC.explorer],
+              },
+            ],
+          });
+        } else if (code === 4902 && MAINNET_CHAINS.some((c) => c.id === targetChainId)) {
+          // Ethereum/Arbitrum/Optimism/Base are almost always pre-added in a
+          // wallet already; this is only a fallback for the rare case they're not.
+          await activeProvider.request({
+            method: "wallet_addEthereumChain",
+            params: [
+              {
+                chainId: hex,
+                chainName: chain.name,
+                nativeCurrency: { name: chain.gasSymbol, symbol: chain.gasSymbol, decimals: 18 },
+                rpcUrls: [chain.rpc],
               },
             ],
           });
@@ -451,6 +497,19 @@ export default function Wallet({
         } else {
           throw error;
         }
+      }
+      // wallet_switchEthereumChain can resolve before the wallet's provider
+      // has actually rotated networks — signing right after then targets a
+      // node still on the old chain, which several public RPCs reject as a
+      // malformed/"Bad Request" call. Confirm the switch actually landed.
+      let confirmed = "";
+      for (let i = 0; i < 10; i++) {
+        confirmed = String(await activeProvider.request({ method: "eth_chainId" }));
+        if (confirmed.toLowerCase() === hex.toLowerCase()) break;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      if (confirmed.toLowerCase() !== hex.toLowerCase()) {
+        throw new Error(`Your wallet is still on a different network than ${chain.name}. Switch to it manually, then try again.`);
       }
       return new BrowserProvider(activeProvider).getSigner();
     }
@@ -475,18 +534,19 @@ export default function Wallet({
       const recipient = normalizeRecipient(bridgeRecipient || walletAccount);
 
       const bridgeSigner = await signerFor(from.id);
+      const tokenMessenger = tokenMessengerFor(from.id);
       const usdc = new Contract(from.token, CCTP_USDC_ABI, bridgeSigner);
       const owner = await bridgeSigner.getAddress();
-      const allowance: bigint = await usdc.allowance(owner, TOKEN_MESSENGER_V2);
+      const allowance: bigint = await usdc.allowance(owner, tokenMessenger);
       if (allowance < value) {
         setStatus(`Approving USDC on ${chainLabel(from.id)}…`);
-        const approval = await usdc.approve(TOKEN_MESSENGER_V2, value, {
+        const approval = await usdc.approve(tokenMessenger, value, {
           gasLimit: 120000n,
         });
         await approval.wait();
       }
       const messenger = new Contract(
-        TOKEN_MESSENGER_V2,
+        tokenMessenger,
         TOKEN_MESSENGER_ABI,
         bridgeSigner,
       );
@@ -580,7 +640,7 @@ export default function Wallet({
         );
       const claimSigner = await signerFor(to.id);
       const transmitter = new Contract(
-        MESSAGE_TRANSMITTER_V2,
+        messageTransmitterFor(to.id),
         MESSAGE_TRANSMITTER_ABI,
         claimSigner,
       );
@@ -712,24 +772,82 @@ export default function Wallet({
     };
   }, [walletAccount, activeProvider, onArc, native]);
 
+  // Beyond native USDC, discover what else the connected wallet holds on
+  // Arc. There's no explorer/indexer API that enumerates arbitrary token
+  // balances for Arc yet (checked directly against arc.exploreme.pro —
+  // 404, not implemented), so this checks the tokens Arcodian itself
+  // actually knows about: EURC (Arc Testnet only, no mainnet contract yet)
+  // and every token launched through the active network's own pump
+  // factory. Cheap on mainnet right now since very few tokens exist there.
+  useEffect(() => {
+    if (!walletAccount || !onArc) { setHoldings([]); return; }
+    let cancelled = false;
+    setHoldingsLoading(true);
+    const rpc = isArcMainnetChain ? ARC_MAINNET.rpc : ARC.rpc;
+    const provider = new JsonRpcProvider(rpc);
+    // V9 (graduates into a real Uniswap V3 pool) is mainnet's active launch
+    // factory as of 2026-07-31; V8 stays wired read-only so pre-V9 coins
+    // (ARCD) keep showing up — same split Market.tsx uses.
+    const factoryAddresses = isArcMainnetChain
+      ? [ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, ARC_MAINNET_CONTRACTS.marketUsdcFactory]
+      : [PUMP_FACTORY_ADDRESS];
+    (async () => {
+      const found: Array<{ symbol: string; name: string; balance: string; address: string }> = [];
+      if (!isArcMainnetChain) {
+        try {
+          const eurc = new Contract(ARC_EURC_ADDRESS, ["function balanceOf(address) view returns(uint256)"], provider);
+          const value = (await eurc.balanceOf(walletAccount)) as bigint;
+          if (value > 0n) found.push({ symbol: "EURC", name: "Euro Coin", balance: formatUnits(value, 6), address: ARC_EURC_ADDRESS });
+        } catch { /* skip on read failure */ }
+      }
+      const seenTokens = new Set<string>();
+      for (const factoryAddress of factoryAddresses) {
+        if (cancelled) return;
+        try {
+          const factory = new Contract(factoryAddress, ARC_PUMP_FACTORY_ABI, provider);
+          const count = Number(await factory.launchCount());
+          const tokenAddresses = await Promise.all(
+            Array.from({ length: count }, (_, index) => factory.tokenByLaunch(index + 1) as Promise<string>),
+          );
+          for (const tokenAddress of tokenAddresses) {
+            if (cancelled) return;
+            if (seenTokens.has(tokenAddress.toLowerCase())) continue;
+            seenTokens.add(tokenAddress.toLowerCase());
+            try {
+              const token = new Contract(tokenAddress, [
+                "function symbol() view returns(string)",
+                "function name() view returns(string)",
+                "function balanceOf(address) view returns(uint256)",
+              ], provider);
+              const [symbol, name, value] = await Promise.all([token.symbol() as Promise<string>, token.name() as Promise<string>, token.balanceOf(walletAccount) as Promise<bigint>]);
+              if (value > 0n) found.push({ symbol, name, balance: Number(formatEther(value)).toLocaleString("en-US", { maximumFractionDigits: 2 }), address: tokenAddress });
+            } catch { /* skip tokens that fail to read */ }
+          }
+        } catch { /* this factory unreachable — still try the others */ }
+      }
+      if (!cancelled) { setHoldings(found); setHoldingsLoading(false); }
+    })();
+    return () => { cancelled = true; provider.destroy(); };
+  }, [walletAccount, onArc, isArcMainnetChain]);
+
   const receiveUri = useMemo(() => {
     if (!walletAccount)
       return "Create or import a wallet to create an Arc Pay request";
     try {
       const settlement =
-        amount && ARC_PAY_ADDRESS
+        amount && activeArcPay
           ? {
               invoiceId,
               expiresAt: invoiceExpiry,
-              chainId: ARC.id,
-              contract: ARC_PAY_ADDRESS,
+              chainId: activeArc.id,
+              contract: activeArcPay,
             }
           : undefined;
       return arcPayUri(walletAccount, amount, memo, settlement);
     } catch {
       return walletAccount;
     }
-  }, [walletAccount, amount, memo, invoiceId, invoiceExpiry]);
+  }, [walletAccount, amount, memo, invoiceId, invoiceExpiry, activeArc, activeArcPay]);
   const feePreview = useMemo(() => {
     try {
       return amount
@@ -851,21 +969,21 @@ export default function Wallet({
     setPaymentReceipt(null);
     setStatus("");
     try {
-      if (!ARC_PAY_ADDRESS)
+      if (!activeArcPay)
         throw new Error(
           "Arc Pay settlement contract is not deployed/configured yet",
         );
       const request = parseArcPayUri(pastedRequest);
-      if (request.chainId !== ARC.id)
-        throw new Error("Payment request is for the wrong network");
+      if (request.chainId !== activeArc.id)
+        throw new Error(`Payment request is for the wrong network — switch to ${request.chainId === ARC_MAINNET.id ? ARC_MAINNET.name : ARC.name} first.`);
       if (request.expiresAt < Math.floor(Date.now() / 1000))
         throw new Error("Payment request has expired");
-      if (request.contract.toLowerCase() !== ARC_PAY_ADDRESS.toLowerCase())
+      if (request.contract.toLowerCase() !== activeArcPay.toLowerCase())
         throw new Error("Unrecognized Arc Pay settlement contract");
       const value = parseArcNativeAmount(request.amount);
       const walletSigner = await signer();
       const settlement = new Contract(
-        ARC_PAY_ADDRESS,
+        activeArcPay,
         ARC_PAY_ABI,
         walletSigner,
       );
@@ -1122,14 +1240,14 @@ export default function Wallet({
                 </div>
                 <div className="wallet-network">
                   <i />
-                  Arc Testnet <span>Chain {ARC.id}</span>
+                  {isArcMainnetChain ? "Arc Mainnet" : "Arc Testnet"} <span>Chain {isArcMainnetChain ? ARC_MAINNET.id : ARC.id}</span>
                 </div>
                 <p>Total balance</p>
                 <h1>
                   {balance} <small>USDC</small>
                 </h1>
                 <small className="wallet-balance-caption">
-                  Native settlement balance · Arc Testnet
+                  Native settlement balance · {isArcMainnetChain ? "Arc Mainnet" : "Arc Testnet"}
                 </small>
                 <div className="wallet-actions wallet-actions-four">
                   <button onClick={() => setView("send")}>
@@ -1150,7 +1268,7 @@ export default function Wallet({
                     className="wallet-network-warning"
                     onClick={switchToArc}
                   >
-                    Switch wallet to Arc Testnet
+                    Switch wallet to Arc
                   </button>
                 )}
                 <article className="wallet-asset">
@@ -1161,6 +1279,19 @@ export default function Wallet({
                   </span>
                   <strong>{balance}</strong>
                 </article>
+                {holdings.map((token) => (
+                  <article className="wallet-asset" key={token.address}>
+                    <img src="/arcodian-mark.svg" alt="" />
+                    <span>
+                      <b>{token.symbol}</b>
+                      <small>{token.name}</small>
+                    </span>
+                    <strong>{token.balance}</strong>
+                  </article>
+                ))}
+                {holdingsLoading && holdings.length === 0 && (
+                  <small className="wallet-balance-caption">Checking other tokens on Arc…</small>
+                )}
                 <div className="wallet-section-title">
                   <b>Discover</b>
                   <span>Built into Arcodian</span>
@@ -1345,11 +1476,11 @@ export default function Wallet({
                   <b>{paymentReceipt.amount} USDC · Confirmed</b>
                   <small>Merchant {short(paymentReceipt.merchant)} · Invoice {short(paymentReceipt.invoiceId)}</small>
                   <small>Memo {paymentReceipt.memo} · {new Date(paymentReceipt.paidAt).toLocaleString()}</small>
-                  <a href={`${ARC.explorer}/tx/${paymentReceipt.tx}`} target="_blank" rel="noreferrer">View transaction {short(paymentReceipt.tx)} ↗</a>
+                  <a href={`${activeArc.explorer}/tx/${paymentReceipt.tx}`} target="_blank" rel="noreferrer">View transaction {short(paymentReceipt.tx)} ↗</a>
                 </article>}
                 <button
                   className="wallet-primary"
-                  disabled={busy || !pastedRequest || !ARC_PAY_ADDRESS}
+                  disabled={busy || !pastedRequest || !activeArcPay}
                   onClick={settleArcPayRequest}
                 >
                   {busy

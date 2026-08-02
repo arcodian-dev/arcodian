@@ -13,13 +13,13 @@ export function CostLine({ cost, holding, quoteCurrency, tokensOut, symbol }: {
 }) {
   return (
     <p className="cost-line">
-      <span>Bayar <strong>{cost.pays.toFixed(2)} {holding}</strong></span>
+      <span>Pay <strong>{cost.pays.toFixed(2)} {holding}</strong></span>
       <span aria-hidden="true"> · </span>
-      <span>dapat ~<strong>{tokensOut} {symbol}</strong></span>
+      <span>get ~<strong>{tokensOut} {symbol}</strong></span>
       <span aria-hidden="true"> · </span>
-      <span>biaya <strong>{(cost.feeBps / 100).toFixed(2)}%</strong></span>
+      <span>fee <strong>{(cost.feeBps / 100).toFixed(2)}%</strong></span>
       {cost.route === "cross" && (
-        <span className="cost-line-note"> (lewat FX {cost.quoteDelivered.toFixed(2)} {quoteCurrency})</span>
+        <span className="cost-line-note"> (via FX {cost.quoteDelivered.toFixed(2)} {quoteCurrency})</span>
       )}
     </p>
   );

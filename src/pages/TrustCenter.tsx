@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
+import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 
 function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
@@ -165,13 +165,36 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Admin Timelock", ADMIN_TIMELOCK_ADDRESS, "Role-gated governed administration: schedule → enforced delay → execute, with cancel and a self-governed delay. The mechanism for moving admin to a production multisig."],
       ],
     },
+    {
+      title: "Arc Mainnet — live, real value",
+      note: `Deployed on Arc Mainnet, chain ${ARC_MAINNET.id}, not Arc Testnet. Governance on these is still deployer-only — no mainnet multisig yet (see Mainnet readiness below). ArcBridgeRouter deployed on 2026-07-31 across 5 chains; verify links below open the relevant chain's own explorer.`,
+      cards: [
+        ["USDC-only Market Factory", ARC_MAINNET_CONTRACTS.marketUsdcFactory, "Mainnet launch factory — same bonding-curve/graduation mechanics as testnet, USDC-only. Live with real launches from real, independent wallets."],
+        ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the mainnet pair factory below."],
+        ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry for graduated mainnet coins."],
+        ["Arc Pay (mainnet)", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement, deployed to Arc Mainnet."],
+        ["ArcBridgeRouter · Arc", CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id], "1.5% fee router over Circle's official CCTP v2 rails. Proven live: real transactions on all 5 chains, plus independent third-party wallets bridging unaided."],
+        ["ArcBridgeRouter · Ethereum", CCTP_MAINNET_FEE_ROUTER[1], "Same router contract, deployed on Ethereum mainnet — opens that chain's own explorer, not Arc's."],
+        ["ArcBridgeRouter · Optimism", CCTP_MAINNET_FEE_ROUTER[10], "Same router contract, deployed on Optimism mainnet."],
+        ["ArcBridgeRouter · Arbitrum", CCTP_MAINNET_FEE_ROUTER[42161], "Same router contract, deployed on Arbitrum mainnet."],
+        ["ArcBridgeRouter · Base", CCTP_MAINNET_FEE_ROUTER[8453], "Same router contract, deployed on Base mainnet — the first chain this router was proven on with a real transaction."],
+      ],
+    },
   ];
+  const explorerFor = (groupTitle: string, label: string): string => {
+    if (groupTitle !== "Arc Mainnet — live, real value") return ARC.explorer;
+    if (label.includes("Ethereum")) return "https://etherscan.io";
+    if (label.includes("Optimism")) return "https://optimistic.etherscan.io";
+    if (label.includes("Arbitrum")) return "https://arbiscan.io";
+    if (label.includes("Base")) return "https://basescan.org";
+    return ARC_MAINNET.explorer;
+  };
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
-    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>These are the canonical Arc Testnet contracts read by Arcodian. Every address opens in the explorer; live wiring checks run again when this page loads. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads the same contracts and returns unsigned transactions only — it never holds a key.</p></header>
+    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>These are the canonical Arc Testnet contracts read by Arcodian, where most of the product still runs. Bridge and the USDC-only Market/Launchpad are additionally deployed on Arc Mainnet with real value — see the <a href="/developers/contracts.mainnet.json">mainnet registry</a> and <a href="#docs-readiness">Mainnet readiness</a>. Every address opens in the explorer; live wiring checks run again when this page loads. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads the same contracts and returns unsigned transactions only — it never holds a key.</p></header>
     {contractGroups.map((group) => <div key={group.title} className="contract-group">
       <div className="contract-group-head"><h2>{group.title}</h2><p>{group.note}</p></div>
-      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={address}><small>{label}</small><a href={`${ARC.explorer}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
+      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={label}><small>{label}</small><a href={`${explorerFor(group.title,label)}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
     </div>)}
     <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Testnet…"}</h2><p>Read directly from chain {ARC.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
     <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>12,000</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
@@ -208,7 +231,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div>
         <p className="kicker">Documentation</p>
         <h1>How Arcodian works,<br/><em>end to end.</em></h1>
-        <p>Arcodian is a USDC-native money app and market system on Arc Testnet: a self-custody wallet, exact-value payments, isolated lending, cross-chain bridging, stablecoin FX, and a permissionless launchpad. Every balance, price, fee, and graduation is executed by public contracts—this page documents each rail and the exact numbers behind it. Nothing here is set from a dashboard.</p>
+        <p>Arcodian is a USDC-native money app and market system on Arc: a self-custody wallet, exact-value payments, isolated lending, cross-chain bridging, stablecoin FX, and a permissionless launchpad. Bridge and the USDC-only launchpad/market are live on Arc Mainnet with real value; the rest of the stack runs on Arc Testnet. Every balance, price, fee, and graduation is executed by public contracts—this page documents each rail and the exact numbers behind it. Nothing here is set from a dashboard.</p>
         <div className="docs-hero-actions"><button className="primary" onClick={enterMarket}>Open the market</button><button onClick={openContracts}>See the contracts →</button></div>
       </div>
       <nav className="docs-toc" aria-label="On this page">
@@ -232,7 +255,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <p>A self-custody wallet for Arc—on the web and as a native Android app. It creates or imports a seed on-device, signs Arc transactions directly, and reaches every other product (Pay, Lend, Bridge, Swap) without handing control to a third party.</p>
       <div className="docs-cards">
         <div><b>On-device keys</b><p>The Android app stores the seed in the platform secure vault; the web wallet signs through your connected wallet. Raw key material is never written to localStorage or sent to a server.</p></div>
-        <div><b>Multi-chain by design</b><p>The same address works on Arc plus Ethereum, Arbitrum, Base, and Optimism testnets. The wallet auto-switches network for every bridge approval and claim.</p></div>
+        <div><b>Multi-chain by design</b><p>The same address works on Arc Mainnet plus Ethereum, Arbitrum, Base, and Optimism mainnets (real USDC via Bridge), and on the equivalent testnets for testing. The wallet auto-switches network for every bridge approval and claim.</p></div>
         <div><b>Everything in one place</b><p>Send, receive, bridge, swap, pay an invoice, and supply or borrow—each is a wallet-signed transaction with the amount shown before you confirm.</p></div>
       </div>
       <aside className="docs-notice"><strong>Get the app</strong><p>The Arcodian testnet wallet ships as a downloadable Android APK from the wallet page. It is a debug/testnet build—install it only to exercise Arc Testnet flows, never with mainnet value.</p></aside>
@@ -261,10 +284,11 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-bridge" className="docs-section">
       <div className="docs-section-head"><span>05</span><h2>Bridge</h2></div>
-      <p>Move test USDC between Arc and other chains over official <b>Circle CCTP</b> rails—burn-and-mint, not a third-party bridge. It runs standalone and inside the wallet, which switches networks for you on both the burn and the mint.</p>
+      <p>Move USDC between Arc and other chains over official <b>Circle CCTP</b> rails—burn-and-mint, not a third-party bridge. It runs standalone and inside the wallet, which switches networks for you on both the burn and the mint. <b>Bridge is live on Arc Mainnet with real USDC</b> (Ethereum, Optimism, Arbitrum, Base ⇄ Arc), proven with real transactions including independent third-party wallets bridging unaided. A dedicated testnet version (plus Avalanche and Polygon Amoy) is also available for testing without real value — check which network you're connected to before signing.</p>
       <div className="docs-cards">
         <div><b>Burn → attest → mint</b><p>Circle burns on the source chain, issues an attestation, then mints the same USDC on the destination. Arcodian only orchestrates the two wallet signatures.</p></div>
-        <div><b>Five networks</b><p>Arc, Ethereum, Arbitrum, Base, and Optimism testnets (plus Avalanche and Polygon). Each CCTP domain is wired to the deterministic v2 messenger address.</p></div>
+        <div><b>Five mainnet routes, five testnet routes</b><p>Arc, Ethereum, Arbitrum, Base, and Optimism on mainnet (plus Avalanche and Polygon Amoy on testnet). Each CCTP domain is wired to the deterministic v2 messenger address, identical across every chain.</p></div>
+        <div><b>Circle's mainnet burn limit</b><p>Circle currently caps a single burn out of Arc Mainnet at 1 USDC per transaction — a network-side rollout limit on their side, not Arcodian's. The interface surfaces this clearly and caps the amount; bridge in 1 USDC steps until Circle raises it.</p></div>
         <div><b>Recoverable</b><p>If a refresh interrupts a flow, the burn is recorded once and only the pending mint resumes—no double bridge. The destination mint needs a little gas on the destination chain.</p></div>
       </div>
     </article>
@@ -327,10 +351,10 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-roadmap" className="docs-section">
       <div className="docs-section-head"><span>11</span><h2>Roadmap</h2></div>
-      <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface—the first two are already live on testnet.</p>
+      <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface — Bridge and USDC-only Market are already live on Arc Mainnet with real value; the rest run on testnet.</p>
       <div className="economics-flow">
-        <div><i>01</i><small>Live · testnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live. Next: recurring requests, payment links, and merchant webhooks.</p></div>
-        <div><i>02</i><small>Live · testnet</small><h3>Stablecoin FX</h3><p>USDC⇄EURC desk is live. Next: deeper pools and best-execution routing across more Arc stablecoins.</p></div>
+        <div><i>01</i><small>Live · testnet + mainnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live on both Arc Testnet and Arc Mainnet. Next: recurring requests, payment links, and merchant webhooks.</p></div>
+        <div><i>02</i><small>Live · testnet</small><h3>Stablecoin FX</h3><p>USDC⇄EURC desk is live on Arc Testnet — no official Arc Mainnet EURC address exists yet, so this stays testnet-only until one does. Next: deeper pools and best-execution routing across more Arc stablecoins.</p></div>
         <div><i>03</i><small>Planned</small><h3>E-commerce</h3><p>A checkout SDK and hosted pay pages so any store can accept exact USDC/EURC settlement with an order lifecycle.</p></div>
         <div><i>04</i><small>Planned</small><h3>Agentic economy</h3><p>Programmable, policy-scoped wallets so autonomous agents can pay, get paid, and settle on Arc under spending limits.</p></div>
       </div>
@@ -338,8 +362,8 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-safety" className="docs-section">
       <div className="docs-section-head"><span>12</span><h2>Safety & custody</h2></div>
-      <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints, and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Mainnet paths stay fail-closed until every release check is signed off.</p>
-      <aside className="docs-notice"><strong>Testnet notice</strong><p>Arcodian currently runs on Arc Testnet chain 5042002. Test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through Arc Explorer.</p></aside>
+      <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints (or, where no official Arc Mainnet endpoint yet exists, an independently-verified third-party one — see Mainnet readiness below), and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Features without an explicit mainnet deployment and readiness sign-off stay Arc Testnet only.</p>
+      <aside className="docs-notice"><strong>Mixed testnet/mainnet notice</strong><p>Bridge and the USDC-only Market/Launchpad are live on Arc Mainnet, chain 5042 — real USDC, real risk. Always check the network your wallet shows before signing. Everything else on this page (Swap via Circle's SDK, StableCoin FX, Arc Lend, EURC launches, the agent-economy stack) runs on Arc Testnet chain 5042002, where test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through each network's explorer.</p></aside>
     </article>
 
     <article id="docs-verify" className="docs-section">
@@ -354,11 +378,13 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-readiness" className="docs-section readiness-section">
       <div className="docs-section-head"><span>14</span><h2>Mainnet readiness</h2></div>
-      <p><b>Current decision: NO-GO.</b> Testnet functionality is broad and monitored, but operational and governance gates remain open. No mainnet deployment path is enabled in the frontend.</p>
+      <p><b>Current decision: PARTIAL GO.</b> Bridge (Circle CCTP) and the USDC-only Market/Launchpad are deployed and live on Arc Mainnet with real USDC — verified with real on-chain transactions, not just a deployment script. Everything else (Swap via Circle's SDK, StableCoin FX, Arc Lend, EURC launches, the agent-economy stack) stays testnet-only until its own gates below clear. Governance and audit gates for the mainnet contracts that do exist remain open.</p>
       <div className="readiness-grid">
-        <div className="blocked"><small>BLOCKER</small><b>Official mainnet registry</b><p>Final Arc mainnet chain ID, RPC, explorer, USDC, EURC, Pyth, and CCTP addresses are not configured and independently verified.</p></div>
-        <div className="warning"><small>CANARY LIVE</small><b>Multisig + timelock</b><p>A 2-of-2 governance canary and 24-hour timelock control ArcLendV2. All 27 canonical contracts are source-verified on Arcscan; final mainnet signers and legacy fee-recipient migration still require approval.</p></div>
-        <div className="blocked"><small>BLOCKER</small><b>Independent audit</b><p>A 2026-07-27 in-house self-review across market, lending, and frontend surfaces found no critical/high issue and fixed every medium finding it did surface — but a self-review is not a substitute for an independent third-party audit with sign-off, which remains open.</p></div>
+        <div className="ready"><small>LIVE</small><b>Bridge + USDC Market on Arc Mainnet</b><p>ArcBridgeRouter (Ethereum, Optimism, Arbitrum, Base, Arc) and the USDC-only launch/DEX stack are deployed to Arc Mainnet, chain 5042, and proven with real transactions. Source-verified on Sourcify + public Blockscout mirrors for the 4 EVM chains; Arc's own explorer is third-party and unofficial (no official Circle explorer is public yet) and its verify endpoint currently errors server-side on their end.</p></div>
+        <div className="blocked"><small>BLOCKER</small><b>Official Arc Mainnet infrastructure</b><p>No official Circle RPC or explorer for Arc Mainnet is public yet — the RPC in use is a third-party operator's endpoint, independently verified against known on-chain state but not Circle's own. Swap this out the moment an official endpoint exists.</p></div>
+        <div className="blocked"><small>BLOCKER</small><b>Mainnet governance multisig</b><p>The mainnet contracts deployed so far are still controlled by a single deployer key, not a multisig. A production multisig + timelock for mainnet admin is not yet deployed (the 2-of-2 canary below is a testnet ArcLendV2 rehearsal, not the mainnet path).</p></div>
+        <div className="blocked"><small>BLOCKER</small><b>Independent audit</b><p>A 2026-07-27 in-house self-review across market, lending, and frontend surfaces found no critical/high issue and fixed every medium finding it did surface — but a self-review is not a substitute for an independent third-party audit with sign-off, which remains open, including for the mainnet bridge/market contracts.</p></div>
+        <div className="warning"><small>CANARY LIVE (TESTNET)</small><b>Multisig + timelock rehearsal</b><p>A 2-of-2 governance canary and 24-hour timelock control ArcLendV2 on Arc Testnet. All 27 canonical testnet contracts are source-verified; this is the rehearsal for the mainnet governance path above, not mainnet itself.</p></div>
         <div className="ready"><small>VERIFIED</small><b>Separated risk controls</b><p>Guardian can pause and lower caps immediately but cannot override oracle, raise caps, withdraw reserves, or replace itself. Increases require 24h timelock plus 48h market delay.</p></div>
         <div className="warning"><small>HARDEN</small><b>Indexer redundancy</b><p>Monitoring and keepers are healthy but run on one host. Add a second independent reader/alert path and keeper failover.</p></div>
         <div className="ready"><small>VERIFIED</small><b>Testnet controls</b><p>Pyth confidence + 20% deviation guards, a 90-hour staleness window sized to EUR/USD's real weekend market closure, granular pause, 50,000/25,000 USDC caps, bad-debt accounting, live E2E, monitoring, and negative controls are active.</p></div>
@@ -374,11 +400,11 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-legal" className="docs-section">
       <div className="docs-section-head"><span>16</span><h2>Terms, risk & refunds</h2></div>
-      <p>Arcodian is currently a testnet interface. Test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing.</p>
+      <p>Bridge and the USDC-only Market/Launchpad move real USDC on Arc Mainnet — treat every transaction there as final and irreversible with real financial consequences. Every other Arcodian surface (Swap, StableCoin FX, Arc Lend, EURC launches, the agent-economy contracts) is a testnet interface where test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing, on either network.</p>
       <div className="docs-cards">
         <div><b>Self-custody</b><p>Arcodian does not hold recovery phrases or sign on a user&apos;s behalf. Blockchain transactions are public and normally irreversible.</p></div>
         <div><b>Payments & refunds</b><p>Arc Pay refunds are new merchant-funded transactions returning the gross amount. The original protocol fee and network costs are not reversed.</p></div>
-        <div><b>Testnet status</b><p>No product is represented as audited, insured, guaranteed, or mainnet-ready. Availability may change while canary controls are tested.</p></div>
+        <div><b>Audit status</b><p>No product, on either network, is represented as independently audited, insured, or guaranteed. Arc Mainnet Bridge and Market are live and proven with real transactions but have not had third-party audit sign-off — see Mainnet readiness. Availability may change while canary controls are tested.</p></div>
       </div>
       <div className="docs-links"><a href="/terms.html"><b>Full Terms ↗</b><small>Canonical legal text</small></a><a href="/refund-policy.html"><b>Refund Policy ↗</b><small>Eligibility and process</small></a><a href="mailto:support@arcodian.fun"><b>Support ↗</b><small>support@arcodian.fun</small></a></div>
     </article>

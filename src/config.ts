@@ -23,6 +23,14 @@ export const TOKENS = [
   { symbol: "EURC", name: "Euro Coin", address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a", decimals: 6 },
 ] as const;
 
+// Arc Mainnet's native-USDC ERC-20 view precompile lives at the exact same
+// fixed address as testnet (0x3600...0000, confirmed by direct probe
+// 2026-07-30) — no separate mainnet USDC constant needed. EURC has no
+// published mainnet address yet, so it's the only pinned mainnet token.
+export const MAINNET_TOKENS = [
+  { symbol: "USDC", name: "USD Coin", address: ARC.nativeToken, decimals: 6 },
+] as const;
+
 export const CHAINS = [
   { id: 11155111, name: "Ethereum Sepolia", appKit: "Ethereum_Sepolia", symbol: "USDC", gasSymbol: "ETH", rpc: "https://ethereum-sepolia-rpc.publicnode.com", token: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238" },
   { id: 421614, name: "Arbitrum Sepolia", appKit: "Arbitrum_Sepolia", symbol: "USDC", gasSymbol: "ETH", rpc: "https://sepolia-rollup.arbitrum.io/rpc", token: "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d" },
@@ -312,10 +320,166 @@ export const V5_TESTNET_DEPLOY = {
   threshold: "4500",
 } as const;
 
+// Arc Mainnet, chain 5042. Phase 1 (2026-07-30): USDC-only contracts —
+// EURC, Pyth, and the ERC-8004 identity registries have no official mainnet
+// address published yet (confirmed by probing chain 5042 directly: the
+// testnet EURC/Pyth/Identity Registry addresses return no code there, while
+// the native USDC ERC-20 view precompile at 0x3600...0000 IS live at the
+// same fixed address as testnet). Full inventory, deferred-contract list,
+// and governance caveats: public/developers/contracts.mainnet.json.
+// No UI network switcher exists yet — these constants are not wired into any
+// page. Wiring them in is the next step, tracked separately from this file.
+//
+// rpc.blockdaemon.mainnet.arc.io (used for every deploy above) started
+// returning 401 Unauthorized on every request 2026-07-31 with no prior
+// warning — confirmed by direct repeated curl, every path, every retry.
+// thirdweb's edge recognizes chain 5042 (eth_chainId -> 0x13b2, verified
+// live) but the client-ID auth path we tested still can't actually reach a
+// working node behind it (eth_blockNumber/eth_gasPrice error out server
+// side even once authed) — not usable either.
+//
+// 2026-07-31: found a working unofficial (third-party) node —
+// arc-rpc.stakeme.pro / explorer arc.exploreme.pro. NOT Circle's own
+// endpoint (no official mainnet RPC is publicly documented at all yet) —
+// this is some other operator's infra, reachable over plain HTTPS with no
+// auth. Verified independently and directly from this server (not just
+// taking the frontend's word for it): eth_chainId/net_version -> 5042,
+// eth_getCode on the native USDC precompile (0x3600...0000) returns real
+// proxy bytecode, eth_getCode on our own deployed ArcPumpFactoryV8
+// (marketUsdcFactory below) returns real bytecode, and
+// eth_getTransactionByHash/eth_getBalance for our own deployer address
+// (0x7D9b...F40C2) returned a real signed tx + a real 39+ USDC balance that
+// matches what the explorer's own page independently rendered. Since it's
+// unofficial, keep this swappable via env and don't treat it as permanent —
+// swap to a real Circle/partner endpoint the moment one is public.
+//
+// 2026-07-31: arc-rpc.stakeme.pro sends back an Access-Control-Allow-Origin
+// header hardcoded to https://www.alchemy.com on every response, which
+// fails CORS preflight for any direct browser fetch to it — silently broke
+// every client-side read (Market's live mainnet launches, the Landing
+// radar, Wallet balance checks) while server-side script/cast calls against
+// the same endpoint looked completely fine, since CORS is a browser-only
+// mechanism. Routed through our own same-origin proxy instead (mirrors the
+// existing Arc Testnet rpc.php); the proxy itself still talks to
+// arc-rpc.stakeme.pro server-side, where CORS doesn't apply.
+const THIRDWEB_CLIENT_ID = import.meta.env.VITE_THIRDWEB_CLIENT_ID || "";
+const ARC_MAINNET_RPC =
+  import.meta.env.VITE_ARC_MAINNET_RPC ||
+  (THIRDWEB_CLIENT_ID ? `https://5042.rpc.thirdweb.com/${THIRDWEB_CLIENT_ID}` : "https://arcodian.fun/api/rpc-mainnet.php");
+
+export const ARC_MAINNET = {
+  id: 5042,
+  hexId: "0x13b2",
+  name: "Arc Mainnet",
+  rpc: ARC_MAINNET_RPC,
+  rpcs: [
+    ARC_MAINNET_RPC,
+    "https://arc-mainnet-rpc.baracat.meme/",
+    "https://warp-arc-production.up.railway.app/rpc",
+    "https://radar-api-rpc.up.railway.app",
+  ],
+  explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc.exploreme.pro",
+  nativeToken: "0x3600000000000000000000000000000000000000",
+  nativeSymbol: "USDC",
+  nativeDecimals: 18,
+  erc20Decimals: 6,
+} as const;
+
+export const ARC_MAINNET_CONTRACTS = {
+  usdc: ARC_MAINNET.nativeToken,
+  arcPay: "0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",
+  agentPayFactory: "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
+  adminTimelock: "0xba953bc1282d0bffe22b4f769822d20900625594",
+  sessionKeyAccount: "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
+  marketGraduationHub: "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
+  marketPairFactory: "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
+  marketUsdcFactory: "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
+  marketRouter: "0x4A5eF82818F674452690539D75517b4604981Bed",
+  // V9: graduates into a real, permissionless Uniswap V3 pool (Factory/NPM
+  // below) instead of ArcPairFactoryV2 — the venue Telegram bots and
+  // third-party routers already know how to read. New launches go here;
+  // marketUsdcFactory above stays live read-only for pre-V9 coins (ARCD).
+  marketUsdcFactoryV9: "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
+  v3Factory: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
+  v3SwapRouter: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
+  v3Quoter: "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",
+  v3PositionManager: "0x332733D05a942da29087Ee4AF3497DE1911bA620",
+  // External permissionless Uniswap V3 venue on Arc Mainnet. The factory and
+  // router are called directly; the app does not depend on a website frontend.
+  externalV3Factory: "0xf0db7b58379503491d857dB50AC9ece64c653918",
+  externalV3Router: "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77",
+  externalV3FeeRouter: "0xe4664b28Cb0624860aAeE28E573697473f2Bf46e",
+  // Agent economy — 2026-08-01. identityRegistry/reputationRegistry/
+  // validationRegistry are the official ERC-8004 mainnet vanity proxies
+  // (same addresses on 40+ other chains), self-deployed via the project's
+  // public VANITY_DEPLOYMENT_GUIDE.md since Arc mainnet wasn't yet on their
+  // supported-chain list. They currently point at a MinimalUUPS placeholder
+  // — the official ERC-8004 owner (0x547289...) still needs to broadcast the
+  // upgrade to the real implementation before identity registration actually
+  // works on mainnet. agentPassport/agentJobs/agentPayFactoryV3 are ours.
+  identityRegistry: "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+  reputationRegistry: "0x8004BAa17C55a88189AE136b182e5fdA19dE9b63",
+  validationRegistry: "0x8004Cc8439f36fd5F9F049D9fF86523Df6dAAB58",
+  agentPassport: "0x1709E8986B0b30B7FBaAd05971e6f8530742070A",
+  agentJobs: "0xc1e7c3B9ADc079628A231636CB9c0d51478B0e87",
+  agentPayFactoryV3: "0xfB23899361D6FcC44cc75f9b07C9f66AE8A6F0Ae",
+} as const;
+
 export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",
   "Avalanche Fuji", "OP Sepolia", "Polygon Amoy", "Solana Devnet",
 ] as const;
+
+// Real mainnets, wired for the CCTP bridge only (Phase 1 — see ARC_MAINNET
+// above). Every USDC token address and every CCTP contract address here was
+// verified 2026-07-30 by direct on-chain probing of each chain's public RPC
+// (symbol()/decimals() on the token, localMessageTransmitter()/localDomain()
+// on the CCTP contracts) — not copied from memory or a search result.
+export const MAINNET_CHAINS = [
+  { id: 1, name: "Ethereum", appKit: "Ethereum", symbol: "USDC", gasSymbol: "ETH", rpc: "https://ethereum-rpc.publicnode.com", token: "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48" },
+  { id: 42161, name: "Arbitrum One", appKit: "Arbitrum", symbol: "USDC", gasSymbol: "ETH", rpc: "https://arb1.arbitrum.io/rpc", token: "0xaf88d065e77c8cc2239327c5edb3a432268e5831" },
+  { id: 10, name: "Optimism", appKit: "Optimism", symbol: "USDC", gasSymbol: "ETH", rpc: "https://mainnet.optimism.io", token: "0x0b2c639c533813f4aa9d7837caf62653d097ff85" },
+  { id: 8453, name: "Base", appKit: "Base", symbol: "USDC", gasSymbol: "ETH", rpc: "https://mainnet.base.org", token: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913" },
+  { id: ARC_MAINNET.id, name: ARC_MAINNET.name, appKit: "Arc", symbol: "USDC", gasSymbol: "USDC", rpc: ARC_MAINNET.rpc, token: ARC_MAINNET.nativeToken },
+] as const;
+
+// CCTP v2 is deployed at these exact addresses on every mainnet chain above,
+// including Arc — confirmed live 2026-07-30 (localMessageTransmitter() on
+// the messenger returns this transmitter address on all five chains).
+export const CCTP_MAINNET_TOKEN_MESSENGER_V2 = "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d";
+export const CCTP_MAINNET_MESSAGE_TRANSMITTER_V2 = "0x81d40f21f12a8f0e3252bccb954d722d4c464b64";
+// Immutable, ownerless Arcodian fee routers. Each instance sends 150 bps
+// directly to FEE_TREASURY and burns only the net amount through CCTP.
+//
+// Redeployed 2026-07-31 — the first version at 0xa3c5cef9... (same address
+// on all 4 chains) declared depositForBurn as returning a uint64 nonce, but
+// the real deployed TokenMessengerV2 returns nothing (confirmed against its
+// verified implementation ABI on every chain). Solidity's ABI decoder
+// reverted on the empty return data every single time, right after the burn
+// had already executed — the router was unusable on all 4 chains from the
+// moment it was deployed; nobody, including us, ever completed a bridge()
+// call through it (zero BridgeStarted events anywhere). Fixed in
+// ArcBridgeRouter.sol (depositForBurn now declared void) and live-verified
+// end to end on Base: real tx burning 0.137985 USDC split cleanly into a
+// 2070-unit (1.5%) fee landed in the treasury and a 135915-unit CCTP burn —
+// https://basescan.org/tx/0xbec77bea7b211f553dbc065f05e81bcf82099649467a6f7e406636c284ddc026
+export const CCTP_MAINNET_FEE_ROUTER: Readonly<Record<number, string>> = {
+  1: "0x9fc12b77ae41181c98563e5ae5645ae8a0f6eddd",
+  10: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
+  42161: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
+  8453: "0x274454aa0413b96651983c5efd6817cb30968e71",
+  // Deployed 2026-07-31 once arc-rpc.stakeme.pro proved Arc Mainnet was
+  // actually reachable — same USDC/TokenMessengerV2/treasury constructor
+  // args as the other 4 chains. Verified live via eth_getCode.
+  5042: "0xc35deb937f5056a0e034f10e21094878485caee7",
+};
+export const CCTP_MAINNET_DOMAIN: Record<number, number> = {
+  1: 0, // Ethereum
+  10: 2, // Optimism
+  42161: 3, // Arbitrum One
+  8453: 6, // Base
+  [ARC_MAINNET.id]: 26, // Arc Mainnet
+};
 
 // --- Subdomain routing ------------------------------------------------------
 // One SPA is deployed to every docroot. The hostname decides the default view;

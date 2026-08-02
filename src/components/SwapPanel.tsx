@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ARC, ARC_ROUTER_ADDRESS, TOKENS } from "../config";
+import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
+import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_ROUTER_ADDRESS, ARC_USDC_ERC20, MAINNET_TOKENS, TOKENS } from "../config";
+import { arcProvider } from "../shared";
 import { isCircleAsset, isTokenAddress, shortAddress, shortfallBps } from "../dex";
 import { ERC20_META_ABI, PAIR_ABI, isZeroForOne, readToken, type TokenMeta } from "../dexReads";
-import { findBestRoute, ROUTER_ABI } from "../routingReads";
+import { findBestExternalV3Route, findBestRoute, findBestV3Route, ROUTE_HUBS, ROUTER_ABI } from "../routingReads";
 import { routeGainBps, routeLabel, type DirectRoute, type Route } from "../routing";
 import { describeTxError } from "../txError";
 
-const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
 const PINNED_TOKENS: TokenMeta[] = TOKENS.map((token) => ({ ...token }));
+const MAINNET_PINNED_TOKENS: TokenMeta[] = MAINNET_TOKENS.map((token) => ({ ...token }));
 
 function prettyAmount(value: bigint, decimals: number, maximumFractionDigits = 6) {
   return Number(formatUnits(value, decimals)).toLocaleString(undefined, { maximumFractionDigits });
@@ -20,12 +21,13 @@ function TokenLogo({ token }: { token: TokenMeta }) {
   return <span className={`swap-token-logo swap-token-${token.symbol.toLowerCase()}`}>{token.symbol.slice(0, 1)}</span>;
 }
 
-function TokenPicker({ label, token, tokens, exclude, onChange }: {
+function TokenPicker({ label, token, tokens, exclude, onChange, read }: {
   label: string;
   token: TokenMeta | null;
   tokens: TokenMeta[];
   exclude?: string;
   onChange: (token: TokenMeta) => void;
+  read: ReturnType<typeof arcProvider>;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -87,20 +89,37 @@ function TokenPicker({ label, token, tokens, exclude, onChange }: {
   );
 }
 
-function symbolLookup(...tokens: (TokenMeta | null)[]): (address: string) => string {
+function symbolLookup(pinned: readonly TokenMeta[], ...tokens: (TokenMeta | null)[]): (address: string) => string {
   const known = new Map<string, string>();
-  for (const token of TOKENS) known.set(token.address.toLowerCase(), token.symbol);
+  for (const token of pinned) known.set(token.address.toLowerCase(), token.symbol);
   for (const token of tokens) if (token) known.set(token.address.toLowerCase(), token.symbol);
   return (address: string) => known.get(address.toLowerCase()) ?? shortAddress(address);
 }
 
-export default function SwapPanel({ account, activeProvider, onConnect }: {
+export default function SwapPanel({ account, activeProvider, onConnect, chainId, initialTokenAddress }: {
   account: string;
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   onConnect: () => void;
+  chainId?: number | null;
+  initialTokenAddress?: string;
 }) {
-  const [tokens, setTokens] = useState<TokenMeta[]>(PINNED_TOKENS);
-  const [tokenIn, setTokenIn] = useState<TokenMeta | null>(PINNED_TOKENS[0]);
+  // Default to mainnet when disconnected, matching Market/Bridge — Arcodian
+  // DEX is now genuinely live on Arc Mainnet (ArcRouter + ArcPairFactoryV2,
+  // deployed 2026-07-30, verified 2026-07-31) using the same pool a
+  // graduated Market coin already trades on. Only EURC stays testnet-only
+  // (no published mainnet address yet).
+  const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  const activeRouter = isMainnet ? ARC_MAINNET_CONTRACTS.marketRouter : ARC_ROUTER_ADDRESS;
+  const pinnedTokens = isMainnet ? MAINNET_PINNED_TOKENS : PINNED_TOKENS;
+  // routingReads' quote functions default to the TESTNET pair factory — on
+  // mainnet that address holds an unrelated contract, so every route quote
+  // silently failed (caught, returned "no route") without this override.
+  const activePairFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketPairFactory : ARC_PAIR_FACTORY_ADDRESS;
+  const activeHubs = isMainnet ? [ARC_USDC_ERC20] : ROUTE_HUBS;
+  const read = useMemo(() => arcProvider(activeArc), [activeArc]);
+  const [tokens, setTokens] = useState<TokenMeta[]>(pinnedTokens);
+  const [tokenIn, setTokenIn] = useState<TokenMeta | null>(pinnedTokens[0]);
   const [tokenOut, setTokenOut] = useState<TokenMeta | null>(null);
   const [amount, setAmount] = useState("");
   const [balance, setBalance] = useState<bigint | null>(null);
@@ -113,17 +132,24 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    fetch("/data/market-index.json", { cache: "no-store" }).then((response) => response.ok ? response.json() : null)
+    const address = initialTokenAddress?.toLowerCase();
+    if (!address) return;
+    const selected = tokens.find((item) => item.address.toLowerCase() === address);
+    if (selected) setTokenOut(selected);
+  }, [initialTokenAddress, tokens]);
+
+  useEffect(() => {
+    fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-store" }).then((response) => response.ok ? response.json() : null)
       .then((data) => {
         const launches = Array.isArray(data?.launches) ? data.launches : [];
         const discovered: TokenMeta[] = launches.filter((item: { address?: string; symbol?: string; name?: string }) =>
           isTokenAddress(item.address || "") && item.symbol && item.name
         ).map((item: { address: string; symbol: string; name: string; pair?: string }) => ({ address: item.address, symbol: item.symbol, name: item.name, decimals: 18, pair: isTokenAddress(item.pair || "") ? item.pair : undefined }));
-        const merged = new Map(PINNED_TOKENS.map((item) => [tokenKey(item), item]));
+        const merged = new Map(pinnedTokens.map((item) => [tokenKey(item), item]));
         for (const item of discovered) merged.set(tokenKey(item), item);
         setTokens([...merged.values()]);
       }).catch(() => undefined);
-  }, []);
+  }, [isMainnet]);
 
   let amountUnits = 0n;
   try { amountUnits = tokenIn && amount ? parseUnits(amount, tokenIn.decimals) : 0n; } catch { amountUnits = 0n; }
@@ -134,14 +160,25 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
     new Contract(tokenIn.address, ERC20_META_ABI, read).balanceOf(account)
       .then((value: bigint) => { if (alive) setBalance(value); }).catch(() => { if (alive) setBalance(null); });
     return () => { alive = false; };
-  }, [account, tokenIn]);
+  }, [account, tokenIn, read]);
 
   useEffect(() => {
     let alive = true;
     if (!tokenIn || !tokenOut || amountUnits <= 0n) { setRoute(null); setDirect(null); return; }
     const timer = setTimeout(() => {
-      findBestRoute(read, tokenIn.address, tokenOut.address, amountUnits)
-        .then(async (result) => {
+      Promise.all([
+        findBestRoute(read, tokenIn.address, tokenOut.address, amountUnits, activePairFactory, activeHubs),
+        isMainnet
+          ? findBestV3Route(read, tokenIn.address, tokenOut.address, amountUnits, ARC_MAINNET_CONTRACTS.v3Factory, ARC_MAINNET_CONTRACTS.v3Quoter)
+          : Promise.resolve(null),
+        isMainnet
+          ? findBestExternalV3Route(read, tokenIn.address, tokenOut.address, amountUnits, ARC_MAINNET_CONTRACTS.externalV3Factory, ARC_MAINNET_CONTRACTS.externalV3Router, ARC_MAINNET_CONTRACTS.externalV3FeeRouter)
+          : Promise.resolve(null),
+      ]).then(async ([result, v3, externalV3]) => {
+          const v3Winner = [v3, externalV3].filter(Boolean).sort((a, b) => Number(b!.out - a!.out))[0] || null;
+          if (v3Winner && (!result.chosen || v3Winner.out > result.chosen.out)) {
+            return { chosen: v3Winner, direct: result.direct };
+          }
           if (result.chosen || !alive) return result;
           // A freshly graduated market already publishes its canonical pair in
           // the live index. Use it as an authenticated discovery fallback when
@@ -166,11 +203,11 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
         .catch(() => { if (alive) { setRoute(null); setDirect(null); } });
     }, 250);
     return () => { alive = false; clearTimeout(timer); };
-  }, [tokenIn, tokenOut, amountUnits]);
+  }, [tokenIn, tokenOut, amountUnits, read, activePairFactory, activeHubs, isMainnet]);
 
   const impact = route?.kind === "direct" ? shortfallBps(amountUnits, route.out, route.reserveIn, route.reserveOut) : 0;
   const gain = route ? routeGainBps(route, direct) : 0;
-  const symbolFor = symbolLookup(tokenIn, tokenOut);
+  const symbolFor = symbolLookup(pinnedTokens, tokenIn, tokenOut);
   const minOut = useMemo(() => route ? (route.out * BigInt(Math.max(0, Math.floor((100 - Number(slippage || 0)) * 100)))) / 10_000n : 0n, [route, slippage]);
 
   function flip() {
@@ -186,21 +223,44 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
     if (!tokenIn || !tokenOut || !route || amountUnits <= 0n) { setStatus("Enter an amount."); return; }
     setBusy(true); setStatus("");
     try {
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] });
+      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: activeArc.hexId }] });
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
       const deadline = Math.floor(Date.now() / 1000) + 600;
-      const spender = route.kind === "direct" ? route.pair : ARC_ROUTER_ADDRESS;
+      const spender = route.kind === "direct" ? route.pair : route.kind === "v3" ? (route.feeRouter || route.router || ARC_MAINNET_CONTRACTS.v3SwapRouter) : activeRouter;
       const erc20 = new Contract(tokenIn.address, ERC20_META_ABI, signer);
       if (((await erc20.allowance(account, spender)) as bigint) < amountUnits) {
         setStatus(`Approve ${tokenIn.symbol} in your wallet`);
         await (await erc20.approve(spender, amountUnits)).wait();
       }
       setStatus("Confirm swap in your wallet");
-      if (route.kind === "direct") {
+      if (route.kind === "v3") {
+        const owner = await signer.getAddress();
+        if (route.feeRouter) {
+          const feeRouter = new Contract(route.feeRouter, [
+            "function swapExactInputSingle(address,address,uint24,uint256,uint256,uint256) returns(uint256)",
+          ], signer);
+          const request = await feeRouter.swapExactInputSingle.populateTransaction(
+            tokenIn.address, tokenOut.address, route.fee, amountUnits, minOut, deadline,
+          );
+          await read.estimateGas({ from: account, to: route.feeRouter, data: request.data, value: request.value });
+          await (await signer.sendTransaction(request)).wait();
+        } else {
+        const routerAddress = route.router || ARC_MAINNET_CONTRACTS.v3SwapRouter;
+          const router = new Contract(routerAddress, [
+          "function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns(uint256)",
+        ], signer);
+        const request = router.exactInputSingle.populateTransaction([
+          tokenIn.address, tokenOut.address, route.fee, owner, amountUnits, minOut, 0,
+        ]);
+        const txRequest = await request;
+        await read.estimateGas({ from: account, to: routerAddress, data: txRequest.data, value: txRequest.value });
+        await (await signer.sendTransaction(txRequest)).wait();
+        }
+      } else if (route.kind === "direct") {
         const zeroForOne = await isZeroForOne(read, route.pair, tokenIn.address);
         await (await new Contract(route.pair, PAIR_ABI, signer).swap(zeroForOne, amountUnits, minOut, deadline)).wait();
       } else {
-        await (await new Contract(ARC_ROUTER_ADDRESS, ROUTER_ABI, signer).swapExactTokensForTokens(route.path, amountUnits, minOut, deadline)).wait();
+        await (await new Contract(activeRouter, ROUTER_ABI, signer).swapExactTokensForTokens(route.path, amountUnits, minOut, deadline)).wait();
       }
       setStatus(`Swap confirmed · ${amount} ${tokenIn.symbol} → ${tokenOut.symbol}`);
       setAmount(""); setRoute(null); setDirect(null);
@@ -218,13 +278,13 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
 
     <div className="swap-asset-card">
       <div className="swap-asset-top"><span>You pay</span>{account && tokenIn && <button type="button" onClick={() => balance !== null && setAmount(formatUnits(balance, tokenIn.decimals))}>Balance: {balance === null ? "—" : prettyAmount(balance, tokenIn.decimals, 4)} <b>MAX</b></button>}</div>
-      <div className="swap-asset-main"><input aria-label="You pay amount" inputMode="decimal" placeholder="0" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} /><TokenPicker label="You pay" token={tokenIn} tokens={tokens} exclude={tokenOut?.address} onChange={setTokenIn} /></div>
+      <div className="swap-asset-main"><input aria-label="You pay amount" inputMode="decimal" placeholder="0" value={amount} onChange={(event) => setAmount(event.target.value.replace(/[^0-9.]/g, ""))} /><TokenPicker label="You pay" token={tokenIn} tokens={tokens} exclude={tokenOut?.address} onChange={setTokenIn} read={read} /></div>
       <small>{tokenIn ? shortAddress(tokenIn.address) : "Select an Arc token"}</small>
     </div>
     <button type="button" className="swap-flip" aria-label="Reverse token pair" onClick={flip}>↓</button>
     <div className="swap-asset-card receive">
       <div className="swap-asset-top"><span>You receive</span><span>{route ? "Live quote" : "—"}</span></div>
-      <div className="swap-asset-main"><output>{route && tokenOut ? prettyAmount(route.out, tokenOut.decimals) : "0"}</output><TokenPicker label="You receive" token={tokenOut} tokens={tokens} exclude={tokenIn?.address} onChange={setTokenOut} /></div>
+      <div className="swap-asset-main"><output>{route && tokenOut ? prettyAmount(route.out, tokenOut.decimals) : "0"}</output><TokenPicker label="You receive" token={tokenOut} tokens={tokens} exclude={tokenIn?.address} onChange={setTokenOut} read={read} /></div>
       <small>{tokenOut ? shortAddress(tokenOut.address) : "Select an Arc token"}</small>
     </div>
 
@@ -233,12 +293,12 @@ export default function SwapPanel({ account, activeProvider, onConnect }: {
       <span><small>Minimum received</small><b>{prettyAmount(minOut, tokenOut.decimals)} {tokenOut.symbol}</b></span>
       <span><small>Price impact</small><b className={impact >= 500 ? "danger" : ""}>{(impact / 100).toFixed(2)}%</b></span>
       <span><small>Route</small><b>{routeLabel(route.path, symbolFor)}</b></span>
-      <span><small>Liquidity source</small><b>{route.kind === "direct" ? `ArcPair · ${(route.tier / 100).toFixed(2)}%` : `${route.path.length - 1} hops · +${(gain / 100).toFixed(2)}%`}</b></span>
+      <span><small>Liquidity source</small><b>{route.kind === "direct" ? `ArcPair · ${(route.tier / 100).toFixed(2)}%` : route.kind === "v3" ? `${route.venue || "Uniswap V3"} · ${(route.fee / 10000).toFixed(2)}%` : `${route.path.length - 1} hops · +${(gain / 100).toFixed(2)}%`}</b></span>
     </div>}
     {route?.kind === "direct" && impact >= 500 && <p className="dex-warning">High price impact: this trade moves the pool price by {(impact / 100).toFixed(1)}%. Consider a smaller amount.</p>}
     {tokenIn && tokenOut && !route && amountUnits > 0n && <p className="dex-warning">No active Arcodian pool or route exists for this pair.</p>}
     <button type="button" className="swap-primary" disabled={busy || (!!account && !route)} onClick={execute}>{actionLabel}</button>
-    <div className="swap-safety"><span>◈ Arc Testnet</span><span>Non-custodial</span><span>10-minute deadline</span></div>
+    <div className="swap-safety"><span>◈ {activeArc.name}</span><span>Non-custodial</span><span>10-minute deadline</span></div>
     {status && <p className="dex-status">{status}</p>}
   </div>;
 }

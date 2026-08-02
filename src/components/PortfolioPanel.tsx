@@ -1,12 +1,11 @@
-import { useEffect, useState } from "react";
-import { Contract, JsonRpcProvider, formatUnits } from "ethers";
-import { ARC, ARC_EURC_ADDRESS } from "../config";
+import { useEffect, useMemo, useState } from "react";
+import { Contract, formatUnits } from "ethers";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS } from "../config";
+import { arcProvider } from "../shared";
 import { shortAddress } from "../dex";
 import { ERC20_META_ABI, readToken, type TokenMeta } from "../dexReads";
 import { fetchLpPositions, type LpPosition } from "../portfolioReads";
 import { formatShare } from "../portfolio";
-
-const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
 
 type Holding = { token: TokenMeta; balance: bigint };
 
@@ -14,11 +13,19 @@ function amount(value: bigint, decimals: number): string {
   return Number(formatUnits(value, decimals)).toLocaleString(undefined, { maximumFractionDigits: 4 });
 }
 
-export default function PortfolioPanel({ account, onConnect, onManagePool }: {
+export default function PortfolioPanel({ account, onConnect, onManagePool, chainId }: {
   account: string;
   onConnect: () => void;
   onManagePool: (pair: string) => void;
+  chainId?: number | null;
 }) {
+  const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketPairFactory : ARC_PAIR_FACTORY_ADDRESS;
+  // Native USDC lives at the same fixed address on both networks; EURC only
+  // exists on testnet, so mainnet's holdings row is USDC-only.
+  const watchedTokens = isMainnet ? [ARC.nativeToken] : [ARC.nativeToken, ARC_EURC_ADDRESS];
+  const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [positions, setPositions] = useState<LpPosition[]>([]);
   const [loading, setLoading] = useState(false);
@@ -32,12 +39,12 @@ export default function PortfolioPanel({ account, onConnect, onManagePool }: {
     (async () => {
       try {
         const balances = await Promise.all(
-          [ARC.nativeToken, ARC_EURC_ADDRESS].map(async (address) => ({
+          watchedTokens.map(async (address) => ({
             token: await readToken(read, address),
             balance: (await new Contract(address, ERC20_META_ABI, read).balanceOf(account)) as bigint,
           })),
         );
-        const lp = await fetchLpPositions(read, account);
+        const lp = await fetchLpPositions(read, account, activeFactory);
         if (!alive) return;
         setHoldings(balances);
         setPositions(lp);
@@ -50,7 +57,7 @@ export default function PortfolioPanel({ account, onConnect, onManagePool }: {
       }
     })();
     return () => { alive = false; };
-  }, [account]);
+  }, [account, read, activeFactory]);
 
   if (!account) {
     return (

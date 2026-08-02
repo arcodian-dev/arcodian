@@ -1,18 +1,18 @@
 /* Phase C reputation view — unified to the canonical dark --f-* theme. */
 .rep{margin-top:1.8rem;display:grid;gap:14px}
 .agent-profile{max-width:1120px}
-.agent-profile-hero{display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;padding:26px;border:1px solid var(--f-hair2);border-radius:24px;background:radial-gradient(circle at 90% 10%,#159aff22,transparent 42%),linear-gradient(145deg,#0d1c30,#081321)}
+.agent-profile-hero{display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;padding:26px;border:1px solid var(--f-hair2);border-radius:24px;background:radial-gradient(circle at 90% 10%,#159aff22,transparent 42%),linear-gradient(145deg,#1d1912,#16130e)}
 .agent-profile-hero p{margin:0;color:var(--f-amber);font:800 11px monospace;letter-spacing:.16em}
 .agent-profile-hero h1{margin:10px 0 4px}.agent-profile-hero h2{margin:0 0 8px;color:var(--f-bone);font-size:22px}.agent-profile-hero span{display:block;max-width:680px;color:var(--f-dim);line-height:1.6}
 .agent-profile-hero aside{display:grid;place-items:center;gap:10px;min-width:150px}
-.agent-profile-hero img,.agent-profile-hero aside>b{width:128px;height:128px;border-radius:22px;border:1px solid rgba(31,182,240,.34);background:var(--f-navy);object-fit:cover}
+.agent-profile-hero img,.agent-profile-hero aside>b{width:128px;height:128px;border-radius:22px;border:1px solid rgba(31, 240, 59,.34);background:var(--f-navy);object-fit:cover}
 .agent-profile-hero aside>b{display:grid;place-items:center;color:var(--f-amber);font-size:28px}
 .agent-profile-hero aside small{color:var(--f-dim)}.agent-profile-hero aside small.ok{color:#4bd486}.agent-profile-hero aside small.bad{color:#ff8a8a}
 .agent-binding{margin-top:16px;padding:20px;border:1px solid var(--f-hair2);border-radius:18px;background:var(--f-ink2)}
 .agent-binding>p{margin:0 0 14px;color:var(--f-amber);font:800 11px monospace;letter-spacing:.16em}
 .agent-binding dl{margin:0}
 .rep-kicker{color:var(--f-amber);font:800 11px monospace;letter-spacing:.16em;margin:0}
-.rep-empty{display:grid;gap:5px;padding:16px;border:1px dashed #3a5a72;border-radius:12px;color:var(--f-dim)}
+.rep-empty{display:grid;gap:5px;padding:16px;border:1px dashed #3a7241;border-radius:12px;color:var(--f-dim)}
 .rep-empty b{color:var(--f-bone)}
 
 .rep-head{display:flex;align-items:center;gap:18px;padding:16px 18px;border:1px solid var(--f-hair2);border-radius:16px;background:var(--f-ink2)}
@@ -28,7 +28,7 @@
 .rep-bar label{display:flex;justify-content:space-between;color:var(--f-dim);font:600 12px monospace;margin-bottom:4px}
 .rep-bar em{color:var(--f-bone);font-style:normal}
 .rep-track{height:8px;border-radius:6px;background:var(--f-ink2);border:1px solid var(--f-hair2);overflow:hidden}
-.rep-track i{display:block;height:100%;background:linear-gradient(90deg,#12cbea,var(--f-amber))}
+.rep-track i{display:block;height:100%;background:linear-gradient(90deg,#12ea2f,var(--f-amber))}
 
 .rep-context{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .rep-context article{padding:14px;border:1px solid var(--f-hair2);border-radius:12px;background:var(--f-ink2)}

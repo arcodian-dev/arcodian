@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
@@ -26,8 +26,54 @@ import {
   type WalletOption,
 } from "../shared";
 
+// Stable reference for the mainnet branch below — `isMainnet ? [] : ...`
+// inline would allocate a new array every render, and since the launch-fetch
+// effect depends on activeLegacyFactories by reference, that turned into an
+// infinite refetch loop for the entire time the app was defaulting to
+// mainnet with no legacy factories (found 2026-07-31: mainnet Market never
+// finished loading, stuck on "Reading canonical factories onchain…").
+const NO_LEGACY_FACTORIES: string[] = [];
+// Only compacts once a value is large enough that "1.2K" is actually more
+// legible than the exact figure — a freshly-launched coin's numbers are
+// still small enough that compacting them ("1K" for 1,003.96) throws away
+// the precision without buying any real readability.
+function compactNumber(value: number): string {
+  if (!isFinite(value)) return "0";
+  if (Math.abs(value) < 10_000) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  return value.toLocaleString(undefined, { maximumFractionDigits: 2, notation: "compact" });
+}
+
+// Global Radar/V2/V3/V4 records store USDC aggregates in raw 6-decimal
+// units. Canonical launch records use the contract's 18-decimal accounting.
+// Keep the conversion at the presentation boundary so ranking and onchain
+// values remain untouched.
+function globalUsdc(value: string | number | bigint | null | undefined): number {
+  if (value === null || value === undefined || value === "") return 0;
+  return Number(value) / 1e6;
+}
+
+function displayMarketCap(item: LaunchAsset): number {
+  return item.globalPool ? globalUsdc(item.marketCap) : Number(formatEther(BigInt(item.marketCap || "0")));
+}
+
+function displayLiquidity(item: LaunchAsset): number {
+  return item.globalPool
+    ? globalUsdc(item.liquidity || item.reserve)
+    : Number(formatEther(BigInt(item.liquidity || item.reserve.toString())));
+}
+
+function displayVolume24h(item: LaunchAsset): number {
+  return item.globalPool
+    ? globalUsdc(item.volume24h || "0")
+    : Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
+}
+// V8 (marketUsdcFactory, ARCD) is retired — no longer read at all, mainnet
+// Market only ever lists V9 launches now.
+const MAINNET_LEGACY_FACTORIES: string[] = NO_LEGACY_FACTORIES;
+
 export default function Screener({
   account,
+  chainId,
   activeProvider,
   connect,
   coinAddress,
@@ -35,15 +81,39 @@ export default function Screener({
   closeCoin,
 }: {
   account: string;
+  chainId?: number | null;
   activeProvider: EthereumProvider | null;
   connect: () => void;
   coinAddress: string;
   chooseCoin: (address: string) => void;
   closeCoin: () => void;
 }) {
+  // Arc Mainnet's USDC-only launch/DEX stack went live 2026-07-30
+  // (ARC_MAINNET_CONTRACTS.marketUsdcFactory) — auto-detected from the
+  // connected wallet's chain, same pattern as the bridge's arcNetworkMode.
+  // EURC and cross-buy have no mainnet contract yet, so they stay
+  // testnet-only until those are deployed separately.
+  // Default to mainnet when no wallet is connected yet (chainId is null on
+  // first load): Market carries real value and is the page's whole point —
+  // showing the empty testnet index to every disconnected visitor hid every
+  // real mainnet launch (including the first one, ARCD) behind "connect a
+  // wallet on the right chain first". Only fall back to testnet once a
+  // connected wallet explicitly reports it.
+  // Market is a Mainnet-only product now. Keep the data source stable even
+  // while a wallet is disconnected or still reporting an old testnet chain;
+  // transaction handlers already switch the wallet to Arc Mainnet before
+  // signing.
+  const isMainnet = true;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  // V9 (real Uniswap V3 graduation) is the primary and only mainnet factory
+  // as of 2026-08-01 — every createLaunch() and every listing reads here. V8
+  // (ArcPairFactoryV2 graduation, ARCD) is retired: no longer read anywhere,
+  // so it no longer shows up in the Market screener.
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9 : PUMP_FACTORY_ADDRESS;
+  const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
-  const [sortKey, setSortKey] = useState<"volume" | "change" | "holders" | "progress" | null>(null);
+  const [sortKey, setSortKey] = useState<"volume" | "change" | "holders" | "progress" | "marketCap" | "liquidity" | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [marketView, setMarketView] = useState<"markets" | "arena">("markets");
   // Display currency is presentation only — it never reaches a contract call.
@@ -52,6 +122,14 @@ export default function Screener({
   const [launches, setLaunches] = useState<LaunchAsset[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [loading, setLoading] = useState(true);
+  // If a coin isn't found on the wallet's current network, it might just be
+  // on the OTHER one (mainnet vs testnet factories are entirely separate
+  // deployments) — a wallet whose "Arc Mainnet" custom network entry has the
+  // wrong chain ID, or one still sitting on testnet, made "Coin not found"
+  // look like a broken link when the coin was right there on the other
+  // network the whole time. Checked lazily, only once the primary lookup
+  // above has already failed.
+  const [wrongNetworkArc, setWrongNetworkArc] = useState<typeof ARC_MAINNET | typeof ARC | null>(null);
   const [arenaHistory, setArenaHistory] = useState<ArenaWinner[]>([]);
   const marketIndexStamp = useRef("");
   const [arenaNow, setArenaNow] = useState(() => Date.now());
@@ -72,12 +150,12 @@ export default function Screener({
   }, []);
   useEffect(() => {
     let cancelled = false;
-    const provider = arcProvider();
+    const provider = arcProvider(activeArc);
     fetchFxRate(provider)
       .then((rate) => { if (!cancelled) setFxRate(rate); })
       .catch(() => { /* parity fallback already in state */ });
     return () => { cancelled = true; provider.destroy(); };
-  }, []);
+  }, [activeArc]);
   useEffect(() => {
     const open = () => setShowCreate(true);
     if (sessionStorage.getItem("arcodian-open-create")) {
@@ -88,10 +166,24 @@ export default function Screener({
     return () => window.removeEventListener("arcodian:open-create", open);
   }, []);
   useEffect(() => {
-    const provider = arcProvider();
+    // Re-fires whenever isMainnet flips (e.g. the wallet finishes connecting
+    // a beat after mount, testnet -> mainnet). Without resetting loading
+    // here, the *first* run's setLoading(false) sticks, so a coin page for
+    // a mainnet-only address briefly (or not-so-briefly, on a slow RPC)
+    // renders "Coin not found" instead of "Loading" while the real mainnet
+    // fetch is still in flight — easy to mistake for a broken Buy button.
+    setLoading(true);
+    const provider = arcProvider(activeArc);
     (async () => {
+      // Both networks now have a server-side indexer producing a static JSON
+      // snapshot (market-index.json for testnet, mainnet-market-index.json
+      // for mainnet — added 2026-07-31 after every open browser tab scanning
+      // full Bought/Sold history itself drew sustained HTTP 429s from the
+      // shared free-tier Arc Mainnet RPC, showing up as holders/trades/the
+      // live tape flickering "temporarily offline"). Only fall through to a
+      // live RPC scan if the snapshot is missing or stale.
       try {
-        const response = await fetch("/data/market-index.json", { cache: "no-store" });
+        const response = await fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-store" });
         if (response.ok) {
           const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
           if (Array.isArray(index.launches) && isFreshMarketIndex(index.indexedAt)) {
@@ -105,7 +197,7 @@ export default function Screener({
         }
       } catch { /* Fall through to canonical RPC reads. */ }
       const loadedGroups = await Promise.all(
-        [PUMP_FACTORY_ADDRESS, ...LEGACY_PUMP_FACTORY_ADDRESSES].map(
+        [activeFactory, ...activeLegacyFactories].map(
           async (factoryAddress) => {
             const factory = new Contract(
               factoryAddress,
@@ -188,15 +280,16 @@ export default function Screener({
     return () => {
       provider.destroy();
     };
-  }, []);
+  }, [isMainnet, activeArc, activeFactory, activeLegacyFactories]);
   useEffect(() => {
     let stopped = false;
     let busy = false;
+    // Same testnet-only indexer caveat as above — nothing to poll for mainnet yet.
     const pollMarket = async () => {
       if (stopped || busy || document.visibilityState === "hidden") return;
       busy = true;
       try {
-        const response = await fetch(`/data/market-index.json?t=${Date.now()}`, { cache: "no-store" });
+        const response = await fetch(`${isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json"}?t=${Date.now()}`, { cache: "no-store" });
         if (!response.ok) return;
         const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
         if (!Array.isArray(index.launches) || !isFreshMarketIndex(index.indexedAt) || index.indexedAt === marketIndexStamp.current) return;
@@ -215,12 +308,46 @@ export default function Screener({
     document.addEventListener("visibilitychange", onVisibility);
     void pollMarket();
     return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("focus", pollMarket); document.removeEventListener("visibilitychange", onVisibility); };
-  }, []);
+  }, [isMainnet]);
   const selected = coinAddress
     ? launches.find(
         (asset) => asset.address.toLowerCase() === coinAddress.toLowerCase(),
       ) || null
     : null;
+  useEffect(() => {
+    setWrongNetworkArc(null);
+    if (loading || !coinAddress || selected) return;
+    const otherArc = isMainnet ? ARC : ARC_MAINNET;
+    const otherFactory = isMainnet ? PUMP_FACTORY_ADDRESS : ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9;
+    let alive = true;
+    const provider = arcProvider(otherArc);
+    (async () => {
+      const factory = new Contract(otherFactory, ARC_PUMP_FACTORY_ABI, provider);
+      const count = Number(await factory.launchCount());
+      for (let id = count; id >= 1; id--) {
+        const tokenAddress = (await factory.tokenByLaunch(id)) as string;
+        if (tokenAddress.toLowerCase() === coinAddress.toLowerCase()) {
+          if (alive) setWrongNetworkArc(otherArc);
+          return;
+        }
+      }
+    })().catch(() => { /* best-effort — stay on the plain "not found" message */ })
+      .finally(() => provider.destroy());
+    return () => { alive = false; };
+  }, [loading, coinAddress, selected, isMainnet]);
+  async function switchToArc(target: typeof ARC_MAINNET | typeof ARC) {
+    if (!activeProvider) { connect(); return; }
+    try {
+      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.hexId }] });
+    } catch {
+      try {
+        await activeProvider.request({
+          method: "wallet_addEthereumChain",
+          params: [{ chainId: target.hexId, chainName: target.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [target.rpc], blockExplorerUrls: [target.explorer] }],
+        });
+      } catch { /* user declined or wallet doesn't support programmatic network add */ }
+    }
+  }
   const stableRows = [
     {
       symbol: "USDC",
@@ -246,6 +373,8 @@ export default function Screener({
     if (filter === "Gainers") return (item.priceChange24h || 0) > 0;
     if (filter === "Graduating") return !item.graduated && item.progress >= 50;
     if (filter === "Graduated") return item.graduated;
+    if (filter === "Arcodian DEX") return item.dex === "Arcodian DEX";
+    if (filter === "Uniswap V3") return item.dex === "Uniswap V3";
     return filter === "All" || filter === "Meme";
   }).sort((a, b) => {
     if (filter === "New") return (b.createdAt || 0) - (a.createdAt || 0);
@@ -260,24 +389,36 @@ export default function Screener({
         .toLowerCase()
         .includes(query.toLowerCase()),
   );
-  function sortBy(key: "volume" | "change" | "holders" | "progress") {
+  function sortBy(key: "volume" | "change" | "holders" | "progress" | "marketCap" | "liquidity") {
     if (sortKey === key) setSortDir((dir) => (dir === 1 ? -1 : 1));
     else { setSortKey(key); setSortDir(-1); }
   }
-  function rowMetric(item: (typeof rows)[number], key: "volume" | "change" | "holders" | "progress") {
+  function rowMetric(item: (typeof rows)[number], key: "volume" | "change" | "holders" | "progress" | "marketCap" | "liquidity") {
     if (!("curve" in item)) return -1;
-    if (key === "volume") return Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
+    if (key === "volume") return displayVolume24h(item);
     if (key === "change") return item.priceChange24h || 0;
     if (key === "holders") return item.holderCount || 0;
+    if (key === "marketCap") return displayMarketCap(item);
+    if (key === "liquidity") return displayLiquidity(item);
     return item.progress;
   }
   const tableRows = sortKey ? [...rows].sort((a, b) => (rowMetric(b, sortKey) - rowMetric(a, sortKey)) * (sortDir === -1 ? 1 : -1)) : rows;
   const sortMark = (key: string) => (sortKey === key ? (sortDir === -1 ? " ↓" : " ↑") : "");
+  function openMarketAsset(item: LaunchAsset) {
+    if (item.globalPool) {
+      window.location.href = `/terminal?token=${encodeURIComponent(item.address)}&input=USDC`;
+      return;
+    }
+    chooseCoin(item.address);
+  }
+  function isGlobalPool(item: (typeof rows)[number]): item is LaunchAsset & { globalPool: true } {
+    return "globalPool" in item && item.globalPool === true;
+  }
   const arenaContenders = launches
     .filter((item) => !item.graduated)
     .map((item) => ({
       ...item,
-      arenaScore: Number(formatEther(BigInt(item.volume24h || "0"))) * 100
+      arenaScore: displayVolume24h(item) * 100
         + (item.tradeCount || 0) * 5
         + item.progress,
     }))
@@ -308,7 +449,7 @@ export default function Screener({
     return board;
   }, []).sort((a, b) => a.volume > b.volume ? -1 : 1).slice(0, 5);
   const totalTrades = launches.reduce((sum, item) => sum + (item.tradeCount || 0), 0);
-  const totalVolume = launches.reduce((sum, item) => sum + BigInt(item.volume || "0"), 0n);
+  const totalVolume = launches.reduce((sum, item) => sum + displayVolume24h(item), 0);
   const graduatedMarkets = launches.filter((item) => item.graduated).length;
   const traderBoard = arenaActivity.reduce<Array<{ address: string; volume: bigint; trades: number }>>((board, trade) => {
     const found = board.find((row) => row.address.toLowerCase() === trade.user.toLowerCase());
@@ -347,9 +488,21 @@ export default function Screener({
       return (
         <section className="coin-page-shell">
           <div className="not-found">
-            <h2>Coin not found</h2>
-            <p>This contract is not registered by a canonical ARC factory.</p>
-            <button className="primary" onClick={closeCoin}>
+            {wrongNetworkArc ? (
+              <>
+                <h2>Wrong network</h2>
+                <p>This coin is on <strong>{wrongNetworkArc.name}</strong>, but your wallet is on {activeArc.name}. Switch networks to view and trade it.</p>
+                <button className="primary" onClick={() => void switchToArc(wrongNetworkArc)}>
+                  Switch to {wrongNetworkArc.name}
+                </button>
+              </>
+            ) : (
+              <>
+                <h2>Coin not found</h2>
+                <p>This contract is not registered by a canonical ARC factory.</p>
+              </>
+            )}
+            <button className={wrongNetworkArc ? "" : "primary"} onClick={closeCoin}>
               Back to market
             </button>
           </div>
@@ -359,6 +512,8 @@ export default function Screener({
       <TradingDesk
         asset={selected}
         account={account}
+        isMainnet={isMainnet}
+        activeArc={activeArc}
         activeProvider={activeProvider}
         connect={connect}
         close={closeCoin}
@@ -370,11 +525,11 @@ export default function Screener({
     <section className="market-board market-terminal" id="market">
       <div className="terminal-stats">
         <span>
-          <b>LIVE</b> Arc Testnet
+          <b>LIVE</b> {isMainnet ? "Arc Mainnet" : "Arc Testnet"}
         </span>
         <span>{launches.length} canonical markets</span>
         <span>{totalTrades} confirmed trades</span>
-        <span>{Number(formatEther(totalVolume)).toLocaleString(undefined,{maximumFractionDigits:2})} USDC volume</span>
+        <span>{compactNumber(totalVolume)} USDC volume</span>
         <span>{graduatedMarkets} graduated · LP locked</span>
       </div>
       <div className="board-head">
@@ -396,7 +551,7 @@ export default function Screener({
       </div>
       <section className="market-proof-strip" aria-label="Canonical market proof">
         <span><small>ENGINE</small><b>v{ENGINE_VERSION}</b></span>
-        <span><small>FACTORIES</small><b>USDC + EURC canonical</b></span>
+        <span><small>FACTORIES</small><b>{isMainnet ? "USDC canonical" : "USDC + EURC canonical"}</b></span>
         <span><small>GRADUATION</small><b>12,000 stablecoin reserve</b></span>
         <a href="/contracts">Verify deployment →</a>
       </section>
@@ -415,7 +570,7 @@ export default function Screener({
                   {item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol[0]}</b>}
                   <span><small>{index === 0 ? "Leading now" : "Challenger"}</small><strong>{item.symbol}</strong><em>{item.name}</em></span>
                 </div>
-                <div className="arena-score"><strong>{share}%</strong><span>{Number(formatEther(BigInt(item.volume24h || "0"))).toLocaleString(undefined,{maximumFractionDigits:2})} USDC · {item.tradeCount || 0} trades</span></div>
+                <div className="arena-score"><strong>{share}%</strong><span>{compactNumber(displayVolume24h(item))} USDC · {item.tradeCount || 0} trades</span></div>
                 <div className="arena-meter"><i style={{width:`${share}%`}} /></div>
               </div>;
             })}
@@ -463,7 +618,7 @@ export default function Screener({
         />
       </div>
       <div className="filters">
-        {["All", "New", "Trending", "Gainers", "Graduating", "Graduated", "Watchlist"].map((item) => (
+        {["All", "New", "Trending", "Gainers", "Graduating", "Graduated", "Arcodian DEX", "Uniswap V3", "Watchlist"].map((item) => (
           <button
             className={filter === item ? "active" : ""}
             key={item}
@@ -474,6 +629,12 @@ export default function Screener({
         ))}
         <CurrencyToggle value={displayCurrency} onChange={setDisplayCurrency} />
       </div>
+      <div className="screener-sort-bar" aria-label="Global market sorting">
+        <span>Sort global markets:</span>
+        {([["marketCap", "Market cap"], ["liquidity", "Liquidity"], ["volume", "24h volume"]] as const).map(([key, label]) => (
+          <button key={key} className={sortKey === key ? "active" : ""} onClick={() => sortBy(key)}>{label}{sortMark(key)}</button>
+        ))}
+      </div>
       {loading ? (
         <div className="loading-board">
           Reading canonical factories onchain…
@@ -483,6 +644,7 @@ export default function Screener({
         <div className="market-table-view" role="table" aria-label="Markets">
           <div className="mt-row mt-head" role="row">
             <span>Market</span>
+            <button onClick={() => sortBy("marketCap")} className={sortKey === "marketCap" ? "active" : ""}>Market cap{sortMark("marketCap")}</button>
             <button onClick={() => sortBy("volume")} className={sortKey === "volume" ? "active" : ""}>24h Vol{sortMark("volume")}</button>
             <button onClick={() => sortBy("change")} className={sortKey === "change" ? "active" : ""}>24h %{sortMark("change")}</button>
             <button onClick={() => sortBy("holders")} className={sortKey === "holders" ? "active" : ""}>Holders{sortMark("holders")}</button>
@@ -490,14 +652,15 @@ export default function Screener({
             <span>Status</span>
             <span aria-hidden="true" />
           </div>
-          {tableRows.map((item) => "curve" in item ? (
+          {tableRows.map((item) => "curve" in item && !item.globalPool ? (
             <div className="mt-row" role="row" tabIndex={0} key={`t-${item.address}`}
-              onClick={() => chooseCoin(item.address)}
-              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); chooseCoin(item.address); } }}>
+              onClick={() => openMarketAsset(item)}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
               <span className="mt-market">
                 {item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}
                 <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
               </span>
+              <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
               <span className="mt-num">{convert(
                 Number(formatEther(BigInt(item.volume24h || item.volume || "0"))),
                 currencyOf(item),
@@ -510,13 +673,26 @@ export default function Screener({
               <span className={`mt-status ${item.graduated ? "dex" : "curve"}`}>{item.graduated ? "Arcodian DEX" : item.risk}</span>
               <button className={watchlist.has(item.address.toLowerCase()) ? "mt-watch active" : "mt-watch"} aria-label={`Toggle ${item.symbol} watchlist`} onClick={(event) => { event.stopPropagation(); toggleWatch(item.address); }}>{watchlist.has(item.address.toLowerCase()) ? "★" : "☆"}</button>
             </div>
+          ) : "curve" in item && item.globalPool ? (
+            <div className="mt-row mt-global-pool" role="row" tabIndex={0} key={`p-${item.pool || item.address}`}
+              onClick={() => openMarketAsset(item)}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
+              <span className="mt-market">{item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}<span><strong>{item.symbol}</strong><small>{item.name} · {item.dex}</small></span></span>
+              <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
+              <span className="mt-num">{compactNumber(displayVolume24h(item))} <small>USDC</small></span>
+              <span className="mt-num"><small>5m </small>{(item.priceChange5m || 0) >= 0 ? "+" : ""}{(item.priceChange5m || 0).toFixed(2)}%</span>
+              <span className="mt-num"><small>1h </small>{(item.priceChange1h || 0) >= 0 ? "+" : ""}{(item.priceChange1h || 0).toFixed(2)}%</span>
+              <span className="mt-num">{compactNumber(displayLiquidity(item))} <small>liq</small></span>
+              <span className="mt-status dex">{item.dex} · {(Number(item.feeTier || 0) / 10000).toFixed(2)}%</span>
+              <span className="mt-watch">↗</span>
+            </div>
           ) : (
             <div className="mt-row mt-official" role="row" key={`t-${item.address}`}>
               <span className="mt-market"><b>{item.symbol.slice(0, 1)}</b><span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
-              <span className="mt-num">—</span><span className="mt-num">—</span><span className="mt-num">—</span>
+              <span className="mt-num">—</span><span className="mt-num">—</span><span className="mt-num">—</span><span className="mt-num">—</span>
               <span className="mt-progress"><small>Circle official asset</small></span>
               <span className="mt-status official">Official</span>
-              <a href={`${ARC.explorer}/address/${item.address}`} target="_blank" rel="noreferrer" aria-label={`View ${item.symbol} contract`}>↗</a>
+              <a href={`${activeArc.explorer}/address/${item.address}`} target="_blank" rel="noreferrer" aria-label={`View ${item.symbol} contract`}>↗</a>
             </div>
           ))}
           {!tableRows.length && <div className="loading-board">No market matches this filter.</div>}
@@ -527,7 +703,7 @@ export default function Screener({
               className={`coin-card ${"curve" in item ? "tradeable" : ""}`}
               key={item.address}
               onClick={() => {
-                if ("curve" in item) chooseCoin(item.address);
+                if ("curve" in item) openMarketAsset(item);
               }}
             >
               <div className="coin-top">
@@ -543,7 +719,7 @@ export default function Screener({
                   </span>
                 </span>
                 <span className="coin-card-actions">
-                  {"curve" in item && (
+                  {"curve" in item && !item.globalPool && (
                     <button className={watchlist.has(item.address.toLowerCase()) ? "watch active" : "watch"} aria-label="Toggle watchlist" onClick={(event) => { event.stopPropagation(); toggleWatch(item.address); }}>
                       {watchlist.has(item.address.toLowerCase()) ? "★" : "☆"}
                     </button>
@@ -551,7 +727,18 @@ export default function Screener({
                   <span className="verified">● {item.risk}</span>
                 </span>
               </div>
-              {"progress" in item ? (
+              {isGlobalPool(item) ? (
+                <>
+                  <div className="global-pool-metrics">
+                    <span><small>5m</small><b className={(item.priceChange5m || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange5m || 0) >= 0 ? "+" : ""}{(item.priceChange5m || 0).toFixed(2)}%</b></span>
+                    <span><small>10m</small><b className={(item.priceChange10m || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange10m || 0) >= 0 ? "+" : ""}{(item.priceChange10m || 0).toFixed(2)}%</b></span>
+                    <span><small>1h</small><b className={(item.priceChange1h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange1h || 0) >= 0 ? "+" : ""}{(item.priceChange1h || 0).toFixed(2)}%</b></span>
+                    <span><small>24h</small><b className={(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</b></span>
+                  </div>
+                  <div className="global-pool-submetrics"><span>Market cap <b>{compactNumber(displayMarketCap(item))} USDC</b></span><span>Liquidity <b>{compactNumber(displayLiquidity(item))} USDC</b></span><span>24h volume <b>{compactNumber(displayVolume24h(item))} USDC</b></span></div>
+                  <button>Open in Terminal →</button>
+                </>
+              ) : "progress" in item ? (
                 <>
                   <div className="coin-discovery-metrics">
                     <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span>
@@ -580,7 +767,7 @@ export default function Screener({
                 <>
                   <div className="official-asset">Circle official asset</div>
                   <a
-                    href={`${ARC.explorer}/address/${item.address}`}
+                    href={`${activeArc.explorer}/address/${item.address}`}
                     target="_blank"
                     rel="noreferrer"
                   >
@@ -615,6 +802,9 @@ export default function Screener({
             </button>
             <Launch
               account={account}
+              isMainnet={isMainnet}
+              activeArc={activeArc}
+              activeFactory={activeFactory}
               activeProvider={activeProvider}
               connect={connect}
               onCreated={(asset) => {
@@ -633,6 +823,8 @@ export default function Screener({
 function TradingDesk({
   asset,
   account,
+  isMainnet,
+  activeArc,
   activeProvider,
   connect,
   close,
@@ -640,6 +832,8 @@ function TradingDesk({
 }: {
   asset: LaunchAsset;
   account: string;
+  isMainnet: boolean;
+  activeArc: typeof ARC | typeof ARC_MAINNET;
   activeProvider: EthereumProvider | null;
   connect: () => void;
   close: () => void;
@@ -654,6 +848,10 @@ function TradingDesk({
   const [reserve, setReserve] = useState(asset.reserve);
   const [graduated, setGraduated] = useState(asset.graduated);
   const [pair, setPair] = useState(asset.pair || "");
+  // false for a V8-graduated ArcPair (v2-style, in-house AMM), true for a
+  // V9-graduated real Uniswap V3 pool — the two need entirely different
+  // quote/execution paths (ArcPair.swap() vs SwapRouter.exactInputSingle()).
+  const [pairIsV3, setPairIsV3] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [eurcBalance, setEurcBalance] = useState(0n);
@@ -666,16 +864,34 @@ function TradingDesk({
   const [reportOpen, setReportOpen] = useState(false);
   const [reportCategory, setReportCategory] = useState("scam");
   const [reportDetail, setReportDetail] = useState("");
-  const [timeframe, setTimeframe] = useState<60 | 300 | 900 | 3600>(300);
+  const [timeframe, setTimeframe] = useState<1 | 15 | 60 | 300 | 900 | 3600>(60);
   const [chartWindow, setChartWindow] = useState(30);
   const [chartHover, setChartHover] = useState<Candle | null>(null);
-  const [chartFullscreen, setChartFullscreen] = useState(false);
   const [netCost, setNetCost] = useState(0n);
   const [liveTrades, setLiveTrades] = useState<
     Array<{ side: "BUY" | "SELL"; amount: bigint; tokens: bigint }>
   >([]);
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
   const [tapeHealth, setTapeHealth] = useState<"live" | "delayed" | "offline">("delayed");
+  const [copied, setCopied] = useState(false);
+  // Best-effort verification check (mainnet only — no confirmed-working
+  // testnet explorer API pattern). Routed through a same-origin proxy
+  // (verify-status.php) — arc.exploreme.pro sends no Access-Control-Allow-
+  // Origin header at all, so a direct browser fetch is CORS-blocked even
+  // though the exact same call works fine server-side (found 2026-07-31,
+  // same story as rpc-mainnet.php existing for the same reason). Never
+  // blocks rendering: any failure just leaves this "unknown".
+  const [verified, setVerified] = useState<boolean | null>(null);
+  useEffect(() => {
+    setVerified(null);
+    if (!isMainnet) return;
+    let alive = true;
+    fetch(`/api/verify-status.php?address=${asset.address}`)
+      .then((response) => response.ok ? response.json() : null)
+      .then((data: { verified?: boolean | null } | null) => { if (alive) setVerified(data?.verified ?? null); })
+      .catch(() => { if (alive) setVerified(null); });
+    return () => { alive = false; };
+  }, [asset.address, isMainnet]);
   const optimisticTapeUntil = useRef(0);
   const liveAsset = { ...asset, graduated, pair };
   const currency = asset.currency || "USDC";
@@ -722,22 +938,45 @@ function TradingDesk({
     // 18-dec values, but after graduation reserve0/reserve1 are ERC-20 units.
     // Normalize every pair quote reserve to the terminal's 18-dec convention.
     const pairScale = 10n ** 12n;
-    const curveState = new Contract(
-      asset.curve,
-      ["function graduated() view returns(bool)", "function pair() view returns(address)"],
-      provider,
-    );
-    const [nextGraduated, nextPair] = await Promise.all([
-      curveState.graduated() as Promise<boolean>,
-      curveState.pair() as Promise<string>,
-    ]);
-    const nextVenue = nextGraduated && nextPair !== "0x0000000000000000000000000000000000000000"
-      ? nextPair
-      : asset.curve;
+    const curveState = new Contract(asset.curve, ["function graduated() view returns(bool)"], provider);
+    const nextGraduated = await curveState.graduated() as boolean;
+    // V8 curves expose pair() (ArcPair, our own v2-style AMM). V9 curves
+    // expose pool() (a real Uniswap V3 pool) instead — neither function
+    // exists on the other curve version, so calling the wrong one reverts.
+    // Probing both, tolerating either failing, keeps this working across
+    // every curve generation without the caller needing to know which one
+    // asset.curve actually is (found 2026-07-31: the old hardcoded pair()-only
+    // call reverted every second for every V9 market, including ARDN).
+    let nextVenue = asset.curve;
+    let nextVenueIsV3Pool = false;
+    if (nextGraduated) {
+      try {
+        const pairProbe = new Contract(asset.curve, ["function pair() view returns(address)"], provider);
+        const candidate = await pairProbe.pair() as string;
+        if (candidate !== "0x0000000000000000000000000000000000000000") nextVenue = candidate;
+      } catch {
+        try {
+          const poolProbe = new Contract(asset.curve, ["function pool() view returns(address)"], provider);
+          const candidate = await poolProbe.pool() as string;
+          if (candidate !== "0x0000000000000000000000000000000000000000") { nextVenue = candidate; nextVenueIsV3Pool = true; }
+        } catch { /* Neither venue accessor exists yet — fall back to the curve itself. */ }
+      }
+    }
+    const nextPair = nextVenue !== asset.curve ? nextVenue : "";
     const token = new Contract(asset.address, ["function balanceOf(address) view returns(uint256)"], provider);
     let nextReserve: bigint;
     let nextInventory: bigint;
-    if (nextGraduated) {
+    if (nextGraduated && nextVenueIsV3Pool) {
+      // Concentrated liquidity has no simple reserve0/reserve1 — the pool's
+      // own token balances stand in as a display-only reserve proxy, same
+      // approach the mainnet indexer uses.
+      const usdcAddress = isEurc ? ARC_EURC_ADDRESS : ARC_USDC_ERC20;
+      const usdcReader = new Contract(usdcAddress, ["function balanceOf(address) view returns(uint256)"], provider);
+      [nextInventory, nextReserve] = await Promise.all([
+        token.balanceOf(nextVenue) as Promise<bigint>, usdcReader.balanceOf(nextVenue) as Promise<bigint>,
+      ]);
+      if (isEurc) nextReserve *= pairScale;
+    } else if (nextGraduated) {
       const venue = new Contract(nextVenue, ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)"], provider);
       const [token0, reserve0, reserve1] = await Promise.all([
         venue.token0() as Promise<string>, venue.reserve0() as Promise<bigint>, venue.reserve1() as Promise<bigint>,
@@ -754,13 +993,14 @@ function TradingDesk({
       if (isEurc) nextReserve *= pairScale;
     }
     setGraduated(nextGraduated);
-    setPair(nextGraduated ? nextPair : "");
+    setPair(nextPair);
+    setPairIsV3(nextVenueIsV3Pool);
     setReserve(nextReserve);
     setInventory(nextInventory);
   }
 
   useEffect(() => {
-    const provider = arcProvider();
+    const provider = arcProvider(activeArc);
     let stopped = false;
     let busy = false;
     const poll = async () => {
@@ -778,42 +1018,34 @@ function TradingDesk({
   }, [asset.address, asset.curve, asset.quoteKind]);
 
   async function refresh() {
+    // "Your position" net-cost only — tapeHealth/liveTrades are owned
+    // exclusively by the loadTape effect below now. This function used to
+    // set them too, unconditionally against the TESTNET market-index.json
+    // regardless of which network the open coin was actually on — for any
+    // mainnet coin that lookup always failed (wrong index entirely), which
+    // silently forced tapeHealth to "offline" every 3s and raced with
+    // loadTape's real, working mainnet read (found 2026-07-31: holders and
+    // trade history displayed correctly, but the feed badge stayed stuck on
+    // OFFLINE regardless — this was why).
+    if (!account) { setNetCost(0n); return; }
     try {
-      const response = await fetch("/data/market-index.json", { cache: "no-store" });
+      const response = await fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-store" });
       if (!response.ok) throw new Error("INDEX_UNAVAILABLE");
       const index = await response.json() as {
         indexedAt?: string;
         launches?: Array<{
-          address: string; reserve: string; inventory: string;
+          address: string;
           trades?: Array<{ side: "BUY" | "SELL"; user: string; native: string; tokens: string }>;
         }>;
       };
       if (!isFreshMarketIndex(index.indexedAt)) throw new Error("INDEX_STALE");
       const market = index.launches?.find((item) => item.address.toLowerCase() === asset.address.toLowerCase());
       if (!market) throw new Error("MARKET_NOT_INDEXED");
-      const trades = market.trades || [];
-      // Reserve and inventory are polled directly from the active venue above.
-      // The minute-scale index is history/holder data only and must never roll
-      // a fresher onchain quote backwards between trades.
-      setTapeHealth(index.indexedAt && Date.now() - Date.parse(index.indexedAt) <= 30_000 ? "live" : "delayed");
-      if (account) {
-        const mine = trades.filter((event) => event.user.toLowerCase() === account.toLowerCase());
-        const paid = mine.filter((event) => event.side === "BUY").reduce((sum, event) => sum + BigInt(event.native), 0n);
-        const received = mine.filter((event) => event.side === "SELL").reduce((sum, event) => sum + BigInt(event.native), 0n);
-        setNetCost(paid > received ? paid - received : 0n);
-      } else setNetCost(0n);
-      if (Date.now() >= optimisticTapeUntil.current) {
-        setLiveTrades(
-          trades.slice(-12).reverse().map((event) => ({
-            side: event.side,
-            amount: BigInt(event.native),
-            tokens: BigInt(event.tokens),
-          })),
-        );
-      }
-    } catch {
-      setTapeHealth("offline");
-    }
+      const mine = (market.trades || []).filter((event) => event.user.toLowerCase() === account.toLowerCase());
+      const paid = mine.filter((event) => event.side === "BUY").reduce((sum, event) => sum + BigInt(event.native), 0n);
+      const received = mine.filter((event) => event.side === "SELL").reduce((sum, event) => sum + BigInt(event.native), 0n);
+      setNetCost(paid > received ? paid - received : 0n);
+    } catch { /* Keep the last known position rather than blanking it on one bad poll. */ }
   }
   useEffect(() => {
     let refreshing = false;
@@ -828,37 +1060,78 @@ function TradingDesk({
   }, [asset.address, account]);
 
   useEffect(() => {
+    // Both networks read a small static snapshot produced server-side
+    // (mainnet-market-index.json / live-tape.json) instead of the browser
+    // scanning Bought/Sold history itself. The mainnet branch used to do its
+    // own incremental queryFilter every 3s per open tab — harmless with one
+    // visitor, but it drew sustained HTTP 429s from the shared free-tier Arc
+    // Mainnet RPC once there was real traffic, which is what "Indexed tape ·
+    // temporarily offline" and unreadable holders were actually caused by
+    // (found 2026-07-31). A single server-side indexer on a 30s timer now
+    // does that scanning once for everyone.
     let loadingTape = false;
+    let consecutiveFailures = 0;
     const loadTape = async () => {
       if (loadingTape || document.visibilityState === "hidden") return;
       loadingTape = true;
       try {
-        const response = await fetch("/data/live-tape.json", { cache: "no-store" });
-        if (!response.ok) throw new Error("TAPE_UNAVAILABLE");
-        const tape = await response.json() as {
-          indexedAt?: string;
-          trades?: Array<{ token: string; side: "BUY" | "SELL"; block: number; tx: string; user: string; native: string; tokens: string; timestamp: number }>;
-        };
-        const marketTrades = (tape.trades || []).filter((trade) => trade.token.toLowerCase() === asset.address.toLowerCase());
-        setTapeHealth(tape.indexedAt && Date.now() - Date.parse(tape.indexedAt) <= 5_000 ? "live" : "delayed");
-        setChartTrades(
-          [...(asset.trades || []), ...marketTrades]
-            .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
-            .sort((a, b) => a.block - b.block)
-            .slice(-500),
-        );
-        if (marketTrades.length && Date.now() >= optimisticTapeUntil.current) {
-          setLiveTrades(marketTrades.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
+        if (isMainnet) {
+          // mainnet-live-tape.mjs (1s cadence) tails only new Bought/Sold/Swap
+          // logs — same idea as the testnet live-tape.json branch below. The
+          // 30s mainnet-market-index.json snapshot below is still the seed
+          // for full history (up to 200 trades per launch); this just keeps
+          // the recent tail current instead of stalling for up to 30s.
+          const response = await fetch("/data/mainnet-live-tape.json", { cache: "no-store" });
+          if (!response.ok) throw new Error("TAPE_UNAVAILABLE");
+          const tape = await response.json() as {
+            indexedAt?: string;
+            trades?: Array<{ token: string; symbol?: string; side: "BUY" | "SELL"; block: number; tx: string; user: string; native: string; tokens: string; timestamp: number }>;
+          };
+          const marketTrades = (tape.trades || []).filter((trade) => trade.token.toLowerCase() === asset.address.toLowerCase());
+          consecutiveFailures = 0;
+          setTapeHealth(tape.indexedAt && Date.now() - Date.parse(tape.indexedAt) <= 6_000 ? "live" : "delayed");
+          setChartTrades(
+            [...(asset.trades || []), ...marketTrades]
+              .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
+              .sort((a, b) => a.block - b.block)
+              .slice(-500),
+          );
+          if (marketTrades.length && Date.now() >= optimisticTapeUntil.current) {
+            setLiveTrades(marketTrades.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
+          }
+        } else {
+          const response = await fetch("/data/live-tape.json", { cache: "no-store" });
+          if (!response.ok) throw new Error("TAPE_UNAVAILABLE");
+          const tape = await response.json() as {
+            indexedAt?: string;
+            trades?: Array<{ token: string; side: "BUY" | "SELL"; block: number; tx: string; user: string; native: string; tokens: string; timestamp: number }>;
+          };
+          const marketTrades = (tape.trades || []).filter((trade) => trade.token.toLowerCase() === asset.address.toLowerCase());
+          consecutiveFailures = 0;
+          setTapeHealth(tape.indexedAt && Date.now() - Date.parse(tape.indexedAt) <= 5_000 ? "live" : "delayed");
+          setChartTrades(
+            [...(asset.trades || []), ...marketTrades]
+              .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
+              .sort((a, b) => a.block - b.block)
+              .slice(-500),
+          );
+          if (marketTrades.length && Date.now() >= optimisticTapeUntil.current) {
+            setLiveTrades(marketTrades.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
+          }
         }
-      } catch { setTapeHealth("offline"); }
+      } catch {
+        // Same debounce as the mainnet scanner used to have: one missed
+        // poll (a static file 404ing for a moment during a deploy, say)
+        // shouldn't flip the badge to offline.
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 3) setTapeHealth("offline");
+      }
       finally { loadingTape = false; }
     };
     void loadTape();
-    // Tape is a small static snapshot served locally; poll slightly faster than
-    // the chain state so a newly indexed trade reaches the chart immediately.
-    const timer = window.setInterval(() => { void loadTape(); }, 750);
+    const timer = window.setInterval(() => { void loadTape(); }, isMainnet ? 1_000 : 750);
     return () => window.clearInterval(timer);
-  }, [asset.address]);
+  }, [asset.address, isMainnet]);
 
   useEffect(() => {
     if (!account || !activeProvider) { setBalance(0n); return; }
@@ -897,7 +1170,7 @@ function TradingDesk({
     try {
       await activeProvider.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: ARC.hexId }],
+        params: [{ chainId: activeArc.hexId }],
       });
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
@@ -913,7 +1186,26 @@ function TradingDesk({
       let freshReserve: bigint;
       let pairReader: Contract | null = null;
       let pairZeroForOne = false;
-      if (graduated) {
+      // A real Uniswap V3 pool has no view-only reserve0()/reserve1()/quote()
+      // — quoting goes through the Quoter contract instead (staticCall; its
+      // quoteExactInputSingle is non-view by design, computing the amount via
+      // a revert-trick under the hood, same as every Uniswap V3 frontend).
+      let v3QuoteOut = 0n;
+      if (graduated && pairIsV3) {
+        const quoter = new Contract(
+          ARC_MAINNET_CONTRACTS.v3Quoter,
+          ["function quoteExactInputSingle(address,address,uint24,uint256,uint160) returns(uint256)"],
+          provider,
+        );
+        const tokenInAddr = side === "buy" ? ARC_USDC_ERC20 : asset.address;
+        const tokenOutAddr = side === "buy" ? asset.address : ARC_USDC_ERC20;
+        const amountInRaw = side === "buy" ? venueAmountWei / QSCALE : amountWei;
+        v3QuoteOut = amountInRaw > 0n
+          ? await quoter.quoteExactInputSingle.staticCall(tokenInAddr, tokenOutAddr, 3000, amountInRaw, 0) as bigint
+          : 0n;
+        freshInventory = 0n;
+        freshReserve = 0n;
+      } else if (graduated) {
         pairReader = new Contract(venueAddress, ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)", "function quote(bool,uint256) view returns(uint256)", "function swap(bool,uint256,uint256,uint64) returns(uint256)"], signer);
         const [token0, reserve0, reserve1] = await Promise.all([
           pairReader.token0() as Promise<string>, pairReader.reserve0() as Promise<bigint>, pairReader.reserve1() as Promise<bigint>,
@@ -944,7 +1236,9 @@ function TradingDesk({
       const pairOutput = graduated && pairReader
         ? await pairReader.quote(pairZeroForOne, pairInput) as bigint
         : 0n;
-      const freshRawQuote = graduated
+      const freshRawQuote = graduated && pairIsV3
+        ? (side === "buy" ? v3QuoteOut : v3QuoteOut * QSCALE)
+        : graduated
         ? (side === "buy" ? pairOutput : pairOutput * QSCALE)
         : side === "buy"
         ? freshBuyInput && freshInventory
@@ -981,7 +1275,28 @@ function TradingDesk({
       ];
       const owner = await signer.getAddress();
       let tx;
-      if (graduated) {
+      if (graduated && pairIsV3) {
+        if (route === "manual") throw new Error("Switch to the pair quote currency before trading this graduated market.");
+        const tokenInAddr = side === "buy" ? ARC_USDC_ERC20 : asset.address;
+        const tokenOutAddr = side === "buy" ? asset.address : ARC_USDC_ERC20;
+        const v3AmountIn = side === "buy" ? amountWei / QSCALE : amountWei;
+        const v3AmountOutMinimum = side === "buy" ? minOut : minOut / QSCALE;
+        const inputToken = new Contract(tokenInAddr, erc20Abi, signer);
+        const allowance = await inputToken.allowance(owner, ARC_MAINNET_CONTRACTS.v3SwapRouter) as bigint;
+        if (allowance < v3AmountIn) {
+          setTradeStage("approval");
+          setStatus(`Approve ${side === "buy" ? currency : asset.symbol} spending in your wallet.`);
+          await (await inputToken.approve(ARC_MAINNET_CONTRACTS.v3SwapRouter, v3AmountIn)).wait();
+        }
+        const swapRouter = new Contract(
+          ARC_MAINNET_CONTRACTS.v3SwapRouter,
+          ["function exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns(uint256)"],
+          signer,
+        );
+        tx = await swapRouter.exactInputSingle([
+          tokenInAddr, tokenOutAddr, 3000, owner, deadline, v3AmountIn, v3AmountOutMinimum, 0,
+        ]);
+      } else if (graduated) {
         if (!pairReader) throw new Error("NO_LIQUIDITY");
         if (route === "manual") throw new Error("Switch to the pair quote currency before trading this graduated market.");
         const inputTokenAddress = side === "buy" ? (isEurc ? ARC_EURC_ADDRESS : ARC_USDC_ERC20) : asset.address;
@@ -1155,251 +1470,247 @@ function TradingDesk({
       setReportOpen(false); setReportDetail(""); setStatus("Report recorded for review. The market remains visible while evidence is assessed.");
     } catch (error) { setStatus(describeTxError(error)); }
   }
+  // Real, disclosed safety signals — never a fabricated authoritative score.
+  // Mint/freeze are static facts about every PumpToken (fixed supply at
+  // construction, no owner-privileged function exists in the contract at
+  // all), the rest are read from live state.
+  const totalSupplyWei = 1_000_000_000n * 10n ** 18n;
+  const topHolderShare = asset.topHolders?.[0]
+    ? Number((BigInt(asset.topHolders[0].balance) * 10_000n) / totalSupplyWei) / 100
+    : null;
+  const lpCheck: boolean | null = graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
+  const safetyChecks: Array<{ label: string; ok: boolean | null; value: string }> = [
+    { label: "Mint authority", ok: true, value: "No mint function" },
+    { label: "Freeze authority", ok: true, value: "No freeze function" },
+    { label: "LP status", ok: lpCheck, value: graduated ? (pairIsV3 ? "Locked (NFT)" : lpCheck ? "Locked (burned)" : "Verify onchain") : "N/A — pre-graduation" },
+    { label: "Contract", ok: isMainnet ? verified : null, value: isMainnet ? (verified === null ? "Checking…" : verified ? "Verified" : "Unverified") : "Not tracked (testnet)" },
+    { label: "Top holder", ok: topHolderShare === null ? null : topHolderShare < 20, value: topHolderShare === null ? "No data yet" : `${topHolderShare.toFixed(1)}%` },
+  ];
+  const scoredChecks = safetyChecks.filter((check) => check.ok !== null);
+  const safetyScore = scoredChecks.length ? Math.round((scoredChecks.filter((check) => check.ok).length / scoredChecks.length) * 100) : null;
+  const agoLabel = (seconds: number) => {
+    if (!seconds) return "—";
+    const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
+    if (delta < 60) return `${delta}s ago`;
+    if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
+    if (delta < 86400) return `${Math.floor(delta / 3600)}h ago`;
+    return `${Math.floor(delta / 86400)}d ago`;
+  };
+  const chainTag = isMainnet ? "MAINNET" : "TESTNET";
+  const feedLabel = tapeHealth === "live" ? "Live" : tapeHealth === "delayed" ? "Delayed" : "Offline";
+
   return (
     <section className="coin-page-shell">
-      <div className="trade-desk coin-route">
-        <button className="coin-back" onClick={close}>
-          ← Back to market
-        </button>
-        <div className="coin-route-actions">
-          <a href="/contracts">Verify contracts</a>
-          <button onClick={() => void shareCoin()}>Share ↗</button>
-          <button onClick={openShareCard}>Share card</button>
-          <button onClick={() => setReportOpen((value) => !value)}>Report token</button>
-        </div>
+      <div className="orbit-terminal">
         {reportOpen && <div className="report-panel"><div><strong>Report ${asset.symbol}</strong><small>Reports do not freeze a market. Include only verifiable concerns.</small></div><select value={reportCategory} onChange={(event) => setReportCategory(event.target.value)}><option value="scam">Suspected scam</option><option value="impersonation">Impersonation</option><option value="harmful-link">Harmful social link</option><option value="illegal">Illegal content</option><option value="other">Other</option></select><textarea maxLength={240} value={reportDetail} onChange={(event) => setReportDetail(event.target.value)} placeholder="Optional evidence or context (max 240 characters)"/><div><button onClick={() => setReportOpen(false)}>Cancel</button><button className="primary" onClick={() => void submitReport()}>Submit report</button></div></div>}
-        <div className="trade-identity">
-          <img src={asset.image ? imageUrl(asset.image) : ""} alt="" />
-          <div>
-            <p className="kicker">{graduated ? "Graduated · trading on ARC DEX" : "Bonding curve market"} · Engine v{asset.engineVersion || 5}</p>
-            <div className="venue-badges">
-              {graduated && pair && <span className="live">● Arcodian DEX Live</span>}
-              {asset.uniswapPool && <a className="live" href={`${ARC.explorer}/address/${asset.uniswapPool}`} target="_blank" rel="noreferrer">● Uniswap Live ↗</a>}
-            </div>
-            <h3>
-              {asset.name} <span>${asset.symbol}</span>
-            </h3>
-            <a
-              href={`${ARC.explorer}/address/${asset.address}`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Contract {asset.address} ↗
-            </a>
-            {socials && (socials.twitter || socials.discord) && (
-              <div className="coin-socials">
-                {socials.twitter && <a href={socials.twitter} target="_blank" rel="noreferrer noopener">X / Twitter ↗</a>}
-                {socials.discord && <a href={socials.discord} target="_blank" rel="noreferrer noopener">Discord ↗</a>}
-              </div>
-            )}
+
+        <header className="orbit-top">
+          <button className="orbit-back" onClick={close}>← Market</button>
+          <div className="orbit-brand">
+            <div className="orbit-mark"><i></i><i></i><b></b></div>
+            <div className="orbit-brand-name">ARCODIAN<span>/terminal</span></div>
           </div>
-        </div>
-        <div className="terminal-ticker" aria-label="Live market snapshot">
-          <span className="terminal-symbol"><i className={tapeHealth === "live" ? "live" : ""} />{asset.symbol} / {currency}<small>{graduated ? "ARCODIAN DEX" : "BONDING CURVE"}</small></span>
-          <span><small>Last price</small><b>{priceLabel(lastPrice)} {currency}</b></span>
-          <span className={(asset.priceChange24h || 0) >= 0 ? "positive" : "negative"}><small>24h change</small><b>{(asset.priceChange24h || 0) >= 0 ? "+" : ""}{(asset.priceChange24h || 0).toFixed(2)}%</b></span>
-          <span><small>Market cap</small><b>{Number(formatEther(marketCap)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
-          <span><small>DEX liquidity</small><b>{Number(formatEther(dexLiquidity)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
-          <span className="terminal-network"><small>Feed</small><b>{tapeHealth === "live" ? "LIVE · 750ms" : tapeHealth.toUpperCase()}</b></span>
-        </div>
-        <div className={`market-lifecycle ${graduated && pair ? "dex" : "curve"}`}>
-          <div>
-            <small>{graduated && pair ? "Market lifecycle · Phase 02" : "Market lifecycle · Phase 01"}</small>
-            <strong>{graduated && pair ? "Trading live on Arcodian DEX" : "Price discovery on bonding curve"}</strong>
-            <p>{graduated && pair ? "Curve complete. Liquidity is permanent and every trade routes through the canonical pair." : `${asset.progress.toFixed(2)}% funded · graduates automatically at ${Number(formatEther(asset.threshold)).toLocaleString()} ${currency}.`}</p>
+          <div className="orbit-pair">
+            <div className="orbit-avatar">{asset.image ? <img src={imageUrl(asset.image)} alt="" /> : asset.symbol.slice(0, 2).toUpperCase()}</div>
+            <div className="orbit-pair-id">
+              <div className="orbit-pair-sym">{asset.symbol} <em>/ {currency}</em></div>
+              <div className="orbit-pair-name">{asset.name}</div>
+            </div>
+            <div className="orbit-chain-tag">{chainTag}</div>
           </div>
-          {graduated && pair ? <>
-            <span><small>Canonical pair</small><a href={`${ARC.explorer}/address/${pair}`} target="_blank" rel="noreferrer">{short(pair)} ↗</a></span>
-            <span><small>LP status</small><b>{burnedPct >= 99.99 ? `${burnedPct.toFixed(4)}% burned` : "Verify onchain"}</b></span>
-            <span><small>DEX liquidity</small><b>{Number(formatEther(dexLiquidity)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b></span>
-          </> : <>
-            <span><small>Raised</small><b>{Number(formatEther(reserve)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
-            <span><small>Remaining</small><b>{Number(formatEther(asset.threshold > reserve ? asset.threshold - reserve : 0n)).toLocaleString(undefined,{maximumFractionDigits:2})} {currency}</b></span>
-            <span className="lifecycle-progress"><small>Graduation</small><b>{asset.progress.toFixed(2)}%</b><i><em style={{width:`${Math.min(100,asset.progress)}%`}}/></i></span>
-          </>}
-        </div>
-        <div className="trade-layout">
-          <div className={`chart-panel ${chartFullscreen ? "chart-fullscreen" : ""}`}>
-            <div className="chart-head">
-              <div><span>Candlestick · price per {asset.symbol}</span><div className="chart-timeframes">{([[60,"1m"],[300,"5m"],[900,"15m"],[3600,"1h"]] as const).map(([seconds,label])=><button key={seconds} className={timeframe===seconds?"active":""} onClick={()=>{setTimeframe(seconds);setChartHover(null)}}>{label}</button>)}</div></div>
-              <div className="chart-tools"><b>{priceLabel(lastPrice)} {currency}</b><button onClick={()=>setChartWindow(value=>value===30?60:30)}>{chartWindow===30?"More history":"Less history"}</button><button onClick={()=>setChartFullscreen(value=>!value)}>{chartFullscreen?"Exit":"Fullscreen"}</button></div>
+          <div className="orbit-top-price">
+            <div className="p mono">{priceLabel(lastPrice)} {currency}</div>
+            <div className={`orbit-chg mono ${(asset.priceChange24h || 0) >= 0 ? "pos" : "neg"}`}>{(asset.priceChange24h || 0) >= 0 ? "+" : ""}{(asset.priceChange24h || 0).toFixed(2)}%</div>
+          </div>
+          <div className="orbit-stats">
+            <div className="orbit-stat"><b>{compactNumber(Number(formatEther(marketCap)))}</b><span>Mcap</span></div>
+            <div className="orbit-stat"><b>{compactNumber(Number(formatEther(dexLiquidity)))}</b><span>{graduated ? "Liq" : "Raised"}</span></div>
+            <div className="orbit-stat hide-md"><b>{compactNumber(asset.volume ? Number(formatEther(BigInt(asset.volume))) : 0)}</b><span>Vol</span></div>
+            <div className="orbit-stat hide-md"><b>{asset.holderCount || 0}</b><span>Holders</span></div>
+            <div className="orbit-stat hide-md"><b>{asset.tradeCount || 0}</b><span>Trades</span></div>
+          </div>
+          <div className="orbit-live"><span className={`orbit-dot ${tapeHealth === "live" ? "" : tapeHealth === "delayed" ? "slow" : "off"}`}></span> {feedLabel}</div>
+          <div className="orbit-actions">
+            <button onClick={() => void shareCoin()}>Share</button>
+            <button onClick={openShareCard}>Share card</button>
+            <button onClick={() => setReportOpen((value) => !value)}>Report</button>
+          </div>
+        </header>
+
+        <div className="orbit-main">
+          <aside className="orbit-col orbit-col-left">
+            <div className="orbit-block">
+              <div className="orbit-block-h"><div className="orbit-block-t">{graduated ? "Market status" : "Bonding curve"}</div></div>
+              {graduated ? <>
+                <div className="orbit-curve-top"><div className="orbit-curve-pct done">Graduated</div></div>
+                <div className="orbit-curve-note">Liquidity is <b>permanently locked</b> — trading now routes through {pairIsV3 ? "a real Uniswap V3 pool" : "the canonical Arcodian pair"}, the same venue any external router or bot reads.</div>
+              </> : <>
+                <div className="orbit-curve-top"><div className="orbit-curve-pct">{asset.progress.toFixed(1)}%</div><div className="orbit-curve-sub">to graduation</div></div>
+                <div className="orbit-track"><i style={{ width: `${Math.min(100, asset.progress)}%` }}></i></div>
+                <div className="orbit-curve-note"><b>{Number(formatEther(asset.threshold > reserve ? asset.threshold - reserve : 0n)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b> more in buys and this market graduates automatically. Liquidity locks the moment it does.</div>
+              </>}
             </div>
-            <div className={`hero-chart ${visibleCandles.length ? "has-data" : "is-empty"}`}>
-              {!visibleCandles.length && <div className="chart-empty-state"><i>⌁</i><strong>Waiting for market activity</strong><small>The first confirmed buy or sell will create a candle here automatically.</small></div>}
-              {chartHover && <div className="chart-tooltip"><b>{new Date(chartHover.time*1000).toLocaleString()}</b><span>O {priceLabel(chartHover.open)}</span><span>H {priceLabel(chartHover.high)}</span><span>L {priceLabel(chartHover.low)}</span><span>C {priceLabel(chartHover.close)}</span><span>Vol {chartHover.volume.toLocaleString(undefined,{maximumFractionDigits:4})} {currency}</span></div>}
-              <TerminalChart candles={visibleCandles} priceLabel={priceLabel} onHover={setChartHover} />
-            </div>
-            <div className="market-metrics">
-              <span>
-                <small>Market cap</small>
-                <b>
-                  {Number(formatEther(marketCap)).toLocaleString(undefined, {
-                    maximumFractionDigits: 2,
-                  })}{" "}
-                  {currency}
-                </b>
-              </span>
-              <span>
-                <small>{graduated ? "DEX liquidity" : "Raised / target"}</small>
-                <b>{graduated
-                  ? `${Number(formatEther(dexLiquidity)).toLocaleString(undefined, { maximumFractionDigits: 2 })} ${currency}`
-                  : `${Number(formatEther(reserve)).toLocaleString(undefined, { maximumFractionDigits: 4 })} / ${Number(formatEther(asset.threshold)).toLocaleString()}`}
-                </b>
-              </span>
-              <span>
-                <small>Indexed volume / trades</small>
-                <b>{asset.volume ? Number(formatEther(BigInt(asset.volume))).toLocaleString(undefined, { maximumFractionDigits: 3 }) : "0"} {currency} · {asset.tradeCount || 0}</b>
-              </span>
-              <span>
-                <small>Your position</small>
-                <b>
-                  {Number(formatEther(sellValue)).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })}{" "}
-                  {currency}
-                </b>
-              </span>
-              <span className={pnl >= 0n ? "positive" : "negative"}>
-                <small>Unrealized P/L</small>
-                <b>
-                  {pnl >= 0n ? "+" : ""}
-                  {Number(formatEther(pnl)).toLocaleString(undefined, {
-                    maximumFractionDigits: 4,
-                  })}{" "}
-                  {currency}
-                </b>
-              </span>
-            </div>
-            <div className="desk-tabs" role="tablist" aria-label="Market data sections">
-              {(["trades", "holders", "community"] as const).map((section) => (
-                <button key={section} role="tab" aria-selected={deskTab === section} className={deskTab === section ? "active" : ""} onClick={() => setDeskTab(section)}>
-                  {section === "trades" ? "Trades" : section === "holders" ? `Holders (${asset.holderCount || 0})` : `Community (${posts.length})`}
-                </button>
-              ))}
-            </div>
-            {deskTab === "trades" && <div className="live-trades">
-              <div className="live-trades-head">
-                <strong><i /> Live trades</strong>
-                <small>Indexed tape · {tapeHealth === "live" ? "live" : tapeHealth === "delayed" ? "delayed" : "temporarily offline"}</small>
+
+            <div className="orbit-block">
+              <div className="orbit-block-h"><div className="orbit-block-t">Safety scan</div>{safetyScore !== null && <div className="orbit-block-t" style={{ color: safetyScore >= 80 ? "var(--up)" : safetyScore >= 50 ? "var(--flare)" : "var(--down)" }}>{safetyScore}/100</div>}</div>
+              <div className="orbit-checks">
+                {safetyChecks.map((check) => (
+                  <div key={check.label} className={`orbit-check ${check.ok === true ? "ok" : check.ok === false ? "warn" : "neutral"}`}>
+                    <i>{check.ok === true ? "✓" : check.ok === false ? "!" : "·"}</i>{check.label}<em>{check.value}</em>
+                  </div>
+                ))}
               </div>
-              {liveTrades.length ? (
-                liveTrades.map((event, index) => (
-                  <span key={`${event.side}-${index}`}>
-                    <b
-                      className={event.side === "BUY" ? "positive" : "negative"}
-                    >
-                      {event.side}
-                    </b>
-                    <i>
-                      {Number(formatEther(event.amount)).toLocaleString(
-                        undefined,
-                        { maximumFractionDigits: 4 },
-                      )}{" "}
-                      USDC
-                    </i>
-                    <small>
-                      {Number(formatEther(event.tokens)).toLocaleString(
-                        undefined,
-                        { maximumFractionDigits: 2 },
-                      )}{" "}
-                      {asset.symbol}
-                    </small>
-                  </span>
-                ))
-              ) : (
-                <p>No trades yet.</p>
+              <div className="orbit-risk-note"><span>Permissionless market — anyone can create a token here. These signals cover what's readable onchain, not a full audit. Never trade more than you can afford to lose.</span></div>
+            </div>
+
+            <div className="orbit-block">
+              <div className="orbit-block-h"><div className="orbit-block-t">Market</div></div>
+              <div className="orbit-rows">
+                <div className="orbit-row"><span>Pair</span><b>{asset.symbol} / {currency}</b></div>
+                <div className="orbit-row"><span>Supply</span><b>1,000,000,000</b></div>
+                <div className="orbit-row"><span>FDV</span><b>{Number(formatEther(marketCap)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b></div>
+                {graduated && <>
+                  <div className="orbit-row"><span>Pooled {asset.symbol}</span><b>{Number(formatEther(inventory)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</b></div>
+                  <div className="orbit-row"><span>Pooled {currency}</span><b>{Number(formatEther(reserve)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</b></div>
+                </>}
+                <div className="orbit-row"><span>Created</span><b>{agoLabel(asset.createdAt || 0)}</b></div>
+              </div>
+            </div>
+
+            <div className="orbit-block" style={{ borderBottom: "none" }}>
+              <div className="orbit-block-h"><div className="orbit-block-t">Contract</div></div>
+              <div className="orbit-addr">
+                <span>{short(asset.address)}</span>
+                <button onClick={async () => { try { await navigator.clipboard.writeText(asset.address); } catch { /* clipboard unavailable */ } setCopied(true); setTimeout(() => setCopied(false), 1600); }}>{copied ? "Copied" : "Copy"}</button>
+              </div>
+              <div className="orbit-links">
+                <a href={`${activeArc.explorer}/address/${asset.address}`} target="_blank" rel="noreferrer">Explorer ↗</a>
+                <a href="/contracts">Verify ↗</a>
+              </div>
+              {socials && (socials.twitter || socials.discord) && (
+                <div className="orbit-links" style={{ marginTop: 6 }}>
+                  {socials.twitter && <a href={socials.twitter} target="_blank" rel="noreferrer noopener">X ↗</a>}
+                  {socials.discord && <a href={socials.discord} target="_blank" rel="noreferrer noopener">Discord ↗</a>}
+                </div>
               )}
-            </div>}
-            {deskTab === "holders" && <div className="holder-analytics">
-              <div className="section-title"><strong>Holder analytics</strong><small>Balances among indexed onchain participants</small></div>
-              <div className="holder-summary"><span><small>Indexed holders</small><b>{asset.holderCount || 0}</b></span><span><small>Creator</small><b>{asset.creator ? short(asset.creator) : "Unknown"}</b></span><span><small>24h volume</small><b>{Number(formatEther(BigInt(asset.volume24h || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span></div>
-              <div className="holder-list">
-                {(asset.topHolders || []).slice(0, 5).map((holder, index) => <span key={holder.address}><i>#{index + 1}</i><a href={`${ARC.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">{short(holder.address)}</a><b>{Number(formatEther(BigInt(holder.balance))).toLocaleString(undefined, { maximumFractionDigits: 2 })} {asset.symbol}</b></span>)}
-                {!asset.topHolders?.length && <p>Holder distribution appears after indexed trades.</p>}
-              </div>
-            </div>}
-            {deskTab === "community" && <div className="community-panel">
-              <div className="section-title"><strong>Community</strong><small>Wallet-signed public posts</small></div>
-              <div className="community-compose">
-                <textarea maxLength={280} placeholder={account ? `Share a note about ${asset.symbol}…` : "Connect wallet to post"} value={postText} onChange={(event) => setPostText(event.target.value)} />
-                <button disabled={posting || !postText.trim()} onClick={() => void publishPost()}>{posting ? "Signing…" : account ? "Sign & post" : "Connect"}</button>
-              </div>
-              <div className="community-feed">
-                {posts.map((post) => <article key={post.id}><div><a href={`${ARC.explorer}/address/${post.author}`} target="_blank" rel="noreferrer">{short(post.author)}</a><time>{new Date(post.timestamp * 1000).toLocaleString()}</time></div><p>{post.message}</p></article>)}
-                {!posts.length && <p>No signed community posts yet.</p>}
-              </div>
-            </div>}
-          </div>
-          <div className="order-panel" id="trade-order-panel">
-            <div className="risk-notice">
-              <strong>Permissionless market</strong>
-              <small>Anyone can create a token. Verify the contract and never trade more than you can afford to lose.</small>
             </div>
-            <div className="side-tabs">
-              <button
-                className={side === "buy" ? "active" : ""}
-                onClick={() => { setSide("buy"); setAmount("1"); setTradeStage("idle"); setStatus(""); setTxHash(""); }}
-              >
-                Buy
-              </button>
-              <button
-                className={side === "sell" ? "active" : ""}
-                onClick={() => { setSide("sell"); setAmount(""); setTradeStage("idle"); setStatus(""); setTxHash(""); }}
-              >
-                Sell
-              </button>
-            </div>
-            <label>
-              {side === "buy" ? "Pay USDC" : "Sell tokens"}
-              <input
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => { setAmount(e.target.value.replace(/[^0-9.]/g, "")); setTradeStage("idle"); setStatus(""); setTxHash(""); }}
-              />
-              <strong>{side === "buy" ? "USDC" : asset.symbol}</strong>
-            </label>
-            <div className="trade-presets" aria-label={side === "buy" ? "Quick buy amounts" : "Quick sell percentages"}>
-              {side === "buy"
-                ? ["25", "100", "500", "1000"].map((value) => <button key={value} onClick={() => { setAmount(value); setTradeStage("idle"); setStatus(""); }}>{value} USDC</button>)
-                : [["25%", 25n], ["50%", 50n], ["75%", 75n], ["MAX", 100n]].map(([label, percentage]) => <button key={String(label)} onClick={() => { setAmount(formatEther((balance * BigInt(percentage)) / 100n)); setTradeStage("idle"); setStatus(""); }}>{String(label)}</button>)}
-            </div>
-            {side === "sell" && (
-              <button
-                className="max-button"
-                onClick={() => setAmount(formatEther(balance))}
-              >
-                Balance{" "}
-                {Number(formatEther(balance)).toLocaleString(undefined, {
-                  maximumFractionDigits: 4,
-                })}{" "}
-                · MAX
-              </button>
-            )}
-            <div className="slippage">
-              <span>Slippage</span>
-              {["0.5", "1", "3"].map((v) => (
-                <button
-                  key={v}
-                  className={slippage === v ? "active" : ""}
-                  onClick={() => setSlippage(v)}
-                >
-                  {v}%
-                </button>
-              ))}
-            </div>
-            <div className="trade-quote">
-              <span>{side === "buy" ? `You receive ${asset.symbol}` : "You receive USDC"}</span>
-              <b>
-                {Number(formatEther(quote)).toLocaleString(undefined, {
-                  maximumFractionDigits: 6,
-                })}{" "}
-                {side === "buy" ? asset.symbol : "USDC"}
-              </b>
-              <div className="quote-ledger">
-                <span><small>Minimum received</small><b>{Number(formatEther(minimumReceived)).toLocaleString(undefined,{maximumFractionDigits:6})} {side === "buy" ? asset.symbol : "USDC"}</b></span>
-                <span><small>Venue fee</small><b>{venueFeeLabel}</b></span>
-                <span><small>Deadline</small><b>10 minutes</b></span>
+          </aside>
+
+          <section className="orbit-col orbit-col-mid">
+            <div className="orbit-chart-bar">
+              <div className="orbit-seg">
+                {([[1, "1s"], [15, "15s"], [60, "1m"], [300, "5m"], [900, "15m"], [3600, "1h"]] as const).map(([seconds, label]) => (
+                  <button key={seconds} className={timeframe === seconds ? "on" : ""} onClick={() => { setTimeframe(seconds); setChartHover(null); }}>{label}</button>
+                ))}
               </div>
+              <button className="orbit-tool" onClick={() => setChartWindow((value) => (value === 30 ? 60 : 30))}>{chartWindow === 30 ? "More history" : "Less history"}</button>
+              <div className="orbit-bar-sp"></div>
+              <span className="orbit-tool mono">{priceLabel(lastPrice)} {currency}</span>
+            </div>
+
+            <div className="orbit-chart-wrap">
+              {!visibleCandles.length && <div className="orbit-chart-empty"><i>⌁</i><strong>Waiting for market activity</strong><small>The first confirmed buy or sell creates a candle here automatically.</small></div>}
+              <TerminalChart key={asset.address} candles={visibleCandles} priceLabel={priceLabel} onHover={setChartHover} />
+            </div>
+
+            <div className="orbit-tape">
+              <div className="orbit-tabs" role="tablist" aria-label="Market data sections">
+                {(["trades", "holders", "community"] as const).map((section) => (
+                  <button key={section} role="tab" aria-selected={deskTab === section} className={deskTab === section ? "on" : ""} onClick={() => setDeskTab(section)}>
+                    {section === "trades" ? "Trades" : section === "holders" ? "Holders" : "Community"}
+                    <span className="count mono">{section === "trades" ? (asset.tradeCount || 0) : section === "holders" ? (asset.holderCount || 0) : posts.length}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="orbit-tape-body">
+                {deskTab === "trades" && (
+                  <table>
+                    <thead><tr><th>Type</th><th>{currency}</th><th>{asset.symbol}</th></tr></thead>
+                    <tbody>
+                      {liveTrades.length ? liveTrades.map((event, index) => (
+                        <tr key={`${event.side}-${index}`}>
+                          <td className={`orbit-side ${event.side === "BUY" ? "positive" : "negative"}`}>{event.side}</td>
+                          <td>{Number(formatEther(event.amount)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                          <td>{Number(formatEther(event.tokens)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      )) : <tr><td colSpan={3} className="orbit-empty-row">No trades yet — indexed tape is {feedLabel.toLowerCase()}.</td></tr>}
+                    </tbody>
+                  </table>
+                )}
+                {deskTab === "holders" && (
+                  <table>
+                    <thead><tr><th>#</th><th>Wallet</th><th>Balance</th></tr></thead>
+                    <tbody>
+                      {(asset.topHolders || []).slice(0, 10).length ? (asset.topHolders || []).slice(0, 10).map((holder, index) => (
+                        <tr key={holder.address}>
+                          <td style={{ color: "var(--muted)" }}>{index + 1}</td>
+                          <td><a className="orbit-wallet" href={`${activeArc.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">{short(holder.address)}</a></td>
+                          <td>{Number(formatEther(BigInt(holder.balance))).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      )) : <tr><td colSpan={3} className="orbit-empty-row">Holder distribution appears after indexed trades.</td></tr>}
+                    </tbody>
+                  </table>
+                )}
+                {deskTab === "community" && (
+                  <div className="orbit-community">
+                    <div className="orbit-compose">
+                      <textarea maxLength={280} placeholder={account ? `Share a note about ${asset.symbol}…` : "Connect wallet to post"} value={postText} onChange={(event) => setPostText(event.target.value)} />
+                      <button disabled={posting || !postText.trim()} onClick={() => void publishPost()}>{posting ? "Signing…" : account ? "Sign & post" : "Connect"}</button>
+                    </div>
+                    <div className="orbit-feed">
+                      {posts.map((post) => <article key={post.id}><div><a href={`${activeArc.explorer}/address/${post.author}`} target="_blank" rel="noreferrer">{short(post.author)}</a><time>{new Date(post.timestamp * 1000).toLocaleString()}</time></div><p>{post.message}</p></article>)}
+                      {!posts.length && <p style={{ color: "var(--muted)", fontSize: 12 }}>No signed community posts yet.</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <aside className="orbit-col orbit-col-right" id="trade-order-panel">
+            <div className="orbit-block">
+              <div className="orbit-sidebtn">
+                <button className={`buy ${side === "buy" ? "on" : ""}`} onClick={() => { setSide("buy"); setAmount("1"); setTradeStage("idle"); setStatus(""); setTxHash(""); }}>BUY</button>
+                <button className={`sell ${side === "sell" ? "on" : ""}`} onClick={() => { setSide("sell"); setAmount(""); setTradeStage("idle"); setStatus(""); setTxHash(""); }}>SELL</button>
+              </div>
+
+              <div className="orbit-field">
+                <div className="orbit-field-h"><span>{side === "buy" ? "You pay" : "You sell"}</span>{side === "sell" && <span>Balance <b className="mono">{Number(formatEther(balance)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</b></span>}</div>
+                <div className="orbit-field-in">
+                  <input inputMode="decimal" placeholder="0.0" value={amount} onChange={(e) => { setAmount(e.target.value.replace(/[^0-9.]/g, "")); setTradeStage("idle"); setStatus(""); setTxHash(""); }} />
+                  <div className="orbit-unit">{side === "buy" ? currency : asset.symbol}</div>
+                </div>
+              </div>
+
+              <div className="orbit-presets" aria-label={side === "buy" ? "Quick buy amounts" : "Quick sell percentages"}>
+                {side === "buy"
+                  ? ["25", "100", "500", "1000"].map((value) => <button key={value} onClick={() => { setAmount(value); setTradeStage("idle"); setStatus(""); }}>{value}</button>)
+                  : [["25%", 25n], ["50%", 50n], ["75%", 75n], ["MAX", 100n]].map(([label, percentage]) => <button key={String(label)} onClick={() => { setAmount(formatEther((balance * BigInt(percentage)) / 100n)); setTradeStage("idle"); setStatus(""); }}>{String(label)}</button>)}
+              </div>
+
+              <div className="orbit-arrow">↓</div>
+
+              <div className="orbit-field">
+                <div className="orbit-field-h"><span>You receive (est.)</span></div>
+                <div className="orbit-field-in">
+                  <input readOnly value={Number(formatEther(quote)).toLocaleString(undefined, { maximumFractionDigits: 6 })} />
+                  <div className="orbit-unit">{side === "buy" ? asset.symbol : currency}</div>
+                </div>
+              </div>
+
+              <div className="orbit-summary">
+                <div className="orbit-row"><span>Minimum received</span><b className="mono">{Number(formatEther(minimumReceived)).toLocaleString(undefined, { maximumFractionDigits: 6 })} {side === "buy" ? asset.symbol : currency}</b></div>
+                <div className="orbit-row"><span>Average execution</span><b className="mono">{priceLabel(averageExecutionPrice)} {currency}/{asset.symbol}</b></div>
+                <div className="orbit-row"><span>Price impact</span><b className="mono" style={{ color: priceImpact > 5 ? "var(--down)" : priceImpact > 1.5 ? "var(--flare)" : "var(--ink)" }}>{priceImpact.toLocaleString(undefined, { maximumFractionDigits: 2 })}%</b></div>
+                <div className="orbit-row"><span>Venue fee</span><b className="mono">{venueFeeLabel}</b></div>
+                <div className="orbit-row">
+                  <span>Max slippage</span>
+                  <div className="orbit-slip">
+                    {["0.5", "1", "3"].map((v) => <button key={v} className={slippage === v ? "on" : ""} onClick={() => setSlippage(v)}>{v}%</button>)}
+                  </div>
+                </div>
+              </div>
+
               {side === "buy" && (
                 <CostLine
                   cost={cost}
@@ -1409,37 +1720,42 @@ function TradingDesk({
                   symbol={asset.symbol}
                 />
               )}
-              <div className="execution-preview"><span><small>Average execution</small><b>{priceLabel(averageExecutionPrice)} USDC / {asset.symbol}</b></span><span className={priceImpact>5?"warning":""}><small>Estimated price impact</small><b>{priceImpact.toLocaleString(undefined,{maximumFractionDigits:2})}%</b></span></div>
+              {insufficientBalance && <p className="orbit-error">Sell amount exceeds your {asset.symbol} balance.</p>}
+              {tradeStage !== "idle" && <div className="orbit-progress" aria-live="polite">
+                <span className={["quote", "approval", "submitted", "confirmed"].includes(tradeStage) ? "done" : ""}>Quote</span>
+                <span className={["approval", "submitted", "confirmed"].includes(tradeStage) ? "done" : ""}>{side === "sell" ? "Approval" : "Wallet"}</span>
+                <span className={["submitted", "confirmed"].includes(tradeStage) ? "done" : ""}>Onchain</span>
+                <span className={tradeStage === "confirmed" ? "done" : ""}>Confirmed</span>
+              </div>}
+
+              <button className={`orbit-exec ${side === "sell" ? "sell" : ""}`} disabled={busy || !validAmount || quote <= 0n || insufficientBalance} onClick={trade}>
+                {!account
+                  ? "CONNECT WALLET"
+                  : busy
+                    ? (tradeStage === "submitted" ? "CONFIRMING ONCHAIN…" : tradeStage === "approval" ? "APPROVE IN WALLET…" : "CONFIRM IN WALLET…")
+                    : `${side === "buy" ? "BUY" : "SELL"} ${asset.symbol}`}
+              </button>
+              {status ? <p className="orbit-status">{status}</p> : <p className="orbit-exec-note">Exact approval only · wallet-signed · non-custodial</p>}
+              {txHash && <a className="orbit-txlink" href={`${activeArc.explorer}/tx/${txHash}`} target="_blank" rel="noreferrer">View transaction {short(txHash)} ↗</a>}
             </div>
-            {insufficientBalance && <p className="inline-error">Sell amount exceeds your {asset.symbol} balance.</p>}
-            {status && <p className="status">{status}</p>}
-            {txHash && <a className="tx-link" href={`${ARC.explorer}/tx/${txHash}`} target="_blank" rel="noreferrer">View transaction {short(txHash)} ↗</a>}
-            {tradeStage !== "idle" && <div className={`trade-progress ${tradeStage}`} aria-live="polite">
-              <span className={["quote","approval","submitted","confirmed"].includes(tradeStage) ? "done" : ""}>1 <small>Quote</small></span>
-              <span className={["approval","submitted","confirmed"].includes(tradeStage) ? "done" : ""}>2 <small>{side === "sell" ? "Approval" : "Wallet"}</small></span>
-              <span className={["submitted","confirmed"].includes(tradeStage) ? "done" : ""}>3 <small>Onchain</small></span>
-              <span className={tradeStage === "confirmed" ? "done" : ""}>4 <small>Confirmed</small></span>
-            </div>}
-            <button
-              className="primary"
-              disabled={busy || !validAmount || quote <= 0n || insufficientBalance}
-              onClick={trade}
-            >
-              {!account
-                ? "Connect wallet"
-                : busy
-                  ? tradeStage === "submitted" ? "Confirming onchain…" : tradeStage === "approval" ? "Approve in wallet…" : "Confirm in wallet…"
-                  : `${side === "buy" ? "Buy" : "Sell"} ${asset.symbol}`}
-            </button>
-            <p className="fine">
-              Exact approval only · wallet-signed · non-custodial
-            </p>
-          </div>
+
+            <div className="orbit-block" style={{ borderBottom: "none" }}>
+              <div className="orbit-block-h"><div className="orbit-block-t">Your position</div></div>
+              {balance > 0n ? (
+                <div className="orbit-pos-card">
+                  <div className="orbit-pos-pnl"><b className={pnl >= 0n ? "positive" : "negative"}>{pnl >= 0n ? "+" : ""}{Number(formatEther(pnl)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {currency}</b></div>
+                  <div className="orbit-row"><span>Size</span><b>{Number(formatEther(balance)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {asset.symbol}</b></div>
+                  <div className="orbit-row"><span>Value</span><b>{Number(formatEther(sellValue)).toLocaleString(undefined, { maximumFractionDigits: 4 })} {currency}</b></div>
+                </div>
+              ) : <div className="orbit-pos-empty">No position yet.<br />Your size and P&amp;L appear here after the first fill.</div>}
+            </div>
+          </aside>
         </div>
-        <div className="mobile-trade-dock">
-          <span><small>{side === "buy" ? "Estimated receive" : "Estimated output"}</small><b>{Number(formatEther(quote)).toLocaleString(undefined,{maximumFractionDigits:4})} {side === "buy" ? asset.symbol : "USDC"}</b></span>
-          <button onClick={() => document.getElementById("trade-order-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>{side === "buy" ? "Buy" : "Sell"} {asset.symbol}</button>
-        </div>
+
+        <nav className="orbit-mob-nav">
+          <button className="buy" onClick={() => { setSide("buy"); document.getElementById("trade-order-panel")?.scrollIntoView({ behavior: "smooth" }); }}>BUY {asset.symbol}</button>
+          <button className="sell" onClick={() => { setSide("sell"); document.getElementById("trade-order-panel")?.scrollIntoView({ behavior: "smooth" }); }}>SELL {asset.symbol}</button>
+        </nav>
       </div>
     </section>
   );
@@ -1447,11 +1763,17 @@ function TradingDesk({
 
 function Launch({
   account,
+  isMainnet,
+  activeArc,
+  activeFactory,
   activeProvider,
   connect,
   onCreated,
 }: {
   account: string;
+  isMainnet: boolean;
+  activeArc: typeof ARC | typeof ARC_MAINNET;
+  activeFactory: string;
   activeProvider: EthereumProvider | null;
   connect: () => void;
   onCreated?: (asset: LaunchAsset) => void;
@@ -1461,12 +1783,17 @@ function Launch({
   const [image, setImage] = useState("");
   const [twitter, setTwitter] = useState("");
   const [discord, setDiscord] = useState("");
+  // EURC has no mainnet pump-factory yet (see task #48) — force USDC there.
   const [quoteChoice, setQuoteChoice] = useState<"USDC" | "EURC">("USDC");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
   const identityReady = Boolean(name.trim() && /^[A-Za-z0-9]{2,10}$/.test(symbol));
-  const launchReady = identityReady && /^https:\/\//.test(image);
+  // uploadImage() returns ipfs:// once Pinata is configured (the common
+  // case now) and only falls back to https:// when it isn't — this used to
+  // require https:// only, so every IPFS-backed upload silently failed step
+  // 3 forever. imageUrl() in shared.tsx already treats ipfs:// as first-class.
+  const launchReady = identityReady && /^(https:\/\/|ipfs:\/\/)/.test(image);
 
   async function uploadImage(file: File) {
     setBusy(true);
@@ -1510,7 +1837,7 @@ function Launch({
     if (
       !name.trim() ||
       !/^[A-Za-z0-9]{2,10}$/.test(symbol) ||
-      !/^https:\/\//.test(image)
+      !/^(https:\/\/|ipfs:\/\/)/.test(image)
     ) {
       setStatus(
         "Enter name, 2–10 character symbol, and upload a valid image first.",
@@ -1519,13 +1846,13 @@ function Launch({
     }
     setBusy(true);
     setStatus(
-      "Switching to Arc Testnet. Review the fixed-1B image launch in your wallet.",
+      `Switching to ${activeArc.name}. Review the fixed-1B image launch in your wallet.`,
     );
     try {
       try {
         await activeProvider.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: ARC.hexId }],
+          params: [{ chainId: activeArc.hexId }],
         });
       } catch (switchError) {
         if ((switchError as { code?: number }).code !== 4902) throw switchError;
@@ -1533,20 +1860,20 @@ function Launch({
           method: "wallet_addEthereumChain",
           params: [
             {
-              chainId: ARC.hexId,
-              chainName: ARC.name,
+              chainId: activeArc.hexId,
+              chainName: activeArc.name,
               nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-              rpcUrls: [ARC.rpc],
-              blockExplorerUrls: [ARC.explorer],
+              rpcUrls: [activeArc.rpc],
+              blockExplorerUrls: [activeArc.explorer],
             },
           ],
         });
       }
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
-      const isEurc = quoteChoice === "EURC";
+      const isEurc = !isMainnet && quoteChoice === "EURC";
       const factory = new Contract(
-        isEurc ? EURC_PUMP_FACTORY_ADDRESS : PUMP_FACTORY_ADDRESS,
+        isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory,
         ARC_PUMP_FACTORY_ABI,
         signer,
       );
@@ -1617,11 +1944,11 @@ function Launch({
             contract, so the link points at the launch factory itself. */}
         <span>● Arcodian v{ENGINE_VERSION} market engine live</span>
         <a
-          href={`${ARC.explorer}/address/${PUMP_FACTORY_ADDRESS}`}
+          href={`${activeArc.explorer}/address/${activeFactory}`}
           target="_blank"
           rel="noreferrer"
         >
-          {short(PUMP_FACTORY_ADDRESS)} ↗
+          {short(activeFactory)} ↗
         </a>
       </div>
       <div className="studio-steps">
@@ -1631,7 +1958,7 @@ function Launch({
       </div>
       <div className="launch-hero">
         <div>
-          <p className="kicker">Launch studio · Arc testnet</p>
+          <p className="kicker">Launch studio · {activeArc.name}</p>
           <h3>Build the coin.<br/><em>We handle the market.</em></h3>
           <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 12,000 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
         </div>
@@ -1674,14 +2001,22 @@ function Launch({
             placeholder="ACAT"
           />
         </label>
-        <label>
-          <span>Quote asset <i>Trading currency</i></span>
-          <div className="quote-toggle" role="group" aria-label="Quote asset">
-            <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
-            <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
-          </div>
-          <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 12,000 {quoteChoice}.</small>
-        </label>
+        {isMainnet ? (
+          <label>
+            <span>Quote asset <i>Trading currency</i></span>
+            <div className="quote-toggle" role="group" aria-label="Quote asset"><button type="button" className="active" disabled>USDC</button></div>
+            <small>Arc Mainnet is USDC-only for now — EURC launches are still Arc Testnet only. Graduation at 12,000 USDC.</small>
+          </label>
+        ) : (
+          <label>
+            <span>Quote asset <i>Trading currency</i></span>
+            <div className="quote-toggle" role="group" aria-label="Quote asset">
+              <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
+              <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
+            </div>
+            <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 12,000 {quoteChoice}.</small>
+          </label>
+        )}
         <div className="launch-section-title launch-section-social"><span>02</span><div><b>Community</b><small>Optional discovery links</small></div></div>
         <label>
           <span>X / Twitter <i>Optional</i></span>
@@ -1714,7 +2049,7 @@ function Launch({
         )}
       </div>
       <aside className="launch-live-preview">
-        <div className="preview-head"><p className="kicker">Market preview</p><span>Testnet</span></div>
+        <div className="preview-head"><p className="kicker">Market preview</p><span>{isMainnet ? "Mainnet" : "Testnet"}</span></div>
         <div className="preview-token-art">{image ? <img src={imageUrl(image)} alt="" /> : <b>{symbol?.[0]?.toUpperCase() || "A"}</b>}</div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
@@ -1731,7 +2066,7 @@ function Launch({
         </button>
       ) : (
         <button className="primary" disabled={busy || !launchReady} onClick={createPumpLaunch}>
-          {busy ? "Creating on Arc Testnet…" : launchReady ? "Review & create coin →" : "Complete required fields"}
+          {busy ? `Creating on ${activeArc.name}…` : launchReady ? "Review & create coin →" : "Complete required fields"}
         </button>
       )}
       <small>Wallet-signed · non-custodial · testnet assets only</small>

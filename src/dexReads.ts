@@ -48,8 +48,9 @@ export async function quoteAllTiers(
   tokenIn: string,
   tokenOut: string,
   amountIn: bigint,
+  factoryAddress: string = ARC_PAIR_FACTORY_ADDRESS,
 ): Promise<PairQuote[]> {
-  const factory = new Contract(ARC_PAIR_FACTORY_ADDRESS, FACTORY_ABI, runner);
+  const factory = new Contract(factoryAddress, FACTORY_ABI, runner);
   const results: PairQuote[] = [];
 
   for (const tier of TIERS) {

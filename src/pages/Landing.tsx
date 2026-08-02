@@ -8,12 +8,20 @@ import { navHref } from "../config";
  *
  * The design's visual language is adopted wholesale — orbit hero, mono
  * numerals, pill tabs, card grid, accordion. Its *data* is not: the study
- * shipped invented coins and a $184.6M TVL under a "LIVE" badge. Every figure
- * here is read from the same market index the rest of the app uses, and the
- * badge says Testnet, because that is what this is.
+ * shipped invented coins and a $184.6M TVL under a "LIVE" badge.
  *
  * Small numbers are shown as they are. A testnet that admits to eleven trades
  * is worth more than one that implies eleven thousand.
+ *
+ * The launchpad radar/ticker/table below reads Arc MAINNET launches from
+ * /data/mainnet-market-index.json (a server-side indexer, see
+ * scripts/mainnet-market-index.mjs) — not the Arc Testnet static index, and
+ * not a live per-page RPC scan (that drew sustained 429s from the shared
+ * free-tier RPC once there was real traffic, 2026-07-31). If it looks
+ * empty, that's real: check the indexer's systemd timer before assuming a
+ * bug. The separate mainnet bridge strip reads /data/bridge-stats.json (real
+ * ArcBridgeRouter events across all 5 chains). Both are genuinely mainnet
+ * now — don't reintroduce a testnet data source here without badging it.
  */
 
 type Trade = { side: string; native: string; tokens: string; timestamp?: number };
@@ -116,11 +124,11 @@ const STEPS = [
 ];
 
 const FAQS = [
-  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Arc is still a testnet, and so is everything here." },
+  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Bridge and the USDC-only Market/Launchpad are live on Arc Mainnet with real USDC. Swap (via Circle's App Kit SDK), Stablecoin FX, Lend, and the agent-economy rails are still Arc Testnet only." },
   { q: "Is Arcodian custodial?", a: "No. You connect your own wallet and every action settles directly on chain. Arcodian never holds your assets and has no ability to move them." },
   { q: "What does graduation actually do?", a: "When a curve reaches its threshold, its liquidity is moved into a public pool and the LP tokens are sent to a dead address. The liquidity stays tradable forever; the right to withdraw it is destroyed." },
   { q: "Who can create a pool?", a: "Anyone. The pair factory is permissionless — any two tokens, at either fee tier. The one exception is a launchpad coin still on its curve: only that coin's own curve may open its pair, so graduation liquidity cannot be front-run." },
-  { q: "Are these real numbers?", a: "Yes, and they are small. Every figure on this page is read from the public market index on Arc Testnet. Nothing here is illustrative or filled in." },
+  { q: "Are these real numbers?", a: "Yes. The radar and table below read Arc Mainnet's launch factory live from chain — if it looks empty, that's because it is: nobody has launched a mainnet coin yet, not a bug or a placeholder. The Bridge figures higher on this page are also read live from the deployed Arc Mainnet contracts. Nothing here is illustrative or filled in." },
 ];
 
 function sparkFrom(trades: Trade[]): string {
@@ -155,44 +163,67 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
   const [failed, setFailed] = useState(false);
   const [rail, setRail] = useState<string>("market");
   const [openFaq, setOpenFaq] = useState(0);
+  const [bridgeStats, setBridgeStats] = useState<{ outOfArc: { grossUsd: number; txCount: number }; intoArc: { grossUsd: number; txCount: number }; totalFeeUsd: number; totalTxCount: number } | null>(null);
 
   useEffect(() => {
+    // Real Arc Mainnet activity — server-side snapshot (arcodian-bridge-stats.timer,
+    // every 5 min) reading all 5 deployed ArcBridgeRouter contracts directly.
+    // Separate from the testnet market index below: this is the one section
+    // of the landing page that is genuinely mainnet, not testnet.
     let alive = true;
-    fetch("/data/market-index.json", { cache: "no-store" })
-      .then((response) => response.json())
-      .then((index: { launches?: Array<Record<string, unknown>> }) => {
-        if (!alive) return;
-        const rows = (index.launches || []).map((item) => {
-          const reserve = BigInt(String(item.reserve || "0"));
-          const threshold = BigInt(String(item.threshold || "1"));
-          const graduated = Boolean(item.graduated);
-          return {
-            address: String(item.address),
-            symbol: String(item.symbol),
-            name: String(item.name),
-            image: String(item.image || ""),
-            currency: String(item.currency || "USDC"),
-            reserve,
-            threshold,
-            volume: BigInt(String(item.volume || "0")),
-            volume24h: BigInt(String(item.volume24h || "0")),
-            holderCount: Number(item.holderCount || 0),
-            tradeCount: Number(item.tradeCount || 0),
-            graduated,
-            progress: graduated ? 100 : Number((reserve * 10_000n) / (threshold || 1n)) / 100,
-            spark: sparkFrom((item.trades as Trade[]) || []),
-          };
-        });
-        setLaunches(rows);
-        setTotals({
-          coins: rows.length,
-          trades: rows.reduce((sum, row) => sum + row.tradeCount, 0),
-          holders: rows.reduce((sum, row) => sum + row.holderCount, 0),
-          volume: rows.reduce((sum, row) => sum + row.volume, 0n),
-          graduated: rows.filter((row) => row.graduated).length,
-        });
-      })
-      .catch(() => { if (alive) { setFailed(true); setLaunches([]); } });
+    fetch("/data/bridge-stats.json", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (alive && data) setBridgeStats(data); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+
+  useEffect(() => {
+    // The landing radar reads the same server-side mainnet-market-index.json
+    // the Market/TradingDesk pages read (added 2026-07-31). This used to
+    // scan every launch's full Bought/Sold history live from the browser on
+    // every page load — harmless alone, but combined with Market doing the
+    // same thing it drew sustained HTTP 429s from the shared free-tier Arc
+    // Mainnet RPC (holders/trades/live tape showing "temporarily offline"
+    // even though the chain itself was fine). One indexer on a 30s timer
+    // now does that scanning once for everyone; the browser just fetches
+    // the result. holderCount is unique buyer+seller addresses (a real
+    // proxy, not the exact current holder count — a wallet that fully exits
+    // still counts once — there's no way to get a precise live holder count
+    // without indexing every transfer, and this is honest about being "who
+    // has traded it" rather than faking precision).
+    let alive = true;
+    (async () => {
+      const response = await fetch("/data/mainnet-market-index.json", { cache: "no-store" });
+      if (!response.ok) throw new Error("INDEX_UNAVAILABLE");
+      const index = await response.json() as {
+        launches?: Array<{
+          address: string; symbol: string; name: string; image: string;
+          reserve: string; threshold: string; graduated: boolean;
+          volume: string; tradeCount: number; holderCount: number;
+          trades?: Array<{ native: string; tokens: string }>;
+        }>;
+      };
+      const rows = (index.launches || []).map((item) => {
+        const reserve = BigInt(item.reserve), threshold = BigInt(item.threshold || "1");
+        return {
+          address: item.address, symbol: item.symbol, name: item.name, image: item.image, currency: "USDC",
+          reserve, threshold, volume: BigInt(item.volume || "0"), volume24h: 0n,
+          holderCount: item.holderCount, tradeCount: item.tradeCount,
+          graduated: item.graduated, progress: item.graduated ? 100 : Number(reserve * 10_000n / (threshold || 1n)) / 100,
+          spark: sparkFrom((item.trades || []).map((trade) => ({ side: "buy", native: trade.native, tokens: trade.tokens }))),
+        };
+      });
+      if (!alive) return;
+      setLaunches(rows.reverse());
+      setTotals({
+        coins: rows.length,
+        trades: rows.reduce((sum, row) => sum + row.tradeCount, 0),
+        holders: rows.reduce((sum, row) => sum + row.holderCount, 0),
+        volume: rows.reduce((sum, row) => sum + row.volume, 0n),
+        graduated: rows.filter((row) => row.graduated).length,
+      });
+    })().catch(() => { if (alive) { setFailed(true); setLaunches([]); } });
     return () => { alive = false; };
   }, []);
 
@@ -237,11 +268,26 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
       </div>
     )}
 
+    {bridgeStats && (
+      <section className="lp-mainnet-strip">
+        <p className="lp-mainnet-badge">● LIVE ON ARC MAINNET</p>
+        <div className="lp-stats">
+          <div><b>${bridgeStats.outOfArc.grossUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b><small>Bridged out of Arc</small></div>
+          <div><b>${bridgeStats.intoArc.grossUsd.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b><small>Bridged into Arc</small></div>
+          <div><b>{bridgeStats.totalTxCount}</b><small>Bridge transactions</small></div>
+          <div><b>${bridgeStats.totalFeeUsd.toFixed(4)}</b><small>Protocol fees collected</small></div>
+        </div>
+      </section>
+    )}
+
     {totals && (
-      <section className="lp-stats">
-        {statTiles.map((tile) => (
-          <div key={tile.label}><b>{tile.value}</b><small>{tile.label}</small></div>
-        ))}
+      <section className="lp-stats-wrap">
+        <p className="lp-mainnet-badge">● ARC MAINNET RADAR</p>
+        <section className="lp-stats">
+          {statTiles.map((tile) => (
+            <div key={tile.label}><b>{tile.value}</b><small>{tile.label}</small></div>
+          ))}
+        </section>
       </section>
     )}
 
@@ -294,7 +340,9 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         <div className="lp-rail-preview">
           <div className="lp-preview-head">
             <span>{active.key === "market" ? "BUSIEST NOW" : active.tag}</span>
-            <span className="lp-live">● TESTNET</span>
+            <span className={active.key === "bridge" || active.key === "market" ? "lp-live" : "lp-live lp-live-testnet"}>
+              {active.key === "bridge" || active.key === "market" ? "● ARC MAINNET" : "● TESTNET"}
+            </span>
           </div>
           {active.key === "market" ? (
             ranked.slice(0, 4).map((row) => (
@@ -313,7 +361,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
             </ul>
           )}
           {active.key === "market" && ranked.length === 0 && (
-            <p className="lp-empty">{failed ? "Could not reach the market index." : "The floor is syncing with Arc."}</p>
+            <p className="lp-empty">{failed ? "Could not reach Arc Mainnet." : "No coins launched on Arc Mainnet yet — be the first."}</p>
           )}
         </div>
       </div>
@@ -375,7 +423,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
             </span>
           </button>
         ))}
-        {ranked.length === 0 && <p className="lp-empty">{failed ? "Could not reach the market index." : "The floor is syncing with Arc."}</p>}
+        {ranked.length === 0 && <p className="lp-empty">{failed ? "Could not reach Arc Mainnet." : "No coins launched on Arc Mainnet yet — be the first."}</p>}
       </div>
     </section>
 

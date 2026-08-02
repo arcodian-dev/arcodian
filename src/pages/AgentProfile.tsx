@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
 import {Contract,JsonRpcProvider,formatEther} from "ethers";
-import {ARC,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI} from "../config";
+import {ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI} from "../config";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
 import "./AgentProfile.css";
@@ -19,20 +19,38 @@ export default function AgentProfile({agentId}:{agentId:string}){
   const [owner,setOwner]=useState("");const [wallet,setWallet]=useState("");const [uri,setUri]=useState("");
   const [meta,setMeta]=useState<any>(null);const [integrity,setIntegrity]=useState<"hash"|"gateway"|"fail"|"unknown">("unknown");const [err,setErr]=useState("");
   const [rep,setRep]=useState<any>(null);const [repLoaded,setRepLoaded]=useState(false);
-  useEffect(()=>{(async()=>{if(!agentId)return;const p=new JsonRpcProvider(ARC.rpc,undefined,{batchMaxCount:1});try{
-    const reg=new Contract(IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,p);const pp=new Contract(AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,p);
-    const [o,u,w]=await Promise.all([reg.ownerOf(agentId),reg.tokenURI(agentId),pp.walletOf(agentId)]);
-    setOwner(o);setUri(u);setWallet(w);
-    const res=await fetch(toFetchUrl(u));const text=await res.text();setMeta(JSON.parse(text));
-    if(u.startsWith("ipfs://")){setIntegrity(res.ok?"gateway":"fail");}
-    else{const want=new URL(u).searchParams.get("sha256");const got=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))).map(b=>b.toString(16).padStart(2,"0")).join("");setIntegrity(want&&want===got?"hash":"fail");}
-  }catch(e){setErr(describeTxError(e));}finally{p.destroy();}})();},[agentId]);
+  const [network,setNetwork]=useState<typeof ARC|typeof ARC_MAINNET|null>(null);
+  useEffect(()=>{(async()=>{
+    if(!agentId)return;
+    // Testnet and mainnet each mint their own independent agentId sequence
+    // from 1, so the same numeric ID means two different agents depending on
+    // which registry it came from. No wallet is connected on this page (it's
+    // a public, shareable profile URL), so there's no chain to key off —
+    // just try testnet first (where every agent minted so far actually
+    // lives), then fall back to mainnet's registry once it has agents.
+    const candidates:[typeof ARC|typeof ARC_MAINNET,string,string][]=[
+      [ARC,IDENTITY_REGISTRY_ADDRESS,AGENT_PASSPORT_ADDRESS],
+      [ARC_MAINNET,ARC_MAINNET_CONTRACTS.identityRegistry,ARC_MAINNET_CONTRACTS.agentPassport],
+    ];
+    for(const [net,identityAddr,passportAddr] of candidates){
+      const p=new JsonRpcProvider(net.rpc,undefined,{batchMaxCount:1});
+      try{
+        const reg=new Contract(identityAddr,IDENTITY_REGISTRY_ABI,p);const pp=new Contract(passportAddr,AGENT_PASSPORT_ABI,p);
+        const [o,u,w]=await Promise.all([reg.ownerOf(agentId),reg.tokenURI(agentId),pp.walletOf(agentId)]);
+        setNetwork(net);setOwner(o);setUri(u);setWallet(w);
+        const res=await fetch(toFetchUrl(u));const text=await res.text();setMeta(JSON.parse(text));
+        if(u.startsWith("ipfs://")){setIntegrity(res.ok?"gateway":"fail");}
+        else{const want=new URL(u).searchParams.get("sha256");const got=Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)))).map(b=>b.toString(16).padStart(2,"0")).join("");setIntegrity(want&&want===got?"hash":"fail");}
+        return;
+      }catch(e){if(net===ARC_MAINNET)setErr(describeTxError(e));}finally{p.destroy();}
+    }
+  })();},[agentId]);
   useEffect(()=>{fetch("/developers/reputation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{setRep((d?.agents||[]).find((a:any)=>String(a.agentId)===String(agentId))||null);setRepLoaded(true);}).catch(()=>setRepLoaded(true));},[agentId]);
 
   const evidenceBacked=(rep?.feedback||[]).filter((f:any)=>f.evidenceBacked);
   const unverified=(rep?.feedback||[]).filter((f:any)=>!f.evidenceBacked);
   return <section className="agent-profile">
-    <header className="agent-profile-hero"><div><p>ERC-8004 AGENT PASSPORT</p><h1>Agent #{agentId}</h1>{meta&&<><h2>{meta.name}</h2><span>{meta.description}</span></>}</div>
+    <header className="agent-profile-hero"><div><p>ERC-8004 AGENT PASSPORT{network?` · ${network===ARC_MAINNET?"ARC MAINNET":"ARC TESTNET"}`:""}</p><h1>Agent #{agentId}</h1>{meta&&<><h2>{meta.name}</h2><span>{meta.description}</span></>}</div>
     <aside>{meta?.image?<img src={meta.image} alt={meta.name}/>:<b>#{agentId}</b>}<small className={integrity==="hash"?"ok":integrity==="gateway"?"ok":integrity==="fail"?"bad":""} title={integrity==="gateway"?"IPFS gateway returned this content, but the CID was not recomputed against it — this trusts the gateway, not a cryptographic proof.":integrity==="hash"?"SHA-256 of the fetched metadata matches the hash committed in its own URI.":undefined}>{integrity==="hash"?"✓ Hash verified":integrity==="gateway"?"✓ Gateway served":integrity==="fail"?"⚠ Integrity failed":"Reading identity…"}</small></aside></header>
     {err&&<p className="err">Identity metadata unavailable: {err}</p>}
     <section className="agent-binding"><p>IDENTITY BINDING</p><dl><dt>Owner</dt><dd>{owner||"…"}</dd><dt>Authorized wallet</dt><dd>{wallet&&wallet!=="0x0000000000000000000000000000000000000000"?wallet:"— not bound —"}</dd>

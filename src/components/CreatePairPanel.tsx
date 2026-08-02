@@ -1,17 +1,21 @@
-import { useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider } from "ethers";
-import { ARC, ARC_PAIR_FACTORY_ADDRESS } from "../config";
+import { useMemo, useState } from "react";
+import { BrowserProvider, Contract } from "ethers";
+import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS } from "../config";
+import { arcProvider } from "../shared";
 import { FACTORY_ABI, type TokenMeta } from "../dexReads";
 import { TokenField } from "./TokenField";
 import type { Tier } from "../dex";
 
-const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
-
-export default function CreatePairPanel({ account, activeProvider, onConnect }: {
+export default function CreatePairPanel({ account, activeProvider, onConnect, chainId }: {
   account: string;
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   onConnect: () => void;
+  chainId?: number | null;
 }) {
+  const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketPairFactory : ARC_PAIR_FACTORY_ADDRESS;
+  const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [tokenA, setTokenA] = useState<TokenMeta | null>(null);
   const [tokenB, setTokenB] = useState<TokenMeta | null>(null);
   const [tier, setTier] = useState<Tier>(30);
@@ -25,13 +29,13 @@ export default function CreatePairPanel({ account, activeProvider, onConnect }: 
     setBusy(true);
     setStatus("");
     try {
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] });
+      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: activeArc.hexId }] });
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
-      const factory = new Contract(ARC_PAIR_FACTORY_ADDRESS, FACTORY_ABI, signer);
+      const factory = new Contract(activeFactory, FACTORY_ABI, signer);
       setStatus("Creating pool…");
       const tx = await factory.createPair(tokenA.address, tokenB.address, tier);
       await tx.wait();
-      const created = (await new Contract(ARC_PAIR_FACTORY_ADDRESS, FACTORY_ABI, read)
+      const created = (await new Contract(activeFactory, FACTORY_ABI, read)
         .getPair(tokenA.address, tokenB.address, tier)) as string;
       setStatus(`Pool created at ${created}. Add liquidity from the Pools tab — the first deposit sets the price.`);
     } catch (error) {

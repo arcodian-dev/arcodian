@@ -1,4 +1,4 @@
-import { FallbackProvider, JsonRpcProvider, parseEther } from "ethers";
+import { FallbackProvider, JsonRpcProvider, Network, parseEther } from "ethers";
 import { ARC } from "./config";
 
 export type WalletOption = { info: EIP6963ProviderInfo; provider: EthereumProvider };
@@ -13,7 +13,18 @@ export type LaunchAsset = {
   address: string;
   curve: string;
   pair?: string;
-  uniswapPool?: string;
+  pool?: string;
+  globalPool?: boolean;
+  dex?: string;
+  venue?: string;
+  feeTier?: number;
+  liquidity?: string;
+  marketCap?: string;
+  volume5m?: string;
+  volume10m?: string;
+  priceChange5m?: number;
+  priceChange10m?: number;
+  priceChange1h?: number;
   lpSupply?: string;
   lpBurned?: string;
   image: string;
@@ -141,13 +152,22 @@ export function normalizeSocial(value: string, type: "twitter" | "discord") {
     return url.toString();
   } catch { return ""; }
 }
-export function arcProvider() {
-  const providers = [...new Set(ARC.rpcs)].map((url) => new JsonRpcProvider(url));
+export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?: number } = ARC) {
+  const urls = chain.rpcs && chain.rpcs.length ? chain.rpcs : [chain.rpc];
+  // staticNetwork skips ethers' own eth_chainId "network detection" probe on
+  // every provider instantiation — with it unset, a single transient RPC
+  // blip (like Arc Mainnet's shared third-party gateway having a moment,
+  // 2026-07-31) throws an uncaught "could not detect network" straight out
+  // of whatever called arcProvider(), bypassing describeTxError entirely and
+  // showing the user a raw ethers error dump instead of a real message. We
+  // already know the chain id from config, so there's nothing to detect.
+  const network = chain.id ? Network.from(chain.id) : undefined;
+  const providers = [...new Set(urls)].map((url) => new JsonRpcProvider(url, network, { staticNetwork: network }));
   return providers.length === 1 ? providers[0] : new FallbackProvider(providers, undefined, { quorum: 1 });
 }
 
 export const FAQ_ITEMS = [
-  ["Is Arcodian live on mainnet?", "No. Arcodian currently runs on Arc Testnet, chain 5042002. Test USDC and launched test tokens have no financial value."],
+  ["Is Arcodian live on mainnet?", "Partially. Bridge (Circle CCTP) and the USDC-only Market/Launchpad are live on Arc Mainnet, chain 5042, moving real USDC — verify any address before signing. Swap (Circle's App Kit SDK doesn't list Arc Mainnet as a supported chain yet), StableCoin FX, Arc Lend, EURC launches, and the agent-economy contracts (Passport, Jobs, Reputation, Agent Pay) remain Arc Testnet only, where test USDC and test tokens have no financial value."],
   ["Can Arcodian access my wallet or funds?", "No. Arcodian is non-custodial. Your wallet signs each action, and the interface never receives your private key or seed phrase."],
   ["How is the token price determined?", "Before graduation, price comes from the v6 bonding curve using its onchain virtual reserve and real reserve. It is not typed into an admin dashboard."],
   ["What fees apply?", "Bonding-curve buys and sells charge 1%. After graduation, ARC DEX charges a 0.30% total swap fee, including a 0.05% protocol share."],
@@ -158,5 +178,5 @@ export const FAQ_ITEMS = [
   ["Can I launch a coin priced in EURC?", "Yes. Toggle the collateral to EURC when you create. The coin then trades against EURC on its own bonding curve (same 1% fee, same graduation logic), and the interface auto-detects EURC for every buy and sell. Prices display in € instead of $."],
   ["What is the StableCoin FX desk?", "A smart-routed USDC/EURC desk. It compares Arcodian's permissionless on-chain pool with configured, allowlisted external liquidity and executes the best valid quote. If no external route is available, the Arcodian pool remains the transparent fallback."],
   ["Why do Swap, Bridge, Market and Docs open new tabs?", "Each runs on its own subdomain (swap./bridge./market./docs.arcodian.fun) so you can keep several workspaces open at once. It is the same non-custodial app on every subdomain—only the default view changes."],
-  ["Which wallets and networks are supported?", "Any EIP-1193 / EIP-6963 browser wallet, plus WalletConnect. Trading and FX run on Arc Testnet (chain 5042002); bridging additionally touches the supported Circle CCTP testnets. Your keys never leave your wallet."],
+  ["Which wallets and networks are supported?", "Any EIP-1193 / EIP-6963 browser wallet, plus WalletConnect. Bridge and USDC-only Market run on Arc Mainnet, chain 5042, with real value — connect and check the network shown before signing. FX and EURC launches still run on Arc Testnet (chain 5042002); bridging additionally touches the supported Circle CCTP testnets/mainnets depending on which network you're on. Your keys never leave your wallet."],
 ];

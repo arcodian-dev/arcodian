@@ -31,8 +31,8 @@ export type LpPosition = {
  * A pair that fails to read is skipped rather than failing the whole view: one
  * broken token should not hide a user's other positions.
  */
-export async function fetchLpPositions(runner: ContractRunner, account: string): Promise<LpPosition[]> {
-  const factory = new Contract(ARC_PAIR_FACTORY_ADDRESS, FACTORY_ENUMERATION_ABI, runner);
+export async function fetchLpPositions(runner: ContractRunner, account: string, factoryAddress: string = ARC_PAIR_FACTORY_ADDRESS): Promise<LpPosition[]> {
+  const factory = new Contract(factoryAddress, FACTORY_ENUMERATION_ABI, runner);
   const length = Number((await factory.allPairsLength()) as bigint);
   const positions: LpPosition[] = [];
 

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { BrowserProvider, Contract, formatUnits } from "ethers";
-import { ARC, CHAINS } from "../config";
+import { ARC, ARC_MAINNET, CHAINS, MAINNET_CHAINS } from "../config";
 import ChainSelect from "./ChainSelect";
 import {
-  CCTP_DOMAIN, MESSAGE_TRANSMITTER_ABI, MESSAGE_TRANSMITTER_V2,
-  bridgeAttention, clearPendingClaim, fetchCctpAttestation, loadBridgeHistory, loadPendingClaims, recordBridgeHistory, savePendingClaim,
+  CCTP_DOMAIN, MESSAGE_TRANSMITTER_ABI,
+  attestationCountdown, bridgeAttention, clearPendingClaim, fetchCctpAttestation, isMainnetBridgeChainId, loadBridgeHistory, loadPendingClaims, messageTransmitterFor, recordBridgeHistory, savePendingClaim,
   type Attestation, type BridgeHistoryItem, type PendingClaim,
 } from "../bridgeRecovery";
 import { describeTxError } from "../txError";
@@ -20,22 +20,35 @@ async function switchOrAddChain(provider: Eip1193, chainId: number) {
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] });
   } catch (err) {
     if ((err as { code?: number })?.code !== 4902) throw err;
-    const chain = CHAINS.find((c) => c.id === chainId);
-    const isArc = chainId === ARC.id;
+    const chain = [...CHAINS, ...MAINNET_CHAINS].find((c) => c.id === chainId);
+    const isArc = chainId === ARC.id || chainId === ARC_MAINNET.id;
+    const arcNetwork = chainId === ARC_MAINNET.id ? ARC_MAINNET : ARC;
     await provider.request({
       method: "wallet_addEthereumChain",
       params: [{
         chainId: hex,
-        chainName: chain?.name || (isArc ? ARC.name : `Chain ${chainId}`),
+        chainName: chain?.name || (isArc ? arcNetwork.name : `Chain ${chainId}`),
         nativeCurrency: isArc
           ? { name: "USDC", symbol: "USDC", decimals: 18 }
           : { name: chain?.gasSymbol || "ETH", symbol: chain?.gasSymbol || "ETH", decimals: 18 },
-        rpcUrls: [isArc ? ARC.rpc : chain?.rpc].filter(Boolean),
-        blockExplorerUrls: isArc ? [ARC.explorer] : [],
+        rpcUrls: [isArc ? arcNetwork.rpc : chain?.rpc].filter(Boolean),
+        blockExplorerUrls: isArc ? [arcNetwork.explorer] : [],
       }],
     });
     await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: hex }] }).catch(() => {});
   }
+  // wallet_switchEthereumChain can resolve before the wallet's provider has
+  // actually rotated networks — building a signer immediately after and
+  // sending it a transaction then targets a node still on the old chain,
+  // which several public RPCs reject as a malformed/"Bad Request" call
+  // rather than a normal error. Confirm the switch actually landed first.
+  let confirmed = "";
+  for (let i = 0; i < 10; i++) {
+    confirmed = String(await provider.request({ method: "eth_chainId" }));
+    if (confirmed.toLowerCase() === hex.toLowerCase()) return;
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  throw new Error(`Your wallet is still on a different network. Switch to it manually, then try again.`);
 }
 
 type Props = {
@@ -46,9 +59,36 @@ type Props = {
   reloadSignal?: string;
 };
 
-const chainName = (id: number) => CHAINS.find((chain) => chain.id === id)?.name || `Chain ${id}`;
-const chainExplorer = (id: number) => ({ 11155111: "https://sepolia.etherscan.io", 421614: "https://sepolia.arbiscan.io", 84532: "https://sepolia.basescan.org", 43113: "https://testnet.snowtrace.io", 11155420: "https://sepolia-optimism.etherscan.io", 80002: "https://amoy.polygonscan.com", [ARC.id]: ARC.explorer } as Record<number, string>)[id] || ARC.explorer;
-const bridgeableChains = CHAINS.filter((chain) => CCTP_DOMAIN[chain.id] !== undefined);
+const allBridgeChains = [...CHAINS, ...MAINNET_CHAINS];
+const chainName = (id: number) => allBridgeChains.find((chain) => chain.id === id)?.name || `Chain ${id}`;
+const chainExplorer = (id: number) => ({
+  11155111: "https://sepolia.etherscan.io", 421614: "https://sepolia.arbiscan.io", 84532: "https://sepolia.basescan.org", 43113: "https://testnet.snowtrace.io", 11155420: "https://sepolia-optimism.etherscan.io", 80002: "https://amoy.polygonscan.com", [ARC.id]: ARC.explorer,
+  1: "https://etherscan.io", 42161: "https://arbiscan.io", 10: "https://optimistic.etherscan.io", 8453: "https://basescan.org", [ARC_MAINNET.id]: ARC_MAINNET.explorer,
+} as Record<number, string>)[id] || ARC.explorer;
+// Manual "add a claim" only offers mainnet — matches the live Bridge page,
+// which no longer surfaces testnet as an option. chainName/chainExplorer
+// above still resolve testnet ids so an older pending/history entry from
+// before this change still displays correctly.
+const mainnetBridgeableChains = MAINNET_CHAINS.filter((chain) => CCTP_DOMAIN[chain.id] !== undefined);
+
+function formatCountdown(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function attestationEta(item: PendingClaim, att: Attestation | null | undefined, now: number) {
+  if (att?.ready) return "Attestation ready · relayer normally mints within 30 seconds";
+  if (att?.status === "pending_confirmations") {
+    const countdown = attestationCountdown(item, now);
+    if (countdown.delayed) {
+      return "Taking longer than usual · still checking Circle every 15 seconds";
+    }
+    return `Estimated readiness in ${formatCountdown(countdown.remainingSeconds)} · claim unlocks immediately when ready`;
+  }
+  if (att?.status) return `Circle status: ${att.status.replaceAll("_", " ")} · checking every 15 seconds`;
+  return "Checking Circle every 15 seconds · no need to submit another bridge";
+}
 
 export default function BridgeClaim({ account, activeProvider, onConnect, reloadSignal }: Props) {
   const [queue, setQueue] = useState<PendingClaim[]>([]);
@@ -59,10 +99,22 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
   const [status, setStatus] = useState("");
   const [manual, setManual] = useState(false);
   const [hash, setHash] = useState("");
-  const [fromChainId, setFromChainId] = useState<number>(bridgeableChains.find((c) => /arc/i.test(c.name))?.id ?? bridgeableChains[0].id);
-  const [toChainId, setToChainId] = useState<number>(bridgeableChains.find((c) => !/arc/i.test(c.name))?.id ?? bridgeableChains[0].id);
+  const [fromChainId, setFromChainId] = useState<number>(mainnetBridgeableChains.find((c) => /arc/i.test(c.name))?.id ?? mainnetBridgeableChains[0].id);
+  const [toChainId, setToChainId] = useState<number>(mainnetBridgeableChains.find((c) => !/arc/i.test(c.name))?.id ?? mainnetBridgeableChains[0].id);
+  const [now, setNow] = useState(Date.now());
 
-  const reloadLocal = useCallback(() => { setQueue(account ? loadPendingClaims(account) : []); setHistory(account ? loadBridgeHistory(account) : []); }, [account]);
+  useEffect(() => {
+    if (!queue.length) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [queue.length]);
+
+  const reloadLocal = useCallback(() => {
+    const isMainnetItem = (item: PendingClaim) =>
+      isMainnetBridgeChainId(item.fromChainId) && isMainnetBridgeChainId(item.toChainId);
+    setQueue(account ? loadPendingClaims(account).filter(isMainnetItem) : []);
+    setHistory(account ? loadBridgeHistory(account).filter(isMainnetItem) : []);
+  }, [account]);
   useEffect(() => { reloadLocal(); }, [reloadLocal, reloadSignal]);
   useEffect(() => {
     if (!account) return;
@@ -72,6 +124,7 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
       .then((data: { history?: Array<BridgeHistoryItem & { attestationReady?: boolean }> }) => {
         if (!alive) return;
         for (const item of data.history || []) {
+          if (!isMainnetBridgeChainId(item.fromChainId) || !isMainnetBridgeChainId(item.toChainId)) continue;
           if (item.status === "pending") savePendingClaim(account, item);
           else recordBridgeHistory(account, item);
         }
@@ -108,7 +161,7 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
       setStatus(`Switching to ${chainName(target.toChainId)}…`);
       await switchOrAddChain(activeProvider, target.toChainId);
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
-      const transmitter = new Contract(MESSAGE_TRANSMITTER_V2, MESSAGE_TRANSMITTER_ABI, signer);
+      const transmitter = new Contract(messageTransmitterFor(target.toChainId), MESSAGE_TRANSMITTER_ABI, signer);
       setStatus(`Claiming on ${chainName(target.toChainId)} — confirm in your wallet.`);
       const tx = await transmitter.receiveMessage(ready.message, ready.attestation, { gasLimit: 350000n });
       await tx.wait();
@@ -170,9 +223,10 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
               <b>{item.amount ? `${formatUnits(BigInt(item.amount), 6)} USDC` : "USDC"}</b>
               <small>{chainName(item.fromChainId)} → {chainName(item.toChainId)} · {item.burnHash.slice(0, 8)}…{item.burnHash.slice(-4)}</small>
               {att && <span className={att.ready ? "claim-ready" : "claim-wait"}>{att.ready ? "● Ready" : `● ${att.status}`}</span>}
+              <small className="bridge-claim-eta">{attestationEta(item, att, now)}</small>
             </div>
-            <button type="button" className="primary bridge-claim-cta" disabled={busyHash !== null} onClick={() => claim(item)}>
-              {rowBusy ? "Working…" : !account ? "Connect" : `Claim on ${chainName(item.toChainId)}`}
+            <button type="button" className="primary bridge-claim-cta" disabled={busyHash !== null || (!!account && !att?.ready)} onClick={() => claim(item)}>
+              {rowBusy ? "Working…" : !account ? "Connect" : !att?.ready ? "Waiting for Circle" : `Claim on ${chainName(item.toChainId)}`}
             </button>
           </div>
         );
@@ -185,10 +239,10 @@ export default function BridgeClaim({ account, activeProvider, onConnect, reload
           </label>
           <div className="bridge-claim-route">
             <label>From
-              <ChainSelect value={fromChainId} options={bridgeableChains.map((c) => ({ id: c.id, name: c.name }))} onChange={setFromChainId} ariaLabel="Source network" />
+              <ChainSelect value={fromChainId} options={mainnetBridgeableChains.map((c) => ({ id: c.id, name: c.name }))} onChange={setFromChainId} ariaLabel="Source network" />
             </label>
             <label>To
-              <ChainSelect value={toChainId} options={bridgeableChains.map((c) => ({ id: c.id, name: c.name }))} onChange={setToChainId} ariaLabel="Destination network" />
+              <ChainSelect value={toChainId} options={mainnetBridgeableChains.map((c) => ({ id: c.id, name: c.name }))} onChange={setToChainId} ariaLabel="Destination network" />
             </label>
           </div>
           <button type="button" className="primary bridge-claim-cta" onClick={addManual}>Add to claim queue</button>

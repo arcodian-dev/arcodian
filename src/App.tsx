@@ -12,9 +12,12 @@ import {
 } from "ethers";
 import {
   ARC,
+  ARC_MAINNET,
   BRIDGE_FEE_BPS,
+  CCTP_MAINNET_FEE_ROUTER,
   CHAINS,
   FEE_TREASURY,
+  MAINNET_CHAINS,
   MAINNET_DEPLOY,
   SWAP_FEE_BPS,
   TOKENS,
@@ -27,13 +30,28 @@ import { ARC_PUMP_SUITE_ABI } from "./generated/arcPumpSuite";
 import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
-import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchCctpFee, savePendingClaim } from "./bridgeRecovery";
+import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchCctpFee, savePendingClaim, tokenMessengerFor } from "./bridgeRecovery";
 import { canonicalRedirect, isWalletAppRoute } from "./routeIntegrity";
 
-// Circle CCTP v2 TokenMessenger — deterministic across all testnet chains.
-const TOKEN_MESSENGER_V2 = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA";
+// Every chain the bridge can move USDC between, testnet and real mainnet
+// together. Looking a chain up must search both — a plain CHAINS.find(...)
+// silently returns undefined for any mainnet chain id.
+const ALL_BRIDGE_CHAINS = [...CHAINS, ...MAINNET_CHAINS];
+const findBridgeChain = (id: number) => ALL_BRIDGE_CHAINS.find((chain) => chain.id === id);
+const isMainnetBridgeChain = (id: number) => id === ARC_MAINNET.id || MAINNET_CHAINS.some((chain) => chain.id === id);
+
+// Both signatures here previously (wrongly) declared a uint64 return value.
+// Harmless for ethers when only ever used to send a transaction (it doesn't
+// try to decode a return value off a mined tx) — but the real mainnet and
+// testnet TokenMessengerV2.depositForBurn both return nothing (verified
+// against their deployed, verified implementation ABIs), and ArcBridgeRouter
+// itself made this exact mistake as a Solidity interface, which DOES revert
+// at the EVM level on empty return data. Kept accurate here too.
 const TOKEN_MESSENGER_ABI = [
-  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold) returns (uint64)",
+  "function depositForBurn(uint256 amount,uint32 destinationDomain,bytes32 mintRecipient,address burnToken,bytes32 destinationCaller,uint256 maxFee,uint32 minFinalityThreshold)",
+];
+const BRIDGE_FEE_ROUTER_ABI = [
+  "function bridge(uint256 grossAmount,uint32 destinationDomain,bytes32 mintRecipient,uint256 maxFee,uint32 minFinalityThreshold)",
 ];
 const CCTP_USDC_ABI = [
   "function approve(address,uint256) returns(bool)",
@@ -69,8 +87,10 @@ const Developers = lazy(() => import("./pages/Developers"));
 const BridgeClaim = lazy(() => import("./components/BridgeClaim"));
 const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
 const AgentProfile = lazy(() => import("./pages/AgentProfile"));
+const AgentsIndex = lazy(() => import("./pages/AgentsIndex"));
+const TradingTerminal = lazy(() => import("./pages/TradingTerminal"));
 
-type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "jobs" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
+type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "jobs" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "terminal" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -80,9 +100,11 @@ const CHAIN_NAMES: Record<number, string> = {
   8453: "Base",
   84532: "Base Sepolia",
   43113: "Avalanche Fuji",
+  10: "Optimism",
   11155420: "OP Sepolia",
   80002: "Polygon Amoy",
   [ARC.id]: ARC.name,
+  [ARC_MAINNET.id]: ARC_MAINNET.name,
 };
 
 function circleBridgeFailure(result: { steps?: Array<{ name?: string; state?: string; errorMessage?: string; error?: unknown }> }) {
@@ -129,7 +151,7 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
-const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "fx", "profile", "how", "faq", "contracts"] as const;
+const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "terminal", "fx", "profile", "how", "faq", "contracts"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -142,7 +164,7 @@ function initialTab(): Tab {
     window.history.replaceState({}, "", "/");
     return "screener";
   }
-  if (segment === "market" || segment === "explore" || segment === "launch" || segment === "coin")
+  if (segment === "market" || segment === "explore" || segment === "launch" || segment === "launchpad" || segment === "coin")
     return "screener";
   if (segment === "docs") return "how";
   if (segment === "faq") {
@@ -164,15 +186,50 @@ export default function App() {
   const readiness = mainnetReadiness(MAINNET_DEPLOY);
   const [tab, setTab] = useState<Tab>(initialTab);
   const [account, setAccount] = useState("");
-  const [fromChain, setFromChain] = useState<number>(11155111);
-  const [toChain, setToChain] = useState<number>(ARC.id);
+  // Bridge defaults to real mainnet now that Arc Mainnet is live — testnet
+  // stays fully working in the code (Wallet/Lend/Market still run on it) but
+  // is no longer the default or an offered option on the public Bridge page.
+  const [fromChain, setFromChain] = useState<number>(1); // Ethereum
+  const [toChain, setToChain] = useState<number>(ARC_MAINNET.id);
   const [fromToken, setFromToken] = useState<string>(TOKENS[0].address);
   const [toToken, setToToken] = useState<string>(TOKENS[1].address);
   const [amount, setAmount] = useState("100");
   const [bridgeEstimate, setBridgeEstimate] = useState<BridgeEstimateView | null>(null);
   const [bridgeRetryResult, setBridgeRetryResult] = useState<unknown>(null);
   const [bridgeRecoveryHash, setBridgeRecoveryHash] = useState("");
-  const [bridgeRecoveryStatus, setBridgeRecoveryStatus] = useState("");
+  const [bridgeStats, setBridgeStats] = useState<{ outOfArc: { grossUsd: number; txCount: number }; intoArc: { grossUsd: number; txCount: number }; totalFeeUsd: number; totalTxCount: number; indexedAt: string } | null>(null);
+  useEffect(() => {
+    // Server-side snapshot (arcodian-bridge-stats.timer, every 5 min) —
+    // the browser never queries all 5 chains' RPCs directly for this, since
+    // Arc's own RPC rate-limits under concurrent load (hit 429s repeatedly
+    // during manual load-testing 2026-07-31).
+    let cancelled = false;
+    const load = () => fetch("/data/bridge-stats.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).then((data) => { if (!cancelled && data) setBridgeStats(data); }).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
+  const [mainnetRpcDown, setMainnetRpcDown] = useState(false);
+  useEffect(() => {
+    // arc-rpc.stakeme.pro (the only Arc Mainnet RPC we have — no official
+    // Circle endpoint is public yet) has gone down before with no warning
+    // (2026-07-31 CORS misconfig, 2026-08-01 the upstream Alchemy app had
+    // its ARC_MAINNET network disabled entirely, 403 on every call). This
+    // is a real, live-changing upstream condition — poll for it instead of
+    // hardcoding a banner someone has to remember to remove once it recovers.
+    let cancelled = false;
+    const check = () => fetch("/api/rpc-mainnet.php", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+    })
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setMainnetRpcDown(Boolean(data?.error)); })
+      .catch(() => { if (!cancelled) setMainnetRpcDown(true); });
+    check();
+    const timer = window.setInterval(check, 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [wallets, setWallets] = useState<WalletOption[]>([]);
@@ -206,6 +263,29 @@ export default function App() {
   }, [account]);
 
   useEffect(() => {
+    // The nav-group dropdowns are plain <details>/<summary> — native, but
+    // native means they only close by clicking their own summary again.
+    // There's no click-outside-to-close and no auto-close after picking an
+    // item, so a dropdown stayed stuck open until you clicked it a second
+    // time. Close every open one on any click that lands outside it, and
+    // close the specific one a fraction of a second after picking an item
+    // inside it (letting the item's own onClick/navigation fire first).
+    const onDocumentClick = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      const group = target.closest<HTMLDetailsElement>(".nav-group");
+      if (!group) {
+        document.querySelectorAll<HTMLDetailsElement>(".nav-group[open]").forEach((el) => { el.open = false; });
+        return;
+      }
+      if (target.closest("button, a") && !target.closest("summary")) {
+        window.setTimeout(() => { group.open = false; }, 120);
+      }
+    };
+    document.addEventListener("click", onDocumentClick);
+    return () => document.removeEventListener("click", onDocumentClick);
+  }, []);
+
+  useEffect(() => {
     const ref = new URLSearchParams(window.location.search).get("ref");
     if (!ref || !/^0x[a-fA-F0-9]{40}$/.test(ref)) return;
     void fetch("/api/referral.php", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ref }), keepalive: true }).catch(() => undefined);
@@ -235,7 +315,17 @@ export default function App() {
     };
     window.addEventListener("eip6963:announceProvider", announce);
     window.dispatchEvent(new Event("eip6963:requestProvider"));
-    if (window.ethereum) {
+    // window.ethereum isn't always present the instant this effect runs —
+    // mobile in-app wallet browsers (OKX's included) often inject it a beat
+    // after the page's own scripts start, especially the first load after a
+    // cold app launch. A single synchronous check here missed that window
+    // entirely: the wallet was really there, it just hadn't attached yet, so
+    // it silently never appeared in "Choose your wallet" (reported 2026-07-31
+    // as OKX not showing up at all). Now retries for a few seconds and also
+    // listens for the de-facto `ethereum#initialized` event wallets dispatch
+    // once they've attached.
+    const registerLegacy = () => {
+      if (!window.ethereum) return false;
       const provider = window.ethereum;
       const name =
         provider.isOkxWallet || provider.isOKExWallet
@@ -256,6 +346,20 @@ export default function App() {
         provider,
       });
       publish();
+      return true;
+    };
+    if (!registerLegacy()) {
+      window.addEventListener("ethereum#initialized", registerLegacy, { once: true });
+      let attempts = 0;
+      const poll = window.setInterval(() => {
+        attempts += 1;
+        if (registerLegacy() || attempts >= 10) window.clearInterval(poll);
+      }, 300);
+      return () => {
+        window.removeEventListener("eip6963:announceProvider", announce);
+        window.removeEventListener("ethereum#initialized", registerLegacy);
+        window.clearInterval(poll);
+      };
     }
     return () =>
       window.removeEventListener("eip6963:announceProvider", announce);
@@ -289,11 +393,18 @@ export default function App() {
   const host = typeof window !== "undefined" ? window.location.hostname : "";
   const selectedFrom = TOKENS.find((t) => t.address === fromToken) || TOKENS[0];
   const selectedTo = TOKENS.find((t) => t.address === toToken) || TOKENS[1];
-  const bridgeFrom =
-    CHAINS.find((chain) => chain.id === fromChain) || CHAINS[0];
-  const bridgeTo = CHAINS.find((chain) => chain.id === toChain) || CHAINS[3];
-  const bridgePeers = CHAINS.filter((chain) => chain.id !== ARC.id);
-  const bridgeFromArc = fromChain === ARC.id;
+  const bridgeFrom = findBridgeChain(fromChain) || CHAINS[0];
+  const bridgeTo = findBridgeChain(toChain) || CHAINS[3];
+  // Which Arc network the bridge is currently pointed at — real mainnet if
+  // either side is Arc Mainnet, otherwise testnet (the default). Peers are
+  // scoped to the same environment so a route never mixes a mainnet chain
+  // with Arc Testnet or vice versa (testnet and mainnet CCTP are separate
+  // Circle deployments; mixing them would burn real funds toward a domain
+  // number that resolves to the wrong environment on the destination side).
+  const arcNetworkMode: "testnet" | "mainnet" = fromChain === ARC_MAINNET.id || toChain === ARC_MAINNET.id ? "mainnet" : "testnet";
+  const activeArcId = arcNetworkMode === "mainnet" ? ARC_MAINNET.id : ARC.id;
+  const bridgePeers = (arcNetworkMode === "mainnet" ? MAINNET_CHAINS : CHAINS).filter((chain) => chain.id !== activeArcId);
+  const bridgeFromArc = fromChain === activeArcId;
   const canQuote = Boolean(account && Number(amount) > 0 && (!isSwap || fromToken.toLowerCase() !== toToken.toLowerCase()));
 
   async function connect(option?: WalletOption) {
@@ -427,6 +538,11 @@ export default function App() {
 
   async function circleBridgeContext() {
     if (!activeProvider || fromChain === toChain) throw new Error(fromChain === toChain ? "Choose two different networks." : "Connect a wallet first.");
+    // Circle's App Kit SDK does not list Arc Mainnet as a supported bridge
+    // chain yet (its BridgeChainIdentifier type has no "Arc" entry, only
+    // "Arc_Testnet") — this whole estimate path is testnet-only. The direct
+    // manual burn in bridgeWithCircle doesn't use this SDK and works on both.
+    if (arcNetworkMode === "mainnet") throw new Error("Estimate isn't available yet for Arc Mainnet — Circle's SDK doesn't list it as a known chain. Use Bridge directly instead; it doesn't depend on this estimate.");
     const [{ AppKit }, { createViemAdapterFromProvider }] = await Promise.all(
       [import("@circle-fin/app-kit"), import("@circle-fin/adapter-viem-v2")],
     );
@@ -481,14 +597,32 @@ export default function App() {
   async function bridgeWithCircle() {
     if (!activeProvider) { setStatus("Connect a wallet first."); return; }
     if (fromChain === toChain) { setStatus("Choose two different networks."); return; }
-    const from = CHAINS.find((chain) => chain.id === fromChain);
-    const to = CHAINS.find((chain) => chain.id === toChain);
+    const from = findBridgeChain(fromChain);
+    const to = findBridgeChain(toChain);
     if (!from || !to) { setStatus("Unsupported bridge network."); return; }
     if (CCTP_DOMAIN[from.id] === undefined || CCTP_DOMAIN[to.id] === undefined) {
       setStatus("This route is not supported by Circle CCTP."); return;
     }
+    const tokenMessenger = tokenMessengerFor(from.id);
+    const feeRouter = CCTP_MAINNET_FEE_ROUTER[from.id];
+    if (isMainnetBridgeChain(from.id) && !feeRouter) {
+      setStatus(`${from.name} is temporarily unavailable while its 1.5% fee router is being deployed.`);
+      return;
+    }
+    const spender = feeRouter || tokenMessenger;
     const value = parseUnits(amount || "0", 6); // CCTP USDC is 6-decimal
     if (value <= 0n) { setStatus("Enter an amount to bridge."); return; }
+    // Circle's own TokenMinter.burnLimitsPerMessage for USDC out of Arc is
+    // capped at 1,000,000 (1 USDC) right now — confirmed live on-chain
+    // 2026-07-31, not something we control. Burns above that revert with
+    // "Burn amount exceeds per tx limit" deep in TokenMessenger, which reads
+    // as a broken app rather than a network-side rollout limit. Cap here so
+    // the message is clear instead of a raw revert; remove once Circle
+    // raises the limit for Arc.
+    if (from.id === ARC_MAINNET.id && value > 1_000_000n) {
+      setStatus("Arc Mainnet's CCTP burn limit is capped at 1 USDC per transaction right now (Circle's own network-side limit, not ours) — bridge in 1 USDC steps until Circle raises it.");
+      return;
+    }
 
     setBusy(true);
     setStatus(`Switching to ${from.name}…`);
@@ -498,23 +632,45 @@ export default function App() {
         await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: sourceHex }] });
       } catch (switchError) {
         const code = (switchError as { code?: number })?.code;
-        if (code === 4902 && from.id === ARC.id) {
-          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: ARC.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC.rpc], blockExplorerUrls: [ARC.explorer] }] });
+        if (code === 4902 && (from.id === ARC.id || from.id === ARC_MAINNET.id)) {
+          const arcNet = from.id === ARC_MAINNET.id ? ARC_MAINNET : ARC;
+          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: arcNet.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [arcNet.rpc], blockExplorerUrls: [arcNet.explorer] }] });
+        } else if (code === 4902 && MAINNET_CHAINS.some((c) => c.id === from.id)) {
+          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: from.name, nativeCurrency: { name: from.gasSymbol, symbol: from.gasSymbol, decimals: 18 }, rpcUrls: [from.rpc] }] });
         } else if (code === 4001) { setStatus("Network switch was rejected. Approve it to continue."); setBusy(false); return; }
         else if (code === 4902) { setStatus(`Add ${from.name} to your wallet, then try again.`); setBusy(false); return; }
+      }
+      // wallet_switchEthereumChain can resolve before the wallet's own
+      // provider has actually finished rotating — building a signer right
+      // after and sending it straight to depositForBurn then sends a
+      // chain-8453-shaped (or whichever) transaction to a node still on the
+      // old network, which several public RPCs reject outright as a
+      // malformed/"Bad Request" call rather than a normal revert. Poll
+      // eth_chainId until the wallet actually confirms the new network
+      // before touching any contract.
+      let confirmedChainId = "";
+      for (let i = 0; i < 10; i++) {
+        confirmedChainId = String(await activeProvider.request({ method: "eth_chainId" }));
+        if (confirmedChainId.toLowerCase() === sourceHex.toLowerCase()) break;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+      if (confirmedChainId.toLowerCase() !== sourceHex.toLowerCase()) {
+        setStatus(`Your wallet is still on a different network than ${from.name}. Switch to ${from.name} in your wallet, then try again.`);
+        setBusy(false);
+        return;
       }
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
       const owner = await signer.getAddress();
 
       const usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
-      const allowance: bigint = await usdc.allowance(owner, TOKEN_MESSENGER_V2);
+      const allowance: bigint = await usdc.allowance(owner, spender);
       if (allowance < value) {
         setStatus(`Approving USDC on ${from.name}…`);
-        const approval = await usdc.approve(TOKEN_MESSENGER_V2, value, { gasLimit: 120000n });
+        const approval = await usdc.approve(spender, value, { gasLimit: 120000n });
         await approval.wait();
       }
 
-      const messenger = new Contract(TOKEN_MESSENGER_V2, TOKEN_MESSENGER_ABI, signer);
+      const messenger = new Contract(feeRouter || tokenMessenger, feeRouter ? BRIDGE_FEE_ROUTER_ABI : TOKEN_MESSENGER_ABI, signer);
       const fee = await fetchCctpFee(from.id, to.id);
       const fastFee = value / 100n > 0n ? value / 100n : 1n; // 1% ceiling (cap only)
       const attempts: Array<{ maxFee: bigint; threshold: number }> = [];
@@ -526,7 +682,9 @@ export default function App() {
       let lastError: unknown;
       for (let i = 0; i < attempts.length; i++) {
         try {
-          tx = await messenger.depositForBurn(value, CCTP_DOMAIN[to.id], zeroPadValue(owner, 32), from.token, ZeroHash, attempts[i].maxFee, attempts[i].threshold, { gasLimit: 300000n });
+          tx = feeRouter
+            ? await messenger.bridge(value, CCTP_DOMAIN[to.id], zeroPadValue(owner, 32), attempts[i].maxFee, attempts[i].threshold, { gasLimit: 420000n })
+            : await messenger.depositForBurn(value, CCTP_DOMAIN[to.id], zeroPadValue(owner, 32), from.token, ZeroHash, attempts[i].maxFee, attempts[i].threshold, { gasLimit: 300000n });
           await tx.wait();
           break;
         } catch (burnError) {
@@ -561,41 +719,6 @@ export default function App() {
     finally { setBusy(false); }
   }
 
-  async function recoverCircleBurn() {
-    const hash = bridgeRecoveryHash.trim();
-    if (!activeProvider || !account) { setBridgeRecoveryStatus("Connect the original bridge wallet first."); return; }
-    if (!/^0x[a-fA-F0-9]{64}$/.test(hash)) { setBridgeRecoveryStatus("Enter the Arc source burn transaction hash."); return; }
-    setBusy(true); setBridgeRecoveryStatus("Verifying the source burn and fetching Circle attestation…");
-    try {
-      const source = CHAINS.find((chain) => chain.id === fromChain), destination = CHAINS.find((chain) => chain.id === toChain);
-      if (!source || !destination || source.id !== ARC.id) throw new Error("Recovery currently accepts an Arc source burn and an EVM testnet destination.");
-      const sourceProvider = new JsonRpcProvider(source.rpc, undefined, { staticNetwork: true, batchMaxCount: 1 });
-      try {
-        const tx = await sourceProvider.getTransaction(hash), receipt = await sourceProvider.getTransactionReceipt(hash);
-        if (!receipt || receipt.status !== 1) throw new Error("The source burn is not confirmed on Arc.");
-        if (!tx || tx.from.toLowerCase() !== account.toLowerCase()) throw new Error("This burn was not submitted by the connected wallet.");
-      } finally { sourceProvider.destroy(); }
-      const [{ CCTPV2BridgingProvider }, { createViemAdapterFromProvider }] = await Promise.all([import("@circle-fin/provider-cctp-v2"), import("@circle-fin/adapter-viem-v2")]);
-      const adapter = await createViemAdapterFromProvider({ provider: activeProvider as never });
-      const cctp = new CCTPV2BridgingProvider();
-      const supported = (cctp as unknown as { supportedChains: Array<{ chainId?: number }> }).supportedChains;
-      const sourceDefinition = supported.find((chain) => chain.chainId === source.id), destinationDefinition = supported.find((chain) => chain.chainId === destination.id);
-      if (!sourceDefinition || !destinationDefinition) throw new Error("Circle does not expose this recovery route.");
-      const sourceContext = { adapter, address: account, chain: sourceDefinition };
-      const destinationContext = { adapter, address: account, chain: destinationDefinition };
-      const attestation = await cctp.fetchAttestation(sourceContext as never, hash);
-      setBridgeRecoveryStatus(`Bridge found. Confirm one final transaction on ${destination.name}. No USDC will be burned again.`);
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: `0x${destination.id.toString(16)}` }] });
-      const prepared = await cctp.mint(sourceContext as never, destinationContext as never, attestation);
-      const mintHash = await prepared.execute();
-      const destinationProvider = new BrowserProvider(activeProvider as never);
-      await destinationProvider.waitForTransaction(mintHash);
-      setBridgeRecoveryStatus(`Bridge completed. Your USDC is now available on ${destination.name}. Transaction: ${mintHash}`);
-      setBridgeRetryResult(null); localStorage.removeItem(`arcodian-bridge-recovery:${account.toLowerCase()}`);
-    } catch (error) { setBridgeRecoveryStatus(friendlySdkError(error)); }
-    finally { setBusy(false); }
-  }
-
   function chooseTab(next: Tab) {
     setTab(next);
     setCoinAddress("");
@@ -607,9 +730,12 @@ export default function App() {
     if (next === "swap") {
       setFromChain(ARC.id);
       setToChain(ARC.id);
-    } else if (next === "bridge" && fromChain === ARC.id && toChain === ARC.id) {
-      setFromChain(CHAINS[0].id);
-      setToChain(ARC.id);
+    } else if (next === "bridge" && !(isMainnetBridgeChain(fromChain) && isMainnetBridgeChain(toChain))) {
+      // Landing on Bridge from anywhere that left it on a testnet pairing
+      // (e.g. straight from Swap, which runs on Arc Testnet) snaps back to
+      // mainnet — the public Bridge page no longer offers testnet at all.
+      setFromChain(MAINNET_CHAINS.find((c) => c.id !== ARC_MAINNET.id)!.id);
+      setToChain(ARC_MAINNET.id);
     }
   }
 
@@ -660,6 +786,16 @@ export default function App() {
     );
   }
 
+  if (window.location.pathname === "/agents") {
+    return (
+      <main className="agent-profile-app">
+        <Suspense fallback={<div className="loading-board route-fallback">Loading agents…</div>}>
+          <AgentsIndex />
+        </Suspense>
+      </main>
+    );
+  }
+
   const agentMatch = window.location.pathname.match(/^\/agent\/(\d+)/);
   if (agentMatch) {
     return (
@@ -688,6 +824,13 @@ export default function App() {
     </Suspense>;
   }
 
+  if (tab === "terminal") {
+    return <Suspense fallback={<div className="loading-board route-fallback">Opening Trading Terminal…</div>}>
+      <TradingTerminal account={account} activeProvider={activeProvider} chainId={chainId} connect={() => connect()} />
+      {walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect} />}
+    </Suspense>;
+  }
+
   return (
     <main className={tab === "home" ? "app-home" : undefined}>
       <nav className="nav">
@@ -696,11 +839,12 @@ export default function App() {
           <span className="brand-name">ARCODIAN<small>ARC MARKETS</small></span>
         </button>
         <div className="nav-links">
-          <details className={`nav-group ${["wallet", "swap", "bridge", "arcpay", "fx"].includes(tab) ? "active" : ""}`}>
+          <details className={`nav-group ${["wallet", "swap", "terminal", "bridge", "arcpay", "fx"].includes(tab) ? "active" : ""}`}>
             <summary>Product <i>⌄</i></summary>
             <div>
               <a href={navHref("wallet", host) || "/wallet"}><b>Wallet</b><small>Self-custody on Arc</small></a>
               <button onClick={() => chooseTab("swap")}><b>Swap</b><small>Trade Arc assets</small></button>
+              <button onClick={() => chooseTab("terminal")}><b>Trading Terminal</b><small>Full-screen market desk</small></button>
               <button onClick={() => chooseTab("bridge")}><b>Bridge</b><small>Move USDC over CCTP</small></button>
               <button onClick={() => chooseTab("arcpay")}><b>Pay</b><small>Exact-value invoices</small></button>
               <button onClick={() => chooseTab("fx")}><b>Stablecoin FX</b><small>USDC ⇄ EURC</small></button>
@@ -710,6 +854,7 @@ export default function App() {
             <summary>Market <i>⌄</i></summary>
             <div>
               <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
+              <button onClick={openCreateStudio}><b>Launchpad</b><small>Create a coin on Arc Mainnet</small></button>
               <a href="https://lend.arcodian.fun/"><b>Lend</b><small>Supply and borrow</small></a>
             </div>
           </details>
@@ -718,6 +863,7 @@ export default function App() {
             <div>
               <button onClick={() => chooseTab("agentpay")}><b>Agent Pay</b><small>Bounded agent spending</small></button>
               <button onClick={() => chooseTab("jobs")}><b>Jobs</b><small>Outcome escrow</small></button>
+              <a href="/agents"><b>Agents</b><small>Browse the directory</small></a>
             </div>
           </details>
           <details className={`nav-group ${["how", "contracts", "faq", "canary", "analytics", "treasury", "developers"].includes(tab) ? "active" : ""}`}>
@@ -835,7 +981,7 @@ export default function App() {
       ) : tab === "wallet" ? (
         <WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} />
       ) : tab === "arcpay" ? (
-        <ArcPayLanding account={account} activeProvider={activeProvider} connect={() => connect()} />
+        <ArcPayLanding account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
       ) : tab === "analytics" ? (
         <Analytics />
       ) : tab === "treasury" ? (
@@ -849,6 +995,7 @@ export default function App() {
       ) : tab === "screener" ? (
         <Screener
           account={account}
+          chainId={chainId}
           activeProvider={activeProvider}
           connect={() => connect()}
           coinAddress={coinAddress}
@@ -858,6 +1005,7 @@ export default function App() {
       ) : tab === "profile" ? (
         <Profile
           account={profileAddress || account}
+          chainId={chainId}
           connect={() => connect()}
           chooseCoin={chooseCoin}
         />
@@ -908,14 +1056,15 @@ export default function App() {
               ))}
             </div>
             <Suspense fallback={<div className="loading-board">Loading…</div>}>
-              {dexView === "swap" && <SwapPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
-              {dexView === "pools" && <PoolsPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} initialPair={focusPair} />}
-              {dexView === "create" && <CreatePairPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} />}
+              {dexView === "swap" && <SwapPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} chainId={chainId} />}
+              {dexView === "pools" && <PoolsPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} initialPair={focusPair} chainId={chainId} />}
+              {dexView === "create" && <CreatePairPanel account={account} activeProvider={activeProvider} onConnect={() => connect()} chainId={chainId} />}
               {dexView === "portfolio" && (
                 <PortfolioPanel
                   account={account}
                   onConnect={() => connect()}
                   onManagePool={(pair) => { setFocusPair(pair); setDexView("pools"); }}
+                  chainId={chainId}
                 />
               )}
             </Suspense>
@@ -932,9 +1081,22 @@ export default function App() {
             </h2>
             <p>
               {tab === "bridge"
-                ? "Bridge test USDC between Arc and supported testnets through official Circle rails. Every route starts or ends on Arc."
+                ? "Bridge real USDC between Arc Mainnet and Ethereum, Arbitrum, Optimism, or Base through official Circle rails. Every route starts or ends on Arc."
                 : "Move between official Arc Testnet assets with every address visible before signing."}
             </p>
+            {tab === "bridge" && mainnetRpcDown && (
+              <div className="rpc-incident-banner" role="status">
+                <b>⚠ Arc Mainnet RPC is temporarily down</b>
+                <span>This is an upstream infrastructure issue on Arc Mainnet itself — not an Arcodian bug. Balances, quotes, and transfers may fail until it recovers. Please try again shortly.</span>
+              </div>
+            )}
+            {tab === "bridge" && bridgeStats && (
+              <div className="bridge-stats-strip">
+                <span><b>${bridgeStats.outOfArc.grossUsd.toFixed(2)}</b><small>Bridged out of Arc · {bridgeStats.outOfArc.txCount} tx</small></span>
+                <span><b>${bridgeStats.intoArc.grossUsd.toFixed(2)}</b><small>Bridged into Arc · {bridgeStats.intoArc.txCount} tx</small></span>
+                <span><b>${bridgeStats.totalFeeUsd.toFixed(4)}</b><small>Total protocol fees</small></span>
+              </div>
+            )}
           </div>
 
           <div className="panel">
@@ -971,7 +1133,7 @@ export default function App() {
                 <div className="chain-grid bridge-two-way">
                   <label>
                     From
-                    {bridgeFromArc ? <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div> : <select value={fromChain} onChange={(e) => { setFromChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select>}
+                    {bridgeFromArc ? <div className="fixed-chain"><b>{arcNetworkMode === "mainnet" ? "Arc Mainnet" : "Arc Testnet"}</b><small>Chain {activeArcId} · USDC</small></div> : <select value={fromChain} onChange={(e) => { setFromChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select>}
                   </label>
                   <button type="button" className="route-reverse" aria-label="Reverse bridge direction" onClick={() => {
                     if (bridgeFromArc) { setFromChain(toChain === ARC.id ? bridgePeers[0].id : toChain); setToChain(ARC.id); }
@@ -980,7 +1142,7 @@ export default function App() {
                   }}>⇄<small>Reverse</small></button>
                   <label>
                     To
-                    {bridgeFromArc ? <select value={toChain} onChange={(e) => { setToChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select> : <div className="fixed-chain"><b>Arc Testnet</b><small>Chain 5042002 · USDC</small></div>}
+                    {bridgeFromArc ? <select value={toChain} onChange={(e) => { setToChain(Number(e.target.value)); setBridgeEstimate(null); setBridgeRetryResult(null); }}>{bridgePeers.map((c) => <option value={c.id} key={c.id}>{c.name}</option>)}</select> : <div className="fixed-chain"><b>{arcNetworkMode === "mainnet" ? "Arc Mainnet" : "Arc Testnet"}</b><small>Chain {activeArcId} · USDC</small></div>}
                   </label>
                 </div>
               ) : (
@@ -1068,11 +1230,6 @@ export default function App() {
                   that network's testnet faucet first — otherwise the confirm step stays locked until destination gas is detected.
                 </p>
               )}
-              {tab === "bridge" && (
-                <Suspense fallback={null}>
-                  <BridgeClaim account={account} activeProvider={activeProvider} onConnect={() => connect()} />
-                </Suspense>
-              )}
               {bridgeEstimate && (
                 <div className="quote bridge-estimate">
                   <span>You receive</span>
@@ -1082,8 +1239,10 @@ export default function App() {
                   <details className="bridge-technical-details"><summary>Fee details</summary><small>{bridgeEstimate.fees.length ? bridgeEstimate.fees.map((fee) => `${fee.type}: ${fee.amount ?? "included"} ${sdkTokenLabel(fee.token, "USDC")}`).join(" · ") : "Circle fee included"}</small></details>
                 </div>
               )}
+              {tab === "bridge" && arcNetworkMode === "mainnet" && bridgeFromArc && (
+                <p className="bridge-limit-note"><b>Circle's own network-side limit:</b> bridging out of Arc Mainnet is capped at 1 USDC per transaction right now. This is on Circle's side, not ours — bridge in 1 USDC steps until they raise it.</p>
+              )}
               {bridgeRetryResult && <div className="bridge-recovery-state"><b>Bridge recovery</b>{((bridgeRetryResult as { steps?: Array<{ name?: string; state?: string; txHash?: string }> }).steps || []).map((step, index) => <span key={`${step.name}-${index}`} className={step.state || "pending"}><i>{step.state === "success" ? "✓" : step.state === "error" ? "!" : "…"}</i><small>{step.name || `Step ${index + 1}`}</small><em>{step.state || "pending"}</em>{step.txHash && <a href={`${ARC.explorer}/tx/${step.txHash}`} target="_blank" rel="noreferrer">{short(step.txHash)} ↗</a>}</span>)}</div>}
-              {tab === "bridge" && bridgeFromArc && bridgeRecoveryHash && <section className="bridge-hash-recovery"><b>Complete your previous bridge</b><p>Your Arc transaction already succeeded. Continue the final destination step only—your USDC will not be burned again.</p><button className="secondary" disabled={busy} onClick={() => void recoverCircleBurn()}>{busy ? "Completing bridge…" : "Complete previous bridge"}</button>{bridgeRecoveryStatus && <small>{bridgeRecoveryStatus}</small>}<details><summary>Transaction details</summary><code>{bridgeRecoveryHash}</code></details></section>}
               {status && <p className="status">{status}</p>}
               {bridgeRetryResult && <button className="secondary" disabled={busy} onClick={retryCircleBridge}>{busy ? "Recovering…" : "Resume pending bridge"}</button>}
               {!account ? (
@@ -1145,7 +1304,7 @@ export default function App() {
         <p className="mm-group">Market</p>
         <a href="/screener">Markets</a><a href="https://lend.arcodian.fun/">Lend</a>
         <p className="mm-group">Agent</p>
-        <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a>
+        <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>
         <a href="/developers">Developers</a><a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
         <button className="mm-create" onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
@@ -1164,7 +1323,7 @@ export default function App() {
 
 function RiskAcknowledgement({ accept }: { accept: () => void }) {
   const [checked,setChecked]=useState(false); const [expanded,setExpanded]=useState(false);
-  return <div className="ack-backdrop"><section className="ack-modal" role="dialog" aria-modal="true" aria-labelledby="ack-title"><div className="ack-mark"><BrandMark/></div><p className="kicker">Before you enter</p><h2 id="ack-title">Testnet markets carry real risk—even when the assets do not carry real value.</h2><div className="ack-points"><span><b>Arc Testnet only</b><small>Test USDC and test tokens have no financial value.</small></span><span><b>Permissionless tokens</b><small>Anyone can create one. Verify contracts and social links yourself.</small></span><span><b>Wallet-signed actions</b><small>Transactions are public, final, and initiated only after your confirmation.</small></span></div>{expanded&&<div className="ack-expanded">{FAQ_ITEMS.slice(0,4).map(([q,a])=><p key={q}><strong>{q}</strong><span>{a}</span></p>)}</div>}<button className="ack-more" onClick={()=>setExpanded(v=>!v)}>{expanded?"Hide quick FAQ":"Read quick FAQ"}</button><label className="ack-check"><input type="checkbox" checked={checked} onChange={event=>setChecked(event.target.checked)}/><span>I understand this is Arc Testnet, tokens are permissionless, and I am responsible for reviewing every wallet transaction.</span></label><button className="primary ack-enter" disabled={!checked} onClick={accept}>Agree & enter Arcodian</button><small className="ack-local">Saved only in this browser. No personal acceptance record is sent to the server.</small></section></div>;
+  return <div className="ack-backdrop"><section className="ack-modal" role="dialog" aria-modal="true" aria-labelledby="ack-title"><div className="ack-mark"><BrandMark/></div><p className="kicker">Before you enter</p><h2 id="ack-title">Bridge and Market move real USDC on Arc Mainnet. Everything else here is Arc Testnet.</h2><div className="ack-points"><span><b>Two networks, one app</b><small>Bridge and the USDC-only Market carry real value on Arc Mainnet. Swap, FX, Lend, and the agent-economy tools stay on Arc Testnet, where test USDC has no financial value.</small></span><span><b>Permissionless tokens</b><small>Anyone can create one. Verify contracts and social links yourself.</small></span><span><b>Wallet-signed actions</b><small>Transactions are public, final, and initiated only after your confirmation — check the network your wallet shows before you sign.</small></span></div>{expanded&&<div className="ack-expanded">{FAQ_ITEMS.slice(0,4).map(([q,a])=><p key={q}><strong>{q}</strong><span>{a}</span></p>)}</div>}<button className="ack-more" onClick={()=>setExpanded(v=>!v)}>{expanded?"Hide quick FAQ":"Read quick FAQ"}</button><label className="ack-check"><input type="checkbox" checked={checked} onChange={event=>setChecked(event.target.checked)}/><span>I understand Bridge and Market carry real value on Arc Mainnet, the rest is Arc Testnet, tokens are permissionless, and I am responsible for reviewing every wallet transaction.</span></label><button className="primary ack-enter" disabled={!checked} onClick={accept}>Agree & enter Arcodian</button><small className="ack-local">Saved only in this browser. No personal acceptance record is sent to the server.</small></section></div>;
 }
 
 function WalletModal({

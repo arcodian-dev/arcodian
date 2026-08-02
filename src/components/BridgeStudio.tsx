@@ -1,11 +1,11 @@
 import { Suspense, lazy } from "react";
-import { ARC, CHAINS } from "../config";
+import { ARC_MAINNET, CHAINS, MAINNET_CHAINS } from "../config";
 import ChainSelect from "./ChainSelect";
 import "./BridgeStudio.css";
 
 const BridgeClaim = lazy(() => import("./BridgeClaim"));
 
-type Chain = (typeof CHAINS)[number];
+type Chain = (typeof CHAINS)[number] | (typeof MAINNET_CHAINS)[number];
 type Provider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
 
 type Props = {
@@ -26,7 +26,8 @@ type Props = {
   reloadSignal?: string;
 };
 
-const nameOf = (id: number) => CHAINS.find((c) => c.id === id)?.name.replace(/\s*Testnet$/i, "") || "chain";
+const allBridgeChains = [...CHAINS, ...MAINNET_CHAINS];
+const nameOf = (id: number) => allBridgeChains.find((c) => c.id === id)?.name.replace(/\s*Testnet$/i, "") || "chain";
 
 // Which pipeline stage the transfer is in, read from the live status copy.
 function stageFrom(status: string, busy: boolean): 0 | 1 | 2 | 3 {
@@ -36,6 +37,9 @@ function stageFrom(status: string, busy: boolean): 0 | 1 | 2 | 3 {
   return 0;
 }
 
+// Mainnet only — Arc Mainnet is live, so the public Bridge page no longer
+// offers testnet at all (it still runs fine in the code for Wallet/Lend/
+// Market, which stay on testnet until they have a mainnet counterpart).
 export default function BridgeStudio({
   account, activeProvider, connect, fromChain, toChain, setFromChain, setToChain,
   amount, setAmount, busy, status, onBridge, bridgeFromArc, bridgePeers, reloadSignal,
@@ -45,8 +49,8 @@ export default function BridgeStudio({
   const canBridge = Boolean(account) && Number(amount) > 0 && !sameChain && !busy;
 
   const reverse = () => {
-    if (bridgeFromArc) { setFromChain(toChain === ARC.id ? bridgePeers[0].id : toChain); setToChain(ARC.id); }
-    else { setToChain(fromChain); setFromChain(ARC.id); }
+    if (bridgeFromArc) { setFromChain(toChain === ARC_MAINNET.id ? bridgePeers[0].id : toChain); setToChain(ARC_MAINNET.id); }
+    else { setToChain(fromChain); setFromChain(ARC_MAINNET.id); }
   };
 
   const peerSelect = (value: number, onChange: (id: number) => void) => (
@@ -54,7 +58,7 @@ export default function BridgeStudio({
   );
 
   const arcFace = (
-    <div className="bstudio-arc"><b>Arc Testnet</b><small>USDC-native · gas in USDC</small></div>
+    <div className="bstudio-arc"><b>{ARC_MAINNET.name}</b><small>USDC-native · gas in USDC</small></div>
   );
 
   const stages = [
@@ -69,7 +73,7 @@ export default function BridgeStudio({
         <p className="bstudio-eyebrow">Circle CCTP · burn &amp; mint</p>
         <h2 className="bstudio-title">Bridge USDC<br />across chains</h2>
         <p className="bstudio-sub">
-          Native burn-and-mint over Circle's official rails — not a third-party bridge.
+          Real USDC, real Circle CCTP rails — not a third-party bridge.
           Arcodian moves your wallet to each network for you.
         </p>
       </header>

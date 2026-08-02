@@ -1,18 +1,34 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther } from "ethers";
-import { ARC, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS } from "../config";
+import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { arcProvider, imageUrl, readActivities, short, type LaunchAsset, type WalletActivity } from "../shared";
 
+// Module-level so the reference stays stable across renders — an inline
+// array here would allocate fresh every render and (since the holdings
+// effect depends on it) retrigger an infinite refetch loop, same failure
+// mode fixed in Market.tsx.
+const MAINNET_LEGACY_FACTORIES: string[] = [ARC_MAINNET_CONTRACTS.marketUsdcFactory];
+
 export default function Profile({
   account,
+  chainId,
   connect,
   chooseCoin,
 }: {
   account: string;
+  chainId?: number | null;
   connect: () => void;
   chooseCoin: (address: string) => void;
 }) {
+  // Same default-to-mainnet + V9-primary/V8-legacy split as Market.tsx —
+  // this page was entirely testnet-hardcoded (index file, factories, even a
+  // literal "Arc Testnet" label) until now, so a creator's real mainnet
+  // holdings/launches (ARDN etc.) never showed up here at all.
+  const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9 : PUMP_FACTORY_ADDRESS;
+  const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [holdings, setHoldings] = useState<
     Array<LaunchAsset & { balance: bigint; value: bigint }>
   >([]);
@@ -76,11 +92,11 @@ export default function Profile({
       setHoldings([]);
       return;
     }
-    const provider = arcProvider();
+    const provider = arcProvider(activeArc);
     setLoading(true);
     (async () => {
       const groups = await Promise.all(
-        [PUMP_FACTORY_ADDRESS, ...LEGACY_PUMP_FACTORY_ADDRESSES].map(
+        [activeFactory, ...activeLegacyFactories].map(
           async (factoryAddress) => {
             const factory = new Contract(
               factoryAddress,
@@ -127,9 +143,21 @@ export default function Profile({
                 let inventory: bigint;
                 let pair = "";
                 if (graduated) {
-                  pair = await curve.pair();
-                  const dexPair = new Contract(pair, ["function nativeReserve() view returns(uint256)", "function tokenReserve() view returns(uint256)"], provider);
-                  [reserve, inventory] = await Promise.all([dexPair.nativeReserve(), dexPair.tokenReserve()]);
+                  // V8 curves expose pair() (ArcPair v2-style); V9 curves
+                  // expose pool() (a real Uniswap V3 pool) instead — same
+                  // probe-both fix applied in Market.tsx, since calling the
+                  // wrong one reverts and previously left this whole factory's
+                  // graduated holdings unreadable.
+                  try {
+                    pair = await curve.pair();
+                    const dexPair = new Contract(pair, ["function nativeReserve() view returns(uint256)", "function tokenReserve() view returns(uint256)"], provider);
+                    [reserve, inventory] = await Promise.all([dexPair.nativeReserve(), dexPair.tokenReserve()]);
+                  } catch {
+                    const poolReader = new Contract(curveAddress, ["function pool() view returns(address)"], provider);
+                    pair = await poolReader.pool();
+                    const usdc = new Contract(activeArc.nativeToken, ["function balanceOf(address) view returns(uint256)"], provider);
+                    [inventory, reserve] = await Promise.all([token.balanceOf(pair), usdc.balanceOf(pair)]);
+                  }
                 } else {
                   [reserve, inventory] = await Promise.all([curve.realNativeReserve(), token.balanceOf(curveAddress)]);
                 }
@@ -188,10 +216,10 @@ export default function Profile({
         setLoading(false);
         provider.destroy();
       });
-  }, [account]);
+  }, [account, isMainnet, activeArc, activeFactory, activeLegacyFactories]);
   useEffect(() => {
     if (!account) { setCreated([]); return; }
-    fetch("/data/market-index.json", { cache: "no-store" })
+    fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-store" })
       .then((response) => response.ok ? response.json() : Promise.reject())
       .then((index: { launches: Array<Record<string, unknown>>; arena?: { standings?: Array<{ token: string }> } }) => {
         const makerCoins = index.launches.filter((item) => String(item.creator || "").toLowerCase() === account.toLowerCase()).map((item) => {
@@ -204,7 +232,7 @@ export default function Profile({
         setArenaRank(best === undefined ? null : best + 1);
       })
       .catch(() => { setCreated([]); setArenaRank(null); });
-  }, [account]);
+  }, [account, isMainnet]);
   const total = holdings.reduce((sum, item) => sum + item.value, 0n);
   const creatorVolume = created.reduce((sum, item) => sum + BigInt(item.volume || "0"), 0n);
   const creatorHolders = created.reduce((sum, item) => sum + (item.holderCount || 0), 0);
@@ -262,7 +290,7 @@ export default function Profile({
             </span>
             <span>
               <small>Network</small>
-              <b>Arc Testnet</b>
+              <b>{activeArc.name}</b>
             </span>
             <span>
               <small>Coins created</small>
@@ -283,7 +311,7 @@ export default function Profile({
                   <span className={`activity-kind ${item.kind.toLowerCase()}`}>{item.kind}</span>
                   <span><b>{item.title}</b><small>{item.detail}</small><time>{new Date(item.updatedAt).toLocaleString()}</time></span>
                   <em className={`activity-status ${item.status}`}>{item.status}</em>
-                  {item.txHash ? <a href={`${ARC.explorer}/tx/${item.txHash}`} target="_blank" rel="noreferrer">Explorer ↗</a> : <small>Awaiting transaction hash</small>}
+                  {item.txHash ? <a href={`${activeArc.explorer}/tx/${item.txHash}`} target="_blank" rel="noreferrer">Explorer ↗</a> : <small>Awaiting transaction hash</small>}
                 </article>)}
                 {!activities.length && <div className="loading-board">No Buy or Sell activity recorded for Arcodian-created coins yet.</div>}
               </div>

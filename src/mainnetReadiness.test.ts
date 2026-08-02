@@ -5,9 +5,12 @@ const report = JSON.parse(readFileSync(new URL("../public/developers/mainnet-rea
 
 describe("mainnet readiness report", () => {
   it("fails closed while required production gates remain open", () => {
-    expect(report.decision).toBe("NO_GO");
-    expect(report.currentNetwork.chainId).toBe(5042002);
-    expect(report.gates.filter((gate: { status: string }) => gate.status === "blocked").length).toBeGreaterThanOrEqual(2);
+    // 2026-07-30: Phase 1 (USDC-only contracts) went live on real Arc mainnet
+    // (chain 5042), so the decision legitimately moved off a blanket NO_GO —
+    // but it must still not claim a full GO while independent-audit is open.
+    expect(report.decision).not.toBe("GO");
+    expect(report.currentNetwork.chainId).toBe(5042);
+    expect(report.gates.filter((gate: { status: string }) => gate.status === "blocked").length).toBeGreaterThanOrEqual(1);
   });
 
   it("records governance and independent-audit blockers explicitly", () => {

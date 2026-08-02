@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {BrowserProvider,Contract,formatEther,isAddress} from "ethers";
-import {AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,ARC} from "../config";
+import {AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS} from "../config";
 import {fetchJobsFeed,pinJobDescription,hashRef,budgetValue,type FeedJob,type JobStatus} from "../lib/jobs";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
@@ -13,6 +13,12 @@ const eq=(a:string,b:string)=>Boolean(a&&b&&a.toLowerCase()===b.toLowerCase());
 const STATUS_FILTERS:("All"|JobStatus)[]=["All","Funded","Submitted","Completed","Rejected","Expired"];
 
 export default function Jobs({account,chainId,activeProvider,connect}:Props){
+  const isMainnet=chainId===ARC_MAINNET.id;
+  const activeArc=isMainnet?ARC_MAINNET:ARC;
+  // Mainnet has a live, readable ArcAgentJobs contract but no indexer feed
+  // yet (job-index systemd only watches testnet) — the board below stays
+  // empty on mainnet rather than showing testnet data under a mainnet toggle.
+  const activeJobs=isMainnet?ARC_MAINNET_CONTRACTS.agentJobs:AGENT_JOBS_ADDRESS;
   const [view,setView]=useState<View>("board");
   const [feed,setFeed]=useState<FeedJob[]>([]);
   const [feedLoading,setFeedLoading]=useState(true);
@@ -26,12 +32,12 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
   const [eJobId,setEJobId]=useState("");const [eEvidence,setEEvidence]=useState("");
 
   const [reps,setReps]=useState<Record<string,number>>({});
-  const refresh=useCallback(async()=>{try{setFeed(await fetchJobsFeed());}finally{setFeedLoading(false);}},[]);
+  const refresh=useCallback(async()=>{if(isMainnet){setFeed([]);setFeedLoading(false);return;}try{setFeed(await fetchJobsFeed());}finally{setFeedLoading(false);}},[isMainnet]);
   useEffect(()=>{void refresh();},[refresh,status]);
   useEffect(()=>{fetch("/developers/reputation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(d=>{const m:Record<string,number>={};(d?.agents||[]).forEach((a:any)=>{if(a.agentId)m[String(a.agentId)]=a.score;});setReps(m);}).catch(()=>{});},[]);
 
-  async function signer(){if(!activeProvider){connect();throw new Error("Connect wallet first");}if(chainId!==ARC.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:ARC.hexId}]});throw new Error("Network switched. Review and submit again.");}return new BrowserProvider(activeProvider).getSigner();}
-  async function submit(label:string,fn:(c:Contract)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const c=new Contract(AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,s);const tx=await fn(c);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh();}catch(e){setStatus(describeTxError(e));}finally{setBusy(false);}}
+  async function signer(){if(!activeProvider){connect();throw new Error("Connect wallet first");}if(chainId!==activeArc.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:activeArc.hexId}]});throw new Error("Network switched. Review and submit again.");}return new BrowserProvider(activeProvider).getSigner();}
+  async function submit(label:string,fn:(c:Contract)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const c=new Contract(activeJobs,AGENT_JOBS_ABI,s);const tx=await fn(c);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh();}catch(e){setStatus(describeTxError(e));}finally{setBusy(false);}}
 
   async function createJob(){
     if(!isAddress(cProvider)||!isAddress(cEvaluator)||!cBudget||!cTitle){setStatus("Provider, evaluator, budget and title are required");return;}
@@ -39,7 +45,7 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
     try{
       const {url,hash}=await pinJobDescription({title:cTitle,brief:cBrief,requirements:cReq,deliverableSpec:cSpec,budgetUSDC:cBudget,provider:cProvider,evaluator:cEvaluator});
       const expiry=Math.floor(Date.now()/1000)+Number(cDays||"14")*86400;
-      const s=await signer();const c=new Contract(AGENT_JOBS_ADDRESS,AGENT_JOBS_ABI,s);
+      const s=await signer();const c=new Contract(activeJobs,AGENT_JOBS_ABI,s);
       setStatus(`Description pinned (${url}). Creating job…`);
       const tx=await c.createJob(cProvider,cEvaluator,expiry,hash,BigInt(cAgentId||"0"),budgetValue(cBudget));
       setStatus(`Job creation submitted ${short(tx.hash)}…`);const rc=await tx.wait();
@@ -58,7 +64,7 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
   const totalEscrow=useMemo(()=>feed.reduce((sum,j)=>sum+BigInt(j.budget||"0"),0n),[feed]);
 
   return <main className="agent-pay jobs-page">
-    <header><p>AGENT JOBS · OUTCOME ESCROW</p><h1>Fund the outcome.<br/>Pay on delivery.</h1><span>A shared, permissionless registry: any wallet funds a job in USDC, a provider delivers, and a named evaluator approves — settling 99.7% to the provider (0.3% protocol fee via Arc Pay) — or rejects to refund you. Unlimited clients run concurrently, isolated per job.</span><div><b>LIVE REGISTRY</b><a href={`${ARC.explorer}/address/${AGENT_JOBS_ADDRESS}`} target="_blank" rel="noreferrer">{short(AGENT_JOBS_ADDRESS)} ↗</a></div></header>
+    <header><p>AGENT JOBS · OUTCOME ESCROW</p><h1>Fund the outcome.<br/>Pay on delivery.</h1><span>A shared, permissionless registry: any wallet funds a job in USDC, a provider delivers, and a named evaluator approves — settling 99.7% to the provider (0.3% protocol fee via Arc Pay) — or rejects to refund you. Unlimited clients run concurrently, isolated per job.</span><div><b>LIVE REGISTRY · {isMainnet?"ARC MAINNET":"ARC TESTNET"}</b><a href={`${activeArc.explorer}/address/${activeJobs}`} target="_blank" rel="noreferrer">{short(activeJobs)} ↗</a></div></header>
 
     <section className="jobs-overview" aria-label="Jobs network overview">
       <article><small>JOBS INDEXED</small><strong>{feed.length}</strong><span>Independent escrow records</span></article>
@@ -75,7 +81,7 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
 
     {view==="board"&&<section className="jobs-board">
       <div className="jobs-filters">{STATUS_FILTERS.map(f=><button key={f} className={filter===f?"active":""} onClick={()=>setFilter(f)}>{f}</button>)}</div>
-      {feedLoading?<p className="jobs-empty">Loading jobs…</p>:shown.length===0?<p className="jobs-empty">No jobs {filter==="All"?"yet":`in ${filter}`}. Create the first one.</p>:
+      {feedLoading?<p className="jobs-empty">Loading jobs…</p>:isMainnet?<p className="jobs-empty">Mainnet's registry is live and readable on-chain, but the board's indexer only watches Arc Testnet so far — create/submit/evaluate below still work directly against the mainnet contract.</p>:shown.length===0?<p className="jobs-empty">No jobs {filter==="All"?"yet":`in ${filter}`}. Create the first one.</p>:
         <div className="jobs-table" role="table">
           <div className="jobs-row jobs-head" role="row"><span>Job</span><span>Budget</span><span>Status</span><span>Provider</span><span>Evaluator</span><span>Expiry</span></div>
           {shown.map(j=><a key={j.jobId} className="jobs-row" role="row" href={`/job/${j.jobId}`}>
@@ -120,6 +126,6 @@ export default function Jobs({account,chainId,activeProvider,connect}:Props){
       </section>)}
 
     {status&&<p className="agent-status">{status}</p>}
-    <footer><span>Settlement routes through Arc Pay ({short(AGENT_JOBS_ADDRESS)} escrows funds per job). Not production/mainnet-ready — Arc is testnet.</span><a href="/agentpay">Agent Pay →</a></footer>
+    <footer><span>Settlement routes through Arc Pay ({short(activeJobs)} escrows funds per job).</span><span><a href="/agents">Browse agents →</a> · <a href="/agentpay">Agent Pay →</a></span></footer>
   </main>;
 }

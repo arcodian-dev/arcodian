@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { ARC, CHAINS, TOKENS } from "./config";
+import { getAddress } from "ethers";
+import {
+  ARC,
+  CHAINS,
+  CCTP_MAINNET_MESSAGE_TRANSMITTER_V2,
+  CCTP_MAINNET_TOKEN_MESSENGER_V2,
+  MAINNET_CHAINS,
+  TOKENS,
+} from "./config";
 
 describe("official Arc Testnet configuration", () => {
   it("uses the official chain and RPC", () => {
@@ -21,5 +29,19 @@ describe("official Arc Testnet configuration", () => {
   it("keeps Arc Testnet available to bridge and swap flows", () => {
     expect(CHAINS.some((chain) => chain.id === ARC.id && chain.appKit === "Arc_Testnet")).toBe(true);
     expect(TOKENS.every((token) => token.decimals === 6)).toBe(true);
+  });
+});
+
+describe("mainnet bridge addresses", () => {
+  it("uses addresses accepted by ethers checksum validation", () => {
+    const addresses = [
+      ...MAINNET_CHAINS.map((chain) => chain.token),
+      CCTP_MAINNET_TOKEN_MESSENGER_V2,
+      CCTP_MAINNET_MESSAGE_TRANSMITTER_V2,
+    ];
+
+    for (const address of addresses) {
+      expect(() => getAddress(address)).not.toThrow();
+    }
   });
 });

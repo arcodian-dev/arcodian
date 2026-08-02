@@ -37,7 +37,18 @@ export type MultiRoute = {
   tier: Tier;
 };
 
-export type Route = DirectRoute | MultiRoute;
+export type V3Route = {
+  kind: "v3";
+  out: bigint;
+  path: string[];
+  pool: string;
+  fee: number;
+  router?: string;
+  feeRouter?: string;
+  venue?: string;
+};
+
+export type Route = DirectRoute | MultiRoute | V3Route;
 
 /**
  * How much better a multi-hop route must be before it is preferred, in basis

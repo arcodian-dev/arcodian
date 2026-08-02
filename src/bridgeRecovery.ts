@@ -1,5 +1,5 @@
 import { JsonRpcProvider } from "ethers";
-import { ARC } from "./config";
+import { ARC, CCTP_MAINNET_DOMAIN, CCTP_MAINNET_MESSAGE_TRANSMITTER_V2, CCTP_MAINNET_TOKEN_MESSENGER_V2 } from "./config";
 
 /**
  * Direct CCTP v2 recovery — independent of the bridge SDK.
@@ -12,7 +12,8 @@ import { ARC } from "./config";
  * be claimed and never looks lost.
  */
 
-// CCTP v2 domain IDs (same numbering across testnet and mainnet).
+// CCTP v2 domain IDs (same numbering across testnet and mainnet — but the
+// *contract addresses* differ between the two environments, see below).
 export const CCTP_DOMAIN: Record<number, number> = {
   11155111: 0, // Ethereum Sepolia
   43113: 1, // Avalanche Fuji
@@ -21,19 +22,45 @@ export const CCTP_DOMAIN: Record<number, number> = {
   84532: 6, // Base Sepolia
   80002: 7, // Polygon Amoy
   [ARC.id]: 26, // Arc Testnet
+  ...CCTP_MAINNET_DOMAIN, // Ethereum, Arbitrum One, Optimism, Base, Arc Mainnet — real chain IDs, no collision with the testnet ones above.
 };
 
-// CCTP v2 MessageTransmitterV2 — one deterministic address on every chain.
-export const MESSAGE_TRANSMITTER_V2 = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275";
+const MAINNET_CCTP_CHAIN_IDS = new Set(Object.keys(CCTP_MAINNET_DOMAIN).map(Number));
+const isMainnetChain = (chainId: number) => MAINNET_CCTP_CHAIN_IDS.has(chainId);
+export const isMainnetBridgeChainId = (chainId: number) => isMainnetChain(chainId);
+
+// CCTP v2 MessageTransmitterV2 / TokenMessengerV2 — one deterministic address
+// per environment (testnet vs mainnet are separate deployments; within each
+// environment every chain shares the same address). Verified live on-chain
+// 2026-07-30 for every mainnet chain in CCTP_MAINNET_DOMAIN, including Arc.
+const MESSAGE_TRANSMITTER_V2_TESTNET = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275";
+const TOKEN_MESSENGER_V2_TESTNET = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA";
+export const messageTransmitterFor = (chainId: number) => isMainnetChain(chainId) ? CCTP_MAINNET_MESSAGE_TRANSMITTER_V2 : MESSAGE_TRANSMITTER_V2_TESTNET;
+export const tokenMessengerFor = (chainId: number) => isMainnetChain(chainId) ? CCTP_MAINNET_TOKEN_MESSENGER_V2 : TOKEN_MESSENGER_V2_TESTNET;
+// Back-compat default (testnet) for any caller that hasn't switched to the
+// per-chain helpers above yet.
+export const MESSAGE_TRANSMITTER_V2 = MESSAGE_TRANSMITTER_V2_TESTNET;
 export const MESSAGE_TRANSMITTER_ABI = [
   "function receiveMessage(bytes message, bytes attestation) returns (bool)",
 ];
 
-const IRIS = "https://iris-api-sandbox.circle.com/v2";
+const IRIS_TESTNET = "https://iris-api-sandbox.circle.com/v2";
+const IRIS_MAINNET = "https://iris-api.circle.com/v2";
+const irisFor = (chainId: number) => isMainnetChain(chainId) ? IRIS_MAINNET : IRIS_TESTNET;
 
 export type Attestation = { status: string; ready: boolean; message: string; attestation: string; amount?: string };
 export type PendingClaim = { burnHash: string; fromChainId: number; toChainId: number; amount?: string; recipient?: string; createdAt?: number };
 export type BridgeHistoryItem = PendingClaim & { status: "pending" | "completed" | "failed"; mintHash?: string; updatedAt: number; note?: string };
+
+export function attestationCountdown(claim: PendingClaim, now = Date.now()) {
+  const estimateMs = (claim.fromChainId === 1 ? 25 : 20) * 60 * 1000;
+  const createdAt = claim.createdAt || now;
+  const remainingMs = Math.max(0, createdAt + estimateMs - now);
+  return {
+    remainingSeconds: Math.ceil(remainingMs / 1000),
+    delayed: remainingMs === 0,
+  };
+}
 
 /** Fetch the CCTP message + attestation for a burn. `ready` means the mint can be sent now. */
 export async function fetchCctpAttestation(sourceChainId: number, burnHash: string): Promise<Attestation | null> {
@@ -42,7 +69,8 @@ export async function fetchCctpAttestation(sourceChainId: number, burnHash: stri
     // Same-origin proxy sweeps every CCTP domain server-side, so a burn is found
     // even if the stored source domain is wrong, and browser rate limits are avoided.
     const hint = domain === undefined ? "" : `&domain=${domain}`;
-    const res = await fetch(`https://arcodian.fun/api/attest.php?hash=${burnHash}${hint}`);
+    const env = isMainnetChain(sourceChainId) ? "&env=mainnet" : "";
+    const res = await fetch(`https://arcodian.fun/api/attest.php?hash=${burnHash}${hint}${env}`);
     if (!res.ok) return null;
     const data = await res.json();
     const message = data?.messages?.[0];
@@ -75,7 +103,7 @@ export async function fetchCctpFee(sourceChainId: number, destChainId: number): 
   const source = CCTP_DOMAIN[sourceChainId], dest = CCTP_DOMAIN[destChainId];
   if (source === undefined || dest === undefined) return null;
   try {
-    const res = await fetch(`${IRIS}/burn/USDC/fees/${source}/${dest}`);
+    const res = await fetch(`${irisFor(sourceChainId)}/burn/USDC/fees/${source}/${dest}`);
     if (!res.ok) return null;
     const rows = (await res.json()) as Array<{ finalityThreshold: number; minimumFee: number }>;
     if (!Array.isArray(rows) || !rows.length) return null;

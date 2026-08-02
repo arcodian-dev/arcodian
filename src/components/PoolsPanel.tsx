@@ -1,10 +1,9 @@
-import { useEffect, useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ARC } from "../config";
+import { useEffect, useMemo, useState } from "react";
+import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
+import { ARC, ARC_MAINNET } from "../config";
+import { arcProvider } from "../shared";
 import { shortAddress } from "../dex";
 import { ERC20_META_ABI, PAIR_ABI, readToken, type TokenMeta } from "../dexReads";
-
-const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
 
 type Position = {
   pair: string;
@@ -16,13 +15,17 @@ type Position = {
   sharePct: number;
 };
 
-export default function PoolsPanel({ account, activeProvider, onConnect, initialPair = "" }: {
+export default function PoolsPanel({ account, activeProvider, onConnect, initialPair = "", chainId }: {
   account: string;
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   onConnect: () => void;
   /** Pre-filled when the portfolio hands a specific pool over to manage. */
   initialPair?: string;
+  chainId?: number | null;
 }) {
+  const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
+  const activeArc = isMainnet ? ARC_MAINNET : ARC;
+  const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [pairAddress, setPairAddress] = useState(initialPair);
   const [position, setPosition] = useState<Position | null>(null);
   const [amount0, setAmount0] = useState("");
@@ -56,14 +59,14 @@ export default function PoolsPanel({ account, activeProvider, onConnect, initial
       } catch { if (alive) setPosition(null); }
     })();
     return () => { alive = false; };
-  }, [account, pairAddress, status]);
+  }, [account, pairAddress, status, read]);
 
   async function withSigner(run: (signer: never) => Promise<void>) {
     if (!account || !activeProvider) { onConnect(); return; }
     setBusy(true);
     setStatus("");
     try {
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] });
+      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: activeArc.hexId }] });
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
       await run(signer as never);
     } catch (error) {
