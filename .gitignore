@@ -10,6 +10,7 @@ dist/
 
 # foundry artifacts (out/ is regenerated; cache/ can hold sensitive run data)
 contracts/out/
+contracts/out-v3/
 contracts/cache/
 
 # misc
@@ -17,3 +18,8 @@ contracts/cache/
 *.log
 public/developers/agents.json.state.json
 public/developers/jobs.json.state.json
+
+# scratch / generated — not source
+tmp/
+test-results/
+exports/

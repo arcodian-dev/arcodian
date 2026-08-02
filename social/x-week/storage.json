@@ -1,0 +1,9 @@
+{
+  "cookies": [],
+  "origins": [
+    {"origin":"https://arcodian.fun","localStorage":[{"name":"arcodian-risk-ack-v1","value":"accepted"}]},
+    {"origin":"https://wallet.arcodian.fun","localStorage":[{"name":"arcodian-risk-ack-v1","value":"accepted"}]},
+    {"origin":"https://bridge.arcodian.fun","localStorage":[{"name":"arcodian-risk-ack-v1","value":"accepted"}]},
+    {"origin":"https://lend.arcodian.fun","localStorage":[{"name":"arcodian-risk-ack-v1","value":"accepted"}]}
+  ]
+}
