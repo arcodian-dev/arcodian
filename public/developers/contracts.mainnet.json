@@ -13,9 +13,15 @@
     "governanceMultisig": "0xC67C731E16C4D45809EE5f50511FE5bB75008FA0",
     "sessionKeyAccount": "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
     "marketGraduationHub": "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
-    "marketPairFactory": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
+    "marketPairFactory": "0x5E3d1b63213B8608539116d1c6248a36819684b5",
+    "marketPairFactoryLegacyWrongTreasury": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
     "marketUsdcFactory": "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
+    "marketUsdcFactoryV9": "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
+    "marketUsdcFactoryV9LegacyWrongTreasury": "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
     "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
+  },
+  "feeRoutingFix2026_08_02": {
+    "note": "Auditing 'does swap fee reach treasury' surfaced two contracts whose immutable `treasury` was set to the deployer EOA (0x7D9b5ab1...40C2) instead of the real treasury (0xF1CBe360...05CaF): marketPairFactory (0 pairs ever created there — clean swap, nothing to migrate) and marketUsdcFactoryV9 (the live 1% bonding-curve fee path — ~0.04 USDC had accrued, withdrawable only by the deployer EOA, and every future launch would have inherited the same bug since treasury is set once per factory and inherited by every curve it spawns). Both replaced with freshly deployed, correctly-configured factories, verified with treasury() reads against both before cutover. The old V9 factory's one live launch (\"Architects\") is not migratable (treasury is immutable per already-deployed curve) and stays indexed as a legacy factory; the old pair factory is simply abandoned (never used). Uninvolved and unaffected: externalV3FeeRouter (0.30% external-pool swap fee) already correctly pointed at the real treasury. Also worth knowing: post-graduation trading fees on Arcodian's OWN V9 pools are NOT collected by treasury at all — the LP position is minted straight to a burn address at graduation (by design, so liquidity can never be pulled/rugged), so that 0.30% accrues to the burned LP forever, not to anyone. The only per-swap fee treasury actually earns today is the external-V3-venue 0.30% and the pre-graduation 1% curve fee."
   },
   "bridge": {
     "addedAt": "2026-07-31T00:00:00Z",

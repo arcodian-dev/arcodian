@@ -372,9 +372,11 @@ export const ARC_MAINNET = {
   hexId: "0x13b2",
   name: "Arc Mainnet",
   rpc: ARC_MAINNET_RPC,
+  // baracat (arc-mainnet-rpc.baracat.meme) dropped 2026-08-02 — caught ~65
+  // blocks behind the other two while still answering with a stale-but-
+  // HTTP-200 result, same reason it was dropped from rpc-mainnet.php.
   rpcs: [
     ARC_MAINNET_RPC,
-    "https://arc-mainnet-rpc.baracat.meme/",
     "https://warp-arc-production.up.railway.app/rpc",
     "https://radar-api-rpc.up.railway.app",
   ],
@@ -392,14 +394,25 @@ export const ARC_MAINNET_CONTRACTS = {
   adminTimelock: "0xba953bc1282d0bffe22b4f769822d20900625594",
   sessionKeyAccount: "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
   marketGraduationHub: "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
-  marketPairFactory: "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
+  // 2026-08-02: redeployed — the original factory (0xadb7d3d2...c7722) was
+  // constructed with the deployer EOA as `treasury` instead of the real
+  // treasury multisig (found while auditing fee routing). allPairsLength()
+  // was 0 on the old one, so this is a clean swap with nothing to migrate.
+  marketPairFactory: "0x5E3d1b63213B8608539116d1c6248a36819684b5",
   marketUsdcFactory: "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
   marketRouter: "0x4A5eF82818F674452690539D75517b4604981Bed",
   // V9: graduates into a real, permissionless Uniswap V3 pool (Factory/NPM
   // below) instead of ArcPairFactoryV2 — the venue Telegram bots and
   // third-party routers already know how to read. New launches go here;
   // marketUsdcFactory above stays live read-only for pre-V9 coins (ARCD).
-  marketUsdcFactoryV9: "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
+  // 2026-08-02: redeployed for the same treasury bug as marketPairFactory —
+  // the original (0x071f978A...327066) sends its 1% curve fee to the
+  // deployer EOA, not the treasury multisig, and treasury is immutable per
+  // factory (every curve it spawns inherits it). That factory's one live
+  // launch ("Architects") keeps running there — it can't be migrated — and
+  // stays indexed via MAINNET_LEGACY_FACTORIES below; every new launch now
+  // goes through this corrected factory.
+  marketUsdcFactoryV9: "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
   v3Factory: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
   v3SwapRouter: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
   v3Quoter: "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",

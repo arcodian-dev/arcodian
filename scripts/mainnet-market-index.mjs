@@ -23,8 +23,14 @@ const USDC = "0x3600000000000000000000000000000000000000";
 // frontend's Market screener. V9 (real Uniswap V3 graduation) is the only
 // factory indexed now. The global screener additionally discovers standard
 // V3 pools from the verified Arcodian and external V3 factories below.
+// 2026-08-02: the original V9 factory sent its 1% curve fee to the deployer
+// EOA instead of the treasury multisig (treasury is immutable per factory,
+// so a fresh factory was the only fix). Both stay indexed: the old one keeps
+// its one live launch ("Architects") readable, the new one gets every
+// launch going forward.
 const FACTORIES = [
-  { address: process.env.ARC_MAINNET_FACTORY_V9 || "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066", fromBlock: 13_190_000, kind: "v3" },
+  { address: process.env.ARC_MAINNET_FACTORY_V9_LEGACY || "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066", fromBlock: 13_190_000, kind: "v3" },
+  { address: process.env.ARC_MAINNET_FACTORY_V9 || "0x6e1d1a09b07a4022B535269434C16A3452e195f9", fromBlock: 13_501_954, kind: "v3" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
