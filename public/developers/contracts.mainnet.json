@@ -1,0 +1,60 @@
+{
+  "version": 2,
+  "phase": "mainnet-phase-1-usdc-only",
+  "deployedAt": "2026-07-30T00:00:00Z",
+  "updatedAt": "2026-08-02T00:00:00Z",
+  "network": { "name": "Arc Mainnet", "chainId": 5042, "rpc": "https://arc-rpc.stakeme.pro", "explorer": "https://arc.exploreme.pro" },
+  "note": "Phase 1 covers only contracts with no external Circle/Pyth/ERC-8004 mainnet dependency. Confirmed by direct on-chain probe 2026-07-30: the native USDC ERC-20 view precompile at 0x3600...0000 IS live on mainnet at the same fixed address as testnet, but the testnet EURC token, Pyth oracle, and ERC-8004 Identity/Reputation/Validation Registry addresses all return no code on mainnet — nobody has deployed/published those there yet. Every contract below needed no address but our own and USDC. 2026-07-31: rpc.blockdaemon.mainnet.arc.io (used for the phase-1 deploy above) started returning 401 with no warning and stayed down — no official Circle RPC/explorer for Arc Mainnet is public yet. arc-rpc.stakeme.pro / arc.exploreme.pro is third-party, unofficial infrastructure, independently verified (chainId, real transaction/balance/bytecode cross-checks against our own known state) but not Circle's own; swap it out the moment an official endpoint exists.",
+  "contracts": {
+    "usdc": "0x3600000000000000000000000000000000000000",
+    "arcPay": "0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",
+    "agentPayFactory": "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
+    "adminTimelock": "0xba953bc1282d0bffe22b4f769822d20900625594",
+    "governanceMultisig": "0xC67C731E16C4D45809EE5f50511FE5bB75008FA0",
+    "sessionKeyAccount": "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
+    "marketGraduationHub": "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
+    "marketPairFactory": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
+    "marketUsdcFactory": "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
+    "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
+  },
+  "bridge": {
+    "addedAt": "2026-07-31T00:00:00Z",
+    "note": "ArcBridgeRouter (1.5% fee on top of Circle's canonical CCTP v2 TokenMessengerV2/MessageTransmitterV2, same deterministic addresses across every chain listed here). Deployed once arc-rpc.stakeme.pro proved Arc Mainnet was actually reachable; a prior deployment had a Solidity interface bug (declared a uint64 nonce return that CCTP v2's real depositForBurn doesn't have) that reverted every single bridge call on every chain since its original deployment — fixed, redeployed, and proven with real transactions on all 5 chains, including a full Arc-to-Base-to-Arc-equivalent round trip and independent third-party wallets bridging on their own. Circle's own TokenMinter.burnLimitsPerMessage caps a single burn OUT of Arc at 1 USDC right now — a network-side rollout limit, not ours.",
+    "routers": {
+      "1": "0x9fc12b77ae41181c98563e5ae5645ae8a0f6eddd",
+      "10": "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
+      "42161": "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
+      "8453": "0x274454aa0413b96651983c5efd6817cb30968e71",
+      "5042": "0xc35deb937f5056a0e034f10e21094878485caee7"
+    },
+    "tokenMessengerV2": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+    "messageTransmitterV2": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF",
+    "sourceVerification": { "1": "sourcify+blockscout", "10": "sourcify+blockscout", "42161": "sourcify+blockscout", "8453": "sourcify+blockscout", "5042": "unverified — third-party explorer's verify endpoint errors server-side" }
+  },
+  "deployer": "0x7D9b5ab14b24Dede3b78b7e1715C1E01032F40C2",
+  "governance": {
+    "model": "multisig-controlled admin, single-key operations",
+    "multisig": "0xC67C731E16C4D45809EE5f50511FE5bB75008FA0",
+    "multisigThreshold": "2-of-3",
+    "multisigSigners": [
+      "0x2D8f2c514956166e54469494E4064C7505F796D8",
+      "0x43332cCeAC6db1E7665b75a9F75C87935bFD8858",
+      "0xf63748010F29c00F67C3F7E5598eBd3AE20055bE"
+    ],
+    "note": "2026-08-02: ArcAdminTimelock's admin (the role that can change who may propose/execute, or transfer admin again) was migrated from the deployer EOA to a freshly-deployed 2-of-3 ArcMultisig (contracts/src/ArcGovernance.sol) via transferAdmin/acceptAdmin — verified on-chain, admin() now returns the multisig. isProposer/isExecutor were left as the deployer alone (routine timelock operations stay single-key; only the higher-privilege admin role required 2 signatures to change). ArcMultisig itself has NO owner-rotation function — its signer set is immutable once deployed, so this is a one-shot decision. All 3 signer keys were generated on and are stored on the same VPS that runs this project (not independent devices/parties) — this multisig protects against a single lost/misused key, not against compromise of this server itself. See docs/ARCODIAN-AUDIT-READINESS.md; ArcAdminTimelock's own contract docstring still says 'Not audited, not for mainnet' — this migration does not change that."
+  },
+  "marketParams": {
+    "graduationThresholdUsdc": "12000000000000000000000",
+    "note": "Mirrors testnet v10 economics (12,000 USDC threshold, 1% curve fee) — not independently re-derived for mainnet, just carried over for parity."
+  },
+  "deferredUntilOfficialAddressesExist": {
+    "eurc": "No official Arc mainnet EURC address published by Circle as of 2026-07-30 (docs.arc.io still says mainnet addresses are not yet available). Blocks: EURC pump factory, stablecoin FX pool, ArcLendV2 collateral.",
+    "pythOracle": "No official Arc mainnet Pyth contract address found. Blocks: ArcLendV2 (needs EUR/USD price feed).",
+    "erc8004IdentityRegistry": "Testnet address 0x8004A818...BD9e has no code on mainnet — the canonical ERC-8004 reference registries have not been deployed to chain 5042 by anyone yet. Blocks: ArcAgentPassport, ArcAgentPayFactoryV4, ArcAgentJobsV2 (constructor hard-reverts on a zero passport address), Reputation/Validation integration."
+  },
+  "resolved2026_07_31": {
+    "cctp": "Was listed as deferred/blocking the bridge — that was wrong. Circle CCTP v2's TokenMessengerV2/MessageTransmitterV2 addresses are deterministic and identical across every chain including Arc Mainnet; no separate Circle publication was ever needed. The actual blocker was Arc Mainnet RPC/explorer access, resolved via the third-party endpoint above."
+  },
+  "migrationManifest": "/developers/legacy-migration.json"
+}

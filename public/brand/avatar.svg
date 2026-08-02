@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-labelledby="t">
+  <title id="t">Arcodian</title>
+  <defs>
+    <radialGradient id="bg" cx="62%" cy="30%" r="85%">
+      <stop offset="0" stop-color="#16292F"/><stop offset="55%" stop-color="#0E1B20"/><stop offset="100%" stop-color="#080F12"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="70%" cy="30%" r="40%">
+      <stop offset="0" stop-color="#E8873B" stop-opacity=".22"/><stop offset="100%" stop-color="#E8873B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="curve" x1="250" y1="720" x2="700" y2="300" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B4601F"/><stop offset=".5" stop-color="#E8873B"/><stop offset="1" stop-color="#F6A863"/>
+    </linearGradient>
+    <linearGradient id="fill" x1="0" y1="300" x2="0" y2="740" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E8873B" stop-opacity=".28"/><stop offset="1" stop-color="#E8873B" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+  <rect width="1000" height="1000" fill="url(#bg)"/>
+  <rect width="1000" height="1000" fill="url(#glow)"/>
+  <!-- plot grid -->
+  <g stroke="#ECE7DB" stroke-opacity=".07" stroke-width="2">
+    <line x1="210" y1="420" x2="790" y2="420"/>
+    <line x1="210" y1="560" x2="790" y2="560"/>
+    <line x1="210" y1="700" x2="790" y2="700"/>
+  </g>
+  <!-- reserve floor -->
+  <line x1="238" y1="726" x2="742" y2="726" stroke="#C9A24B" stroke-opacity=".4" stroke-width="6" stroke-linecap="round"/>
+  <!-- graduation threshold -->
+  <line x1="700" y1="250" x2="700" y2="726" stroke="#C9A24B" stroke-width="6" stroke-linecap="round" stroke-dasharray="2 30" opacity=".8"/>
+  <!-- area + bonding curve -->
+  <path d="M250 722 C430 704,560 566,700 300 L700 722 Z" fill="url(#fill)"/>
+  <path d="M250 722 C430 704,560 566,700 300" fill="none" stroke="url(#curve)" stroke-width="34" stroke-linecap="round" filter="url(#soft)" opacity=".55"/>
+  <path d="M250 722 C430 704,560 566,700 300" fill="none" stroke="url(#curve)" stroke-width="30" stroke-linecap="round"/>
+  <!-- graduation node: liquidity locked -->
+  <circle cx="700" cy="300" r="52" fill="#E8873B" opacity=".22" filter="url(#soft)"/>
+  <circle cx="700" cy="300" r="30" fill="#F6A863"/>
+  <circle cx="700" cy="300" r="12" fill="#0B1417"/>
+</svg>

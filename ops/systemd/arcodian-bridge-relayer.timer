@@ -1,0 +1,11 @@
+[Unit]
+Description=Poll Circle attestations for Arcodian bridge mints
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=15s
+AccuracySec=2s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

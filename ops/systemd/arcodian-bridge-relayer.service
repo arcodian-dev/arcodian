@@ -1,0 +1,14 @@
+[Unit]
+Description=Arcodian CCTP destination mint relayer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=BRIDGE_RELAYER_CONFIG=/root/.config/arcodian/bridge-relayer.json
+Environment=BRIDGE_RELAYER_STATE=/root/.openclaw/workspace/arc/data/bridge-relayer-state.json
+ExecStart=/usr/bin/node scripts/bridge-relayer.mjs
+NoNewPrivileges=true
+PrivateTmp=true
+

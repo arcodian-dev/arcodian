@@ -1,0 +1,23 @@
+[Unit]
+Description=Arc Mainnet one-second live trade tape
+After=network-online.target arcodian-mainnet-index.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=MAINNET_INDEX_PATH=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
+Environment=MAINNET_TAPE_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json
+Environment=ARC_MAINNET_RPC_URL=https://arcodian.fun/api/rpc-mainnet.php
+ExecStart=/usr/bin/node scripts/mainnet-live-tape.mjs
+ExecStartPost=/bin/ln -sf /www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json /www/wwwroot/arcodian.fun/current/data/mainnet-live-tape.json
+Restart=always
+RestartSec=2s
+User=root
+Group=root
+Nice=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
