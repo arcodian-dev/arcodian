@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+import "forge-std/Test.sol";import {ArcPay} from "../src/ArcPay.sol";import {ArcAgentPay,IArcPayAgent} from "../src/ArcAgentPay.sol";
+contract ArcAgentPayTest is Test {ArcPay pay;ArcAgentPay wallet;address owner=address(1);address agent=address(2);address merchant=address(3);function setUp() public {pay=new ArcPay(payable(address(9)));wallet=new ArcAgentPay(owner,IArcPayAgent(address(pay)));vm.deal(owner,100 ether);vm.prank(owner);payable(wallet).transfer(20 ether);vm.startPrank(owner);wallet.setPolicy(agent,2 ether,5 ether,uint64(block.timestamp+7 days),true);wallet.setMerchant(agent,merchant,true);vm.stopPrank();}
+function invoice(uint256 salt,uint256 amount) public {vm.prank(agent);wallet.payInvoice(bytes32(salt),payable(merchant),amount,uint64(block.timestamp+1 days),bytes32(salt));}
+function testAgentPaysAllowedInvoice() public {uint256 before=merchant.balance;invoice(1,1 ether);assertEq(merchant.balance-before,0.997 ether);(address payer,,,,,)=pay.payments(bytes32(uint256(1)));assertEq(payer,address(wallet));}
+function testDeniedMerchantFails() public {vm.prank(agent);vm.expectRevert(ArcAgentPay.MerchantDenied.selector);wallet.payInvoice(bytes32(uint256(1)),payable(address(4)),1 ether,uint64(block.timestamp+1 days),0);}
+function testPerPaymentAndDailyCaps() public {vm.prank(agent);vm.expectRevert(ArcAgentPay.Limit.selector);wallet.payInvoice(bytes32(uint256(1)),payable(merchant),3 ether,uint64(block.timestamp+1 days),0);invoice(2,2 ether);invoice(3,2 ether);vm.prank(agent);vm.expectRevert(ArcAgentPay.Limit.selector);wallet.payInvoice(bytes32(uint256(4)),payable(merchant),2 ether,uint64(block.timestamp+1 days),0);}
+function testDisabledAndExpiredFail() public {vm.prank(owner);wallet.setPolicy(agent,2 ether,5 ether,uint64(block.timestamp+1),false);vm.prank(agent);vm.expectRevert(ArcAgentPay.AgentOnly.selector);wallet.payInvoice(0,payable(merchant),1 ether,uint64(block.timestamp+1 days),0);}
+function testOnlyOwnerConfiguresAndWithdraws() public {vm.prank(agent);vm.expectRevert(ArcAgentPay.OwnerOnly.selector);wallet.setMerchant(agent,merchant,false);uint256 before=owner.balance;vm.prank(owner);wallet.withdraw(payable(owner),1 ether);assertEq(owner.balance,before+1 ether);}
+function testRefundReturnsToEscrow() public {invoice(7,1 ether);uint256 before=address(wallet).balance;vm.deal(merchant,1 ether);vm.prank(merchant);pay.refund{value:1 ether}(bytes32(uint256(7)));assertEq(address(wallet).balance,before+1 ether);}
+}

@@ -1,0 +1,26 @@
+{
+  "lib/openzeppelin-contracts": {
+    "tag": {
+      "name": "v3.4.1",
+      "rev": "cec0800c541c809f883a37f2dfb91ec4c90263c5"
+    }
+  },
+  "lib/solidity-lib": {
+    "tag": {
+      "name": "v2.1.0",
+      "rev": "3fcc8ee6d5c7dea3283416cbcee601d89504a243"
+    }
+  },
+  "lib/v3-core": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "e3589b192d0be27e100cd0daaf6c97204fdb1899"
+    }
+  },
+  "lib/v3-periphery": {
+    "tag": {
+      "name": "v1.3.0",
+      "rev": "80f26c86c57b8a5e4b913f42844d4c8bd274d058"
+    }
+  }
+}
