@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { ARC_MAINNET } from "../config";
-import { imageUrl } from "../shared";
+import { imageUrl, rpcUrlsFor } from "../shared";
 import "./TradingTerminal.css";
 
 type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string };
@@ -66,9 +66,31 @@ function buildCandles(trades: MarketTrade[], timeframe: string): Candle[] {
   });
 }
 
-function MarketChart({ timeframe, trades }: { timeframe: string; trades: MarketTrade[] }) {
+// A Radar-discovered token with liquidity spread across several external
+// AMMs (its dex field reads e.g. "Uniswap V2 + Uniswap V3 + Uniswap V4")
+// has no single pool contract to tail Swap events from — there is no chart
+// or live tape to ever populate for it, by construction, not because
+// anything is broken. That's most of the catalog (Radar surfaces ~1000
+// tokens; only the ones graduated through Arcodian itself or trading on a
+// single external V3 pool have one indexable venue). Say so plainly instead
+// of leaving a permanent "loading" look on a majority of listed tokens.
+function noIndexableVenue(market: MarketRecord): boolean {
+  return Boolean(market.globalPool) && !market.pool && !market.pair && !market.curve;
+}
+
+function ChartEmptyState({ market }: { market: MarketRecord }) {
+  if (noIndexableVenue(market)) {
+    return <div className="terminal-data-empty terminal-data-empty-detail">
+      <p>No single onchain pool to chart.</p>
+      <small>{market.symbol} trades across {market.dex || "multiple external venues"} — Arcodian can't tail one contract's swaps for a price feed. Price, market cap, and volume above still come from Radar; use {market.dex?.split(" + ")[0] || "the venue"}'s own chart for live candles.</small>
+    </div>;
+  }
+  return <div className="terminal-data-empty">No trades indexed for this market yet — check back shortly.</div>;
+}
+
+function MarketChart({ market, timeframe, trades }: { market: MarketRecord; timeframe: string; trades: MarketTrade[] }) {
   const candles = useMemo(() => buildCandles(trades, timeframe), [trades, timeframe]);
-  return candles.length ? <TerminalChart candles={candles} priceLabel={(value) => value < 0.000001 ? value.toFixed(12) : value.toFixed(8)} onHover={() => undefined} /> : <div className="terminal-data-empty">No indexed trades for this market yet.</div>;
+  return candles.length ? <TerminalChart candles={candles} priceLabel={(value) => value < 0.000001 ? value.toFixed(12) : value.toFixed(8)} onHover={() => undefined} /> : <ChartEmptyState market={market} />;
 }
 
 // The venue actually executing trades: the V3 pool once graduated/global,
@@ -186,7 +208,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
       try {
         await activeProvider.request({
           method: "wallet_addEthereumChain",
-          params: [{ chainId: ARC_MAINNET.hexId, chainName: ARC_MAINNET.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC_MAINNET.rpc], blockExplorerUrls: [ARC_MAINNET.explorer] }],
+          params: [{ chainId: ARC_MAINNET.hexId, chainName: ARC_MAINNET.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(ARC_MAINNET), blockExplorerUrls: [ARC_MAINNET.explorer] }],
         });
       } catch { /* user declined or wallet doesn't support programmatic network add */ }
     }
@@ -208,13 +230,18 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
       <section className="terminal-main-column">
         <div className="terminal-card terminal-chart-card">
           <div className="terminal-toolbar"><div>{["1m", "5m", "15m", "1H", "4H"].map((item) => <button key={item} className={timeframe === item ? "active" : ""} onClick={() => setTimeframe(item)}>{item}</button>)}</div><span className={`streaming ${tapeHealth}`}><i /> {feedLabel}</span></div>
-          <div className="terminal-chart-wrap"><MarketChart timeframe={timeframe} trades={tapeTrades} /></div>
+          <div className="terminal-chart-wrap"><MarketChart market={market} timeframe={timeframe} trades={tapeTrades} /></div>
           <div className="terminal-chart-footer"><span>Price · USDC</span><span>Volume</span><span>Contract markets only · Arc Mainnet</span></div>
         </div>
         <div className="terminal-card terminal-trades">
           <div className="terminal-section-title">Live trades <span>{tapeTrades.length} indexed</span></div>
           <div className="trades-head"><span>Type</span><span>Price</span><span>Amount</span><span>Value</span><span>Wallet</span></div>
-          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade) > 0 ? tradePrice(trade).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <div className="terminal-data-empty">No indexed trades for this market yet.</div>}</div>
+          {/* tapeTrades holds up to 500 (mergeTrades' cap, needed so the
+              chart has enough history at wider timeframes) — rendering all
+              500 as DOM rows on every 1s tick is what made this list feel
+              janky. Only the newest ~120 are ever visible in this panel
+              anyway, so slice before mapping instead of after. */}
+          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade) > 0 ? tradePrice(trade).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
         </div>
       </section>
       <PoolInfo market={market} />

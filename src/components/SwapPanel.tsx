@@ -116,7 +116,17 @@ export default function SwapPanel({ account, activeProvider, onConnect, chainId,
   // mainnet that address holds an unrelated contract, so every route quote
   // silently failed (caught, returned "no route") without this override.
   const activePairFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketPairFactory : ARC_PAIR_FACTORY_ADDRESS;
-  const activeHubs = isMainnet ? [ARC_USDC_ERC20] : ROUTE_HUBS;
+  // `[ARC_USDC_ERC20]` is a fresh array literal on every render — as a
+  // dependency of the route-quoting effect below, that restarted the whole
+  // debounced quote chain on every re-render of this component (which is
+  // constant: the trading terminal polls live trades every second). Found
+  // 2026-08-03: the on-chain quote was resolving correctly every time, but
+  // by the time each attempt's promise settled, a newer render had already
+  // torn it down (`alive` was false), so `setRoute` never fired — "No
+  // active Arcodian pool or route exists" showed for every market
+  // regardless of whether a route actually existed. Memoized so the
+  // reference is only ever new when isMainnet itself actually changes.
+  const activeHubs = useMemo(() => (isMainnet ? [ARC_USDC_ERC20] : ROUTE_HUBS), [isMainnet]);
   const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [tokens, setTokens] = useState<TokenMeta[]>(pinnedTokens);
   const [tokenIn, setTokenIn] = useState<TokenMeta | null>(pinnedTokens[0]);

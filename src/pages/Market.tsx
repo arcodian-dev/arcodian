@@ -15,6 +15,7 @@ import {
   imageUrl,
   normalizeSocial,
   patchActivity,
+  rpcUrlsFor,
   safeEther,
   short,
   socialSigningMessage,
@@ -361,7 +362,7 @@ export default function Screener({
       try {
         await activeProvider.request({
           method: "wallet_addEthereumChain",
-          params: [{ chainId: target.hexId, chainName: target.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [target.rpc], blockExplorerUrls: [target.explorer] }],
+          params: [{ chainId: target.hexId, chainName: target.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(target), blockExplorerUrls: [target.explorer] }],
         });
       } catch { /* user declined or wallet doesn't support programmatic network add */ }
     }
@@ -701,7 +702,7 @@ export default function Screener({
               <span className={`mt-num ${pctClass(item.priceChange5m)}`}><small>5m </small>{pctText(item.priceChange5m)}</span>
               <span className={`mt-num ${pctClass(item.priceChange1h)}`}><small>1h </small>{pctText(item.priceChange1h)}</span>
               <span className="mt-num">{compactNumber(displayLiquidity(item))} <small>liq</small></span>
-              <span className="mt-status dex">{item.dex} · {(Number(item.feeTier || 0) / 10000).toFixed(2)}%</span>
+              <span className="mt-status dex" title={`${item.dex} · ${(Number(item.feeTier || 0) / 10000).toFixed(2)}%`}>{item.dex} · {(Number(item.feeTier || 0) / 10000).toFixed(2)}%</span>
               <span className="mt-watch">↗</span>
             </div>
           ) : (
@@ -1881,7 +1882,7 @@ function Launch({
               chainId: activeArc.hexId,
               chainName: activeArc.name,
               nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-              rpcUrls: [activeArc.rpc],
+              rpcUrls: rpcUrlsFor(activeArc),
               blockExplorerUrls: [activeArc.explorer],
             },
           ],

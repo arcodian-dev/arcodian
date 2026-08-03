@@ -19,7 +19,10 @@ async function call(method, params) {
 
 const list = await call("tools/list", {});
 const names = (list.result?.tools || []).map((tool) => tool.name);
-if (names.length !== 36) throw new Error(`expected 36 tools, received ${names.length}`);
+if (names.length !== 39) throw new Error(`expected 39 tools, received ${names.length}`);
+for (const required of ["get_mainnet_tip", "get_mainnet_block", "scan_message_received"]) {
+  if (!names.includes(required)) throw new Error(`missing Arc Mainnet read tool ${required}`);
+}
 for (const required of ["inspect_x402_challenge", "quote_nanopayment", "build_nanopayment_authorization", "verify_nanopayment_receipt"]) {
   if (!names.includes(required)) throw new Error(`missing Phase E1 tool ${required}`);
 }

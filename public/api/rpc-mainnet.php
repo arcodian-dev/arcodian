@@ -19,7 +19,15 @@ header('Access-Control-Allow-Headers: Content-Type');
 header('Cache-Control: no-store');
 
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
-if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); echo '{"error":"POST only"}'; exit; }
+// Some wallets (OKX confirmed 2026-08-03) run their own plain reachability
+// probe against a chain's rpcUrls before trusting them — a bare GET/HEAD at
+// the URL, no JSON-RPC body. This proxy used to 405 that, which some wallets
+// treat as "this RPC is broken" and refuse to use it (or the whole
+// wallet_addEthereumChain call) even though the real POST-based JSON-RPC
+// path works fine. Answer any non-POST request with 200 instead of 405 so
+// that kind of check passes; only the actual proxying logic below requires
+// a POST body.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(200); echo '{"ok":true,"name":"arcodian-arc-mainnet-rpc"}'; exit; }
 
 $body = file_get_contents('php://input');
 if ($body === '' || strlen($body) > 262144) {

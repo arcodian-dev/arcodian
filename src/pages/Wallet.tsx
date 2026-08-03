@@ -15,6 +15,7 @@ import {
   zeroPadValue,
 } from "ethers";
 import QRCode from "qrcode";
+import { rpcUrlsFor } from "../shared";
 import {
   BarcodeFormat,
   BarcodeScanner,
@@ -473,7 +474,7 @@ export default function Wallet({
                 chainId: hex,
                 chainName: isArcMainnet ? ARC_MAINNET.name : ARC.name,
                 nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-                rpcUrls: [isArcMainnet ? ARC_MAINNET.rpc : ARC.rpc],
+                rpcUrls: rpcUrlsFor(isArcMainnet ? ARC_MAINNET : ARC),
                 blockExplorerUrls: [isArcMainnet ? ARC_MAINNET.explorer : ARC.explorer],
               },
             ],
@@ -488,7 +489,7 @@ export default function Wallet({
                 chainId: hex,
                 chainName: chain.name,
                 nativeCurrency: { name: chain.gasSymbol, symbol: chain.gasSymbol, decimals: 18 },
-                rpcUrls: [chain.rpc],
+                rpcUrls: rpcUrlsFor(chain),
               },
             ],
           });
@@ -911,7 +912,7 @@ export default function Wallet({
                 symbol: "USDC",
                 decimals: ARC.nativeDecimals,
               },
-              rpcUrls: [ARC.rpc],
+              rpcUrls: rpcUrlsFor(ARC),
               blockExplorerUrls: [ARC.explorer],
             },
           ],

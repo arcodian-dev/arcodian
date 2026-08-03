@@ -10,6 +10,7 @@ import { AppKitDelegationStore, buildRevokeTypedData, buildSendGrantTypedData, d
 import { inspectUnifiedBalance } from "../appkit-unified-balance.ts";
 import { AppKitBridgeStore, buildBridgeGrantTypedData, buildBridgeRevokeTypedData } from "../appkit-bridge.ts";
 import { AppKitSwapStore, buildSwapGrantTypedData, buildSwapRevokeTypedData } from "../appkit-swap.ts";
+import { getMainnetTip, getMainnetBlock, scanMessageReceived } from "./mainnet.ts";
 
 export type Tool = { name: string; description: string; schema: z.ZodRawShape; handler: (args: any, ctx: Ctx) => Promise<any> };
 const nanopaymentLedger = new FileNanopaymentLedger();
@@ -36,6 +37,9 @@ const inspectGrant = async (capability: "send" | "bridge" | "swap", grantId: str
 };
 
 export const TOOLS: Tool[] = [
+  { name: "get_mainnet_tip", description: "Read the current Arc Mainnet chain tip (chain 5042) through failover RPCs. Read-only.", schema: {}, handler: async () => getMainnetTip() },
+  { name: "get_mainnet_block", description: "Read one Arc Mainnet block and its transaction hashes. Defaults to latest. Read-only.", schema: { block: z.union([z.number().int().nonnegative(), z.string()]).optional() }, handler: async (args) => getMainnetBlock(args) },
+  { name: "scan_message_received", description: "Scan Arc Mainnet MessageTransmitter for inbound CCTP MessageReceived events. Read-only.", schema: { fromBlock: z.number().int().nonnegative().optional(), toBlock: z.number().int().nonnegative().optional(), messageHash: z.string().optional(), limit: z.number().int().positive().max(500).optional() }, handler: async (args) => scanMessageReceived(args) },
   { name: "find_agents", description: "Discover ERC-8004 agents by minimum reputation, required independent validation, and optional capability tag. Returns objective score + evidence. Arcodian state on Arc testnet, not official Arc docs.",
     schema: { capability: z.string().optional(), minReputation: z.number().optional(), requireValidation: z.boolean().optional(), limit: z.number().int().positive().max(100).optional() },
     handler: findAgents },

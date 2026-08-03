@@ -57,7 +57,7 @@ const CCTP_USDC_ABI = [
   "function approve(address,uint256) returns(bool)",
   "function allowance(address,address) view returns(uint256)",
 ];
-import { BrandMark, FAQ_ITEMS, short, type WalletOption } from "./shared";
+import { BrandMark, FAQ_ITEMS, rpcUrlsFor, short, type WalletOption } from "./shared";
 import { describeTxError } from "./txError";
 
 const Screener = lazy(() => import("./pages/Market"));
@@ -350,11 +350,16 @@ export default function App() {
     };
     if (!registerLegacy()) {
       window.addEventListener("ethereum#initialized", registerLegacy, { once: true });
+      // Was 10 attempts * 300ms = 3s total — too short in practice (reported
+      // 2026-08-03: OKX still missing from the wallet picker). Injection
+      // delay varies a lot by device/cold-start/network, especially inside
+      // a wallet's own mobile in-app browser, so this needs real headroom
+      // rather than a tight budget — 20 * 400ms = 8s.
       let attempts = 0;
       const poll = window.setInterval(() => {
         attempts += 1;
-        if (registerLegacy() || attempts >= 10) window.clearInterval(poll);
-      }, 300);
+        if (registerLegacy() || attempts >= 20) window.clearInterval(poll);
+      }, 400);
       return () => {
         window.removeEventListener("eip6963:announceProvider", announce);
         window.removeEventListener("ethereum#initialized", registerLegacy);
@@ -634,9 +639,9 @@ export default function App() {
         const code = (switchError as { code?: number })?.code;
         if (code === 4902 && (from.id === ARC.id || from.id === ARC_MAINNET.id)) {
           const arcNet = from.id === ARC_MAINNET.id ? ARC_MAINNET : ARC;
-          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: arcNet.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [arcNet.rpc], blockExplorerUrls: [arcNet.explorer] }] });
+          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: arcNet.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(arcNet), blockExplorerUrls: [arcNet.explorer] }] });
         } else if (code === 4902 && MAINNET_CHAINS.some((c) => c.id === from.id)) {
-          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: from.name, nativeCurrency: { name: from.gasSymbol, symbol: from.gasSymbol, decimals: 18 }, rpcUrls: [from.rpc] }] });
+          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: from.name, nativeCurrency: { name: from.gasSymbol, symbol: from.gasSymbol, decimals: 18 }, rpcUrls: rpcUrlsFor(from) }] });
         } else if (code === 4001) { setStatus("Network switch was rejected. Approve it to continue."); setBusy(false); return; }
         else if (code === 4902) { setStatus(`Add ${from.name} to your wallet, then try again.`); setBusy(false); return; }
       }

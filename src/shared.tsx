@@ -152,6 +152,22 @@ export function normalizeSocial(value: string, type: "twitter" | "discord") {
     return url.toString();
   } catch { return ""; }
 }
+// Deliberately just chain.rpc, NOT chain.rpcs. First tried offering wallets
+// the full 2-3 endpoint fallback list our own app uses internally (this
+// function used to return all of them) — reasoning that redundancy could
+// only help. Turned out backwards: OKX (confirmed 2026-08-03, exact error
+// captured) runs its own bare reachability probe against every rpcUrls
+// entry — a plain GET/HEAD at the bare host, no JSON-RPC body — before
+// trusting the chain config. Our own same-origin proxy (chain.rpc) can be
+// made to answer that cleanly (see rpc-mainnet.php), but the two third-party
+// Railway endpoints in chain.rpcs 404 on a bare root request even though
+// their real POST /rpc path works fine — and the wallet doesn't fall back
+// to whichever URL is actually healthy, it rejects the network entirely
+// over the one that failed its probe. One URL we fully control beats three
+// where we only control one.
+export function rpcUrlsFor(chain: { rpc: string; rpcs?: readonly string[] }): string[] {
+  return [chain.rpc];
+}
 export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?: number } = ARC) {
   const urls = chain.rpcs && chain.rpcs.length ? chain.rpcs : [chain.rpc];
   // staticNetwork skips ethers' own eth_chainId "network detection" probe on
@@ -162,7 +178,19 @@ export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?:
   // showing the user a raw ethers error dump instead of a real message. We
   // already know the chain id from config, so there's nothing to detect.
   const network = chain.id ? Network.from(chain.id) : undefined;
-  const providers = [...new Set(urls)].map((url) => new JsonRpcProvider(url, network, { staticNetwork: network }));
+  // batchMaxCount: 1 — found 2026-08-03: route quoting fires several
+  // eth_call reads close together (findBestRoute + findBestV3Route +
+  // findBestExternalV3Route, each looping fee tiers via Promise.all), and
+  // ethers' default auto-batching folds simultaneous calls into one JSON-RPC
+  // batch. At least one upstream gateway (Alchemy-style) hard-rejects
+  // batches with "batch disabled for this project" — whichever fee-tier
+  // check happened to land in that batch silently came back as "no pool"
+  // (the caller's try/catch treats any throw as "unsupported tier, skip"),
+  // so real, liquid pools intermittently vanished from routing depending on
+  // which calls got bundled together that render. This is exactly why the
+  // backend indexer scripts already force batchMaxCount: 1 — that guard was
+  // never carried over to this, the actual swap-quoting provider.
+  const providers = [...new Set(urls)].map((url) => new JsonRpcProvider(url, network, { staticNetwork: network, batchMaxCount: 1 }));
   return providers.length === 1 ? providers[0] : new FallbackProvider(providers, undefined, { quorum: 1 });
 }
 

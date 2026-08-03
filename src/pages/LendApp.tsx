@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatEther, formatUnits, parseUnits } from "ethers";
 import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS } from "../config";
 import { LEND_MARKETS, OFFICIAL_ARC_ASSET_STATUS } from "../lendMarkets";
+import { rpcUrlsFor } from "../shared";
 import { describeTxError } from "../txError";
 import "./LendApp.css";
 
@@ -65,7 +66,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
     catch (error) {
       const code = typeof error === "object" && error && "code" in error ? Number((error as { code?: unknown }).code) : 0;
       if (code !== 4902) return setStatus(describeTxError(error));
-      await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: ARC.hexId, chainName: ARC.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: [ARC.rpc], blockExplorerUrls: [ARC.explorer] }] });
+      await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: ARC.hexId, chainName: ARC.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(ARC), blockExplorerUrls: [ARC.explorer] }] });
     }
   }
 

@@ -34,7 +34,16 @@ const FACTORIES = [
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
-  { address: process.env.EXTERNAL_V3_FACTORY || "0xf0db7b58379503491d857dB50AC9ece64c653918", fromBlock: Number(process.env.EXTERNAL_V3_FROM_BLOCK || 10_700_000), dex: "Uniswap V3" },
+  // fromBlock was 10,700,000 — an arbitrary "recent enough" guess, not this
+  // factory's real deployment block. Confirmed via binary search on eth_getCode
+  // 2026-08-03: it actually deployed at block 1,948,019, ~8.75M blocks
+  // earlier. Every pool created in that gap (this scanner's whole reason for
+  // existing — direct on-chain discovery, no third party) was silently
+  // invisible: this is what made a token like ARCANINE, live and trading for
+  // 52+ days, show up only through Radar's aggregation and never through our
+  // own factory scan. One-time historical rescan on this deploy, then the
+  // cursor advances incrementally from here same as always.
+  { address: process.env.EXTERNAL_V3_FACTORY || "0xf0db7b58379503491d857dB50AC9ece64c653918", fromBlock: Number(process.env.EXTERNAL_V3_FROM_BLOCK || 1_948_019), dex: "Uniswap V3" },
 ];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -280,6 +289,40 @@ async function indexGlobalV3Pools() {
   return { pools: results, cursors: venueCursors };
 }
 
+// Radar's list endpoint (`/tokens`) reports `pools` as a plain COUNT
+// ("pools": 4), not an array — `Array.isArray(item.pools)` was always false,
+// so `bestPool` was always `{}` and every multi-venue token's `pool` field
+// came out empty, permanently. Found 2026-08-03: the per-TOKEN detail
+// endpoint (`/token/:address`, singular — a different route, easy to miss)
+// returns the real thing: a `pools` array with each venue's actual pool
+// contract address, plus a `bestPool` address picked by Radar itself. Only
+// v3 pools are usable here — this indexer's Swap-event ABI/parsing only
+// understands Uniswap V3 pools (v2's Swap event has a different shape, v4
+// uses a singleton PoolManager with poolIds instead of pool contracts,
+// neither is wired up). Once a v3 pool is resolved it's cached forever
+// (pool addresses don't change), so this only ever costs one external
+// request per token, spread across ticks rather than done for the whole
+// catalog at once — hammering someone else's free-tier API for hundreds of
+// tokens in one shot on every 30s cycle isn't reasonable.
+const RADAR_DETAIL_CONCURRENCY = 4;
+const RADAR_DETAIL_PER_TICK = Number(process.env.RADAR_DETAIL_PER_TICK || 40);
+async function resolveRadarPool(address) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    const response = await fetch(`https://web-production-efe27.up.railway.app/token/${address}`, { signal: controller.signal, headers: { accept: "application/json" } });
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const detail = await response.json();
+    const pools = Array.isArray(detail.pools) ? detail.pools : [];
+    const best = pools.find((pool) => String(pool.pool || "").toLowerCase() === String(detail.bestPool || "").toLowerCase() && pool.version === "v3")
+      || pools.find((pool) => pool.version === "v3" && Number(pool.liquidityUsdc || 0) > 0)
+      || pools.find((pool) => pool.version === "v3");
+    if (!best?.pool) return { resolved: true, pool: "", feeTier: 0 };
+    return { resolved: true, pool: best.pool, feeTier: Number(best.feeTier || 0), quoteToken: best.quoteToken || "" };
+  } catch { return null; }
+}
+
 async function indexRadarGlobalTokens(existingPools) {
   const endpoint = process.env.RADAR_INDEX_URL || "https://web-production-efe27.up.railway.app/tokens?sort=volume24&dir=desc&limit=500&window=24h";
   const previousRadar = new Map((previous?.launches || []).filter((item) => item.radarIndexed).map((item) => [item.address.toLowerCase(), item]));
@@ -291,24 +334,43 @@ async function indexRadarGlobalTokens(existingPools) {
     if (!response.ok) throw new Error(`Radar index HTTP ${response.status}`);
     const body = await response.json();
     const known = new Set(existingPools.map((item) => item.address.toLowerCase()));
-    return (body.tokens || []).filter((item) => item.address && !known.has(item.address.toLowerCase())).map((item) => {
+    const items = (body.tokens || []).filter((item) => item.address && !known.has(item.address.toLowerCase()));
+
+    // Resolve a bounded batch of not-yet-resolved (or previously-failed)
+    // tokens' real pool addresses this tick, oldest-unresolved-first so the
+    // whole catalog eventually converges instead of the same head-of-list
+    // tokens winning every time.
+    const needsResolve = items.filter((item) => {
+      const old = previousRadar.get(item.address.toLowerCase());
+      return !old?.radarPoolResolved;
+    }).slice(0, RADAR_DETAIL_PER_TICK);
+    const resolvedByAddress = new Map();
+    for (let i = 0; i < needsResolve.length; i += RADAR_DETAIL_CONCURRENCY) {
+      const batch = needsResolve.slice(i, i + RADAR_DETAIL_CONCURRENCY);
+      const results = await Promise.all(batch.map((item) => resolveRadarPool(item.address)));
+      batch.forEach((item, index) => { if (results[index]) resolvedByAddress.set(item.address.toLowerCase(), results[index]); });
+    }
+
+    return items.map((item) => {
       const versions = Array.isArray(item.versions) ? item.versions : [];
       const venue = versions.length ? versions.map((version) => `Uniswap ${String(version).toUpperCase()}`).join(" + ") : "Other";
       const quoteUnits = (value) => Math.max(0, Math.round(Number(value || 0) * 1_000_000)).toString();
-      const pools = Array.isArray(item.pools) ? item.pools : [];
-      const bestPool = pools.find((pool) => Number(pool.volume24 || 0) > 0) || pools[0] || {};
       const old = previousRadar.get(item.address.toLowerCase());
+      const freshResolve = resolvedByAddress.get(item.address.toLowerCase());
+      const resolvedPool = freshResolve?.pool || (old?.radarPoolResolved ? old.pool : "") || "";
+      const resolvedFeeTier = freshResolve?.feeTier ?? old?.feeTier ?? 0;
+      const radarPoolResolved = Boolean(freshResolve?.resolved || old?.radarPoolResolved);
       return {
         ...(old || {}),
-        address: item.address, pool: bestPool.pool || old?.pool || "", pair: bestPool.pool || old?.pair || "", globalPool: true, radarIndexed: true,
-        dex: venue, venue, feeTier: Number(bestPool.feeTier || 0), token0: item.hasUsdc ? USDC : "", token1: item.address, quoteKind: 0, currency: "USDC",
+        address: item.address, pool: resolvedPool, pair: resolvedPool, globalPool: true, radarIndexed: true,
+        dex: venue, venue, feeTier: resolvedFeeTier, token0: item.hasUsdc ? USDC : "", token1: item.address, quoteKind: 0, currency: "USDC",
         name: item.name || item.symbol || "Unknown", symbol: item.symbol || "—", image: item.icon || old?.image || "", creator: item.deployer || "",
         reserve: quoteUnits(item.liquidityUsdc / 2), virtualReserve: "0", threshold: "1", inventory: "0", graduated: true,
         factory: "radar-index", tradeCount: Number(item.txns24 || 0), holderCount: Number(item.traders24 || 0),
         volume: quoteUnits(item.volumeAll), volume5m: quoteUnits(item.volume5m), volume10m: quoteUnits(item.volume10m), volume1h: quoteUnits(item.volume1h), volume24h: quoteUnits(item.volume24),
         priceChange5m: item.change5m, priceChange10m: item.change10m, priceChange1h: item.change1h, priceChange24h: item.change24h,
         marketCap: quoteUnits(item.mcap), liquidity: quoteUnits(item.liquidityUsdc), price: Number(item.price || 0), createdAt: Number(item.firstSeen || 0), indexedBlock: latestBlock,
-        progress: 100, risk: venue, type: "Global", trades: old?.trades || [], radarVersions: versions,
+        progress: 100, risk: venue, type: "Global", trades: old?.trades || [], radarVersions: versions, radarPoolResolved,
       };
     });
   } catch (error) {

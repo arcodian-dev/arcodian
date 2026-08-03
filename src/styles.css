@@ -1663,7 +1663,7 @@ input {
 footer {
   max-width: 1192px;
   margin: auto;
-  padding: 32px 0 45px;
+  padding: 20px 0 28px;
   border-top: 1px solid #ffffff15;
   display: flex;
   gap: 24px;
@@ -2174,15 +2174,21 @@ body::before { background-size:80px 80px; opacity:.45; }
 .chain-pill.arc { color:#075f6c; border-color:#a8dfe7; background:#e9fbfd; }
 
 .market-terminal { padding:0; overflow:hidden; border:1px solid #cad6dc; border-radius:24px; background:#f8fafb; box-shadow:var(--od-shadow); }
-.market-terminal .terminal-stats { margin:0; padding:12px clamp(20px,3vw,44px); border:0; color:#9db0bd; background:var(--od-navy); }
+.market-terminal .terminal-stats { margin:0; padding:9px clamp(20px,3vw,44px); border:0; color:#9db0bd; background:var(--od-navy); font-size: 12px; }
 .market-terminal .terminal-stats b { color:var(--od-lime)!important; }
-.market-terminal .board-head { margin:0; padding:clamp(30px,4vw,58px) clamp(20px,4vw,62px) 24px; border:0; border-radius:0; background:
+/* This was sized like a landing-page hero (74px display type, 58px of
+   vertical padding) for a page whose actual job is "get to the table fast"
+   — compare RadarDEX, whose entire header+stats band is under 200px before
+   real data starts. Kept the kicker/headline (it's the page's identity, not
+   decoration to cut), shrank the type scale and padding so the table is a
+   couple of scrolls closer on load. */
+.market-terminal .board-head { margin:0; padding:22px clamp(20px,4vw,62px) 18px; border:0; border-radius:0; background:
   radial-gradient(circle at 90% 5%,rgba(22,201,232,.16),transparent 28%),
   linear-gradient(135deg,#f9fbfc,#eef4f6); box-shadow:none; }
-.market-terminal .board-head h2 { max-width:760px; margin:8px 0 0; color:var(--od-ink); font-size:clamp(42px,5vw,74px); line-height:.92; }
+.market-terminal .board-head h2 { max-width:640px; margin:6px 0 0; color:var(--od-ink); font-size:clamp(26px,2.6vw,36px); line-height:1.05; }
 .market-terminal .board-head .primary { border-radius:11px; background:var(--od-navy); box-shadow:0 12px 25px rgba(7,21,34,.18); }
-.market-view-tabs { display:flex; gap:8px; padding:0 clamp(20px,4vw,62px) 26px; border-bottom:1px solid var(--od-line); background:#eef4f6; }
-.market-view-tabs button { display:grid; grid-template-columns:26px auto; gap:1px 9px; min-width:220px; padding:13px 16px; border:1px solid #d2dde2; border-radius:12px; color:#435967; background:rgba(255,255,255,.7); text-align:left; cursor:pointer; }
+.market-view-tabs { display:flex; gap:8px; padding:0 clamp(20px,4vw,62px) 14px; border-bottom:1px solid var(--od-line); background:#eef4f6; }
+.market-view-tabs button { display:grid; grid-template-columns:22px auto; gap:1px 8px; min-width:0; padding:9px 14px; border:1px solid #d2dde2; border-radius:10px; color:#435967; text-align:left; background:rgba(255,255,255,.7); cursor:pointer; }
 .market-view-tabs button>span { grid-row:1/3; align-self:center; color:#7a8c97; font:700 10px DM Mono,monospace; }
 .market-view-tabs button>small { color:#81919a; font-size:9px; }
 .market-view-tabs button.active { color:#fff; border-color:var(--od-navy); background:var(--od-navy); box-shadow:0 10px 24px rgba(7,21,34,.16); }
@@ -2199,7 +2205,7 @@ body::before { background-size:80px 80px; opacity:.45; }
 .coin-card:nth-child(3n + 2),.coin-card:nth-child(3n + 2):hover { transform:none; }
 .coin-card .asset>img,.coin-card .asset>b { border-radius:10px; }
 .coin-card .verified { color:#087764!important; }
-.coin-card .progress-bar i { background:linear-gradient(90deg,var(--od-blue),var(--od-cyan)); }
+.coin-card .progress-bar i { background:linear-gradient(90deg,var(--f-amber, #6FA97A),var(--f-brass, #C9A15C)); }
 .coin-card button,.coin-card>a { color:#174d77; border-color:#cbdde8; background:#f3f8fa; }
 
 .arena-workspace { background:#f5f8f9; }
@@ -2535,14 +2541,36 @@ body::before { background-size:80px 80px; opacity:.45; }
     box-shadow: var(--ax-shadow-1);
   }
 }
+/* Every row variant (canonical launch, global pool, official asset) renders
+   8 cells — market/mcap/vol/change/holders-or-liquidity/progress/status/
+   watch-or-link — but this grid only ever defined 7 tracks. The 8th cell
+   (the watch/link button) had no matching track, so it fell into an
+   unconstrained implicit column, and the STATUS badge landed in the track
+   meant for that 48px button instead of its own. It read fine only because
+   an un-clipped pill silently overflows its track with no visible seam;
+   the moment status got `overflow:hidden` (to stop long DEX labels
+   wrapping), that latent mismatch became visible truncation. Fixed at the
+   root: 8 explicit tracks, status gets real room, watch stays 48px.
+   Also: RadarDEX's own table runs noticeably denser than ours (rank + tiny
+   sparkline + eleven columns in ~52px rows) — tightened padding here to
+   close some of that gap. */
 .mt-row {
   display: grid;
-  grid-template-columns: minmax(0, 2.1fr) 1fr .8fr .7fr 1.1fr .8fr 48px;
+  grid-template-columns: minmax(0, 2.1fr) 1fr .8fr .7fr 1.1fr .8fr 1.3fr 48px;
   align-items: center;
   gap: 10px;
-  padding: 12px 18px;
+  padding: 9px 18px;
   border-bottom: 1px solid #e7eef8;
+  position: relative;
 }
+/* Ledger-stamp signature (matches .cards article::before elsewhere in the
+   theme): a hairline accent that only appears on the row a trader is
+   actually looking at, instead of a flat hover fill. */
+.mt-row[role="row"]:not(.mt-head):not(.mt-official)::before {
+  content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px;
+  background: var(--f-amber, #6FA97A); border-radius: 2px; opacity: 0; transition: opacity .16s ease;
+}
+.mt-row[role="row"]:not(.mt-head):not(.mt-official):hover::before { opacity: .9; }
 .mt-row[role="row"]:not(.mt-head):not(.mt-official) { cursor: pointer; }
 .mt-row:not(.mt-head):hover { background: #f2f8ff; }
 .mt-global-pool { background: rgba(111,169,122,.035); }
@@ -2588,18 +2616,22 @@ body::before { background-size:80px 80px; opacity:.45; }
   background: #e8f1fb; color: var(--ax-ink); font-weight: 800;
 }
 .mt-market span { display: grid; min-width: 0; }
-.mt-market strong { font-size: 14px; color: var(--ax-ink); }
+.mt-market strong { font: 700 15px var(--f-display, serif); letter-spacing: .01em; color: var(--ax-ink); }
 .mt-market small { overflow: hidden; color: var(--ax-ink-soft); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.mt-num { color: var(--ax-ink); font: 600 12.5px var(--f-mono); }
+.mt-num { color: var(--ax-ink); font: 600 12.5px var(--f-mono); font-variant-numeric: tabular-nums; }
 .mt-num small { color: var(--ax-ink-soft); font-size: 10px; }
 .mt-num.positive { color: #0b7a4b; }
 .mt-num.negative { color: #b8324f; }
 .mt-progress { display: grid; gap: 4px; align-items: center; }
 .mt-progress i { display: block; height: 6px; border-radius: 99px; background: #e3ecf7; overflow: hidden; }
-.mt-progress em { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--ax-blue), var(--ax-cyan)); }
+.mt-progress em { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--f-amber, #6FA97A), var(--f-brass, #C9A15C)); }
 .mt-progress b { font: 700 10.5px var(--f-mono); color: var(--ax-ink-soft); }
 .mt-progress small { color: var(--ax-ink-soft); font-size: 11px; }
-.mt-status { justify-self: start; padding: 5px 9px; border-radius: 99px; font: 800 10px var(--f-body); letter-spacing: .06em; text-transform: uppercase; }
+/* Long DEX venue labels ("Uniswap V2 + Uniswap V3 + Uniswap V4") were
+   wrapping onto two lines inside an unconstrained pill, which inflated
+   every row to ~120px and read as an unfinished layout rather than a
+   deliberately spacious one. One line, truncated, full label on hover. */
+.mt-status { justify-self: start; max-width: 100%; padding: 5px 9px; overflow: hidden; border-radius: 99px; font: 800 10px var(--f-body); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; text-overflow: ellipsis; }
 .mt-status.curve { color: #075fd2; background: #e8f4ff; }
 .mt-status.dex { color: #2f6d0a; background: #eefbdc; }
 .mt-status.official { color: #4c5f7d; background: #eef2f8; }
@@ -3514,6 +3546,25 @@ html, body { max-width: 100%; overflow-x: clip; }
   --f-body: "Public Sans", system-ui, sans-serif;
   --f-mono: "Space Mono", "IBM Plex Mono", monospace;
 }
+
+/* Every scrollable panel on the ledger theme (Market table, coin detail
+   sidebars, mobile page scroll) was falling back to the OS's default
+   scrollbar — flat grey on this warm-ink background reads as an unstyled
+   template rather than a deliberate financial-instrument surface. One
+   themed thumb/track pair, applied everywhere. */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--f-brass) transparent;
+}
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--f-hair2);
+  border-radius: 9px;
+  border: 2px solid var(--f-ink);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--f-brass); background-clip: padding-box; }
 
 /* --- Chrome (global): nav, footer, mobile dock --- */
 .nav {

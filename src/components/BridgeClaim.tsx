@@ -7,6 +7,7 @@ import {
   attestationCountdown, bridgeAttention, clearPendingClaim, fetchCctpAttestation, isMainnetBridgeChainId, loadBridgeHistory, loadPendingClaims, messageTransmitterFor, recordBridgeHistory, savePendingClaim,
   type Attestation, type BridgeHistoryItem, type PendingClaim,
 } from "../bridgeRecovery";
+import { rpcUrlsFor } from "../shared";
 import { describeTxError } from "../txError";
 
 type Eip1193 = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
@@ -31,7 +32,7 @@ async function switchOrAddChain(provider: Eip1193, chainId: number) {
         nativeCurrency: isArc
           ? { name: "USDC", symbol: "USDC", decimals: 18 }
           : { name: chain?.gasSymbol || "ETH", symbol: chain?.gasSymbol || "ETH", decimals: 18 },
-        rpcUrls: [isArc ? arcNetwork.rpc : chain?.rpc].filter(Boolean),
+        rpcUrls: isArc ? rpcUrlsFor(arcNetwork) : [chain?.rpc].filter(Boolean) as string[],
         blockExplorerUrls: isArc ? [arcNetwork.explorer] : [],
       }],
     });
