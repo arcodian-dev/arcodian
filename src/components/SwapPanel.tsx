@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
 import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_ROUTER_ADDRESS, ARC_USDC_ERC20, MAINNET_TOKENS, TOKENS } from "../config";
-import { arcProvider } from "../shared";
+import { arcProvider, rpcUrlsFor } from "../shared";
 import { isCircleAsset, isTokenAddress, shortAddress, shortfallBps } from "../dex";
 import { ERC20_META_ABI, PAIR_ABI, isZeroForOne, readToken, type TokenMeta } from "../dexReads";
 import { findBestExternalV3Route, findBestRoute, findBestV3Route, ROUTE_HUBS, ROUTER_ABI } from "../routingReads";
@@ -140,6 +140,27 @@ export default function SwapPanel({ account, activeProvider, onConnect, chainId,
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [walletRpcBroken, setWalletRpcBroken] = useState(false);
+
+  // A wallet's own RPC is opaque to us — we can't ask it which URL it's
+  // using, only whether talking to it actually works. If a wallet has a
+  // stale/broken RPC saved for this chain (see rpcUrlsFor in shared.tsx —
+  // wallet_addEthereumChain can't overwrite an already-saved chain's RPC,
+  // only add a chain that doesn't exist yet), every quote/balance/tx call
+  // through it silently hangs or errors, which looked to a user like
+  // "swap pending forever" with no indication why (reported 2026-08-03,
+  // OKX). A quick, timed-out probe here surfaces that explicitly instead of
+  // leaving them guessing.
+  useEffect(() => {
+    if (!account || !activeProvider || !isMainnet) { setWalletRpcBroken(false); return; }
+    let alive = true;
+    const probe = activeProvider.request({ method: "eth_blockNumber" });
+    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 6_000));
+    Promise.race([probe, timeout])
+      .then(() => { if (alive) setWalletRpcBroken(false); })
+      .catch(() => { if (alive) setWalletRpcBroken(true); });
+    return () => { alive = false; };
+  }, [account, activeProvider, isMainnet]);
 
   useEffect(() => {
     const address = initialTokenAddress?.toLowerCase();
@@ -283,6 +304,13 @@ export default function SwapPanel({ account, activeProvider, onConnect, chainId,
   const actionLabel = busy ? "Swap pending…" : !account ? "Connect wallet" : !tokenOut ? "Choose a token" : !amountUnits ? "Enter an amount" : !route ? "No route available" : "Swap";
 
   return <div className="swap-pro">
+    {walletRpcBroken && <div className="swap-rpc-warning">
+      <p>Your wallet isn't responding on {activeArc.name} — it may still have an old/broken RPC saved from before. Remove {activeArc.name} in your wallet's network settings and reconnect, or edit its RPC URL to:</p>
+      <div className="swap-rpc-warning-url">
+        <code>{rpcUrlsFor(activeArc)[0]}</code>
+        <button type="button" onClick={() => { void navigator.clipboard.writeText(rpcUrlsFor(activeArc)[0]); setStatus("RPC URL copied"); }}>Copy</button>
+      </div>
+    </div>}
     <div className="swap-pro-head"><div><b>Swap</b><small>Best price across Arcodian liquidity</small></div><button type="button" className={settingsOpen ? "active" : ""} onClick={() => setSettingsOpen(!settingsOpen)} aria-label="Swap settings">⚙</button></div>
     {settingsOpen && <div className="swap-settings"><span>Max slippage</span><div>{["0.1", "0.5", "1"].map((value) => <button type="button" className={slippage === value ? "active" : ""} onClick={() => setSlippage(value)} key={value}>{value}%</button>)}<label><input inputMode="decimal" value={slippage} onChange={(event) => setSlippage(event.target.value.replace(/[^0-9.]/g, ""))} />%</label></div></div>}
 

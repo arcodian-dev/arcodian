@@ -3111,6 +3111,12 @@ body::before { background-size:80px 80px; opacity:.45; }
 .workspace-swap .dex-tabs button { border: 0; border-radius: 14px; color: var(--f-dim); }
 .workspace-swap .dex-tabs button.active { background: rgba(111,169,122,.13); color: var(--f-bone); box-shadow: inset 0 0 0 1px rgba(111,169,122,.18); }
 .swap-pro { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 10px; color: var(--f-bone); }
+.swap-rpc-warning { margin: 0 6px 10px; padding: 12px; border: 1px solid color-mix(in srgb, #b3261e 40%, transparent); border-radius: 10px; background: color-mix(in srgb, #b3261e 8%, transparent); }
+.swap-rpc-warning p { margin: 0 0 8px; color: #7a1a14; font-size: 12px; line-height: 1.5; }
+.swap-rpc-warning-url { display: flex; align-items: center; gap: 8px; }
+.swap-rpc-warning-url code { flex: 1; min-width: 0; overflow: hidden; padding: 7px 9px; border-radius: 8px; background: rgba(255,255,255,.6); color: #7a1a14; font: 11px var(--f-mono); text-overflow: ellipsis; white-space: nowrap; }
+.swap-rpc-warning-url button { flex-shrink: 0; padding: 7px 12px; border: 1px solid #b3261e; border-radius: 8px; background: #b3261e; color: #fff; font: 700 11px inherit; cursor: pointer; }
+.swap-rpc-warning-url button:hover { background: #971f18; }
 .swap-pro-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 6px 14px; }
 .swap-pro-head > div { display: grid; gap: 3px; }
 .swap-pro-head b { font-size: 18px; }
@@ -4237,6 +4243,9 @@ section h2, .docs-section h2, .docs-body h2, .docs-body h3 { color: var(--f-bone
 .workspace-swap .panel { border-top: 4px solid var(--f-amber); }
 .dex-warning { background: rgba(217,106,90,.12); color: #E6A093; }
 .dex-note { color: var(--f-dim); }
+.swap-rpc-warning { border-color: rgba(217,106,90,.4); background: rgba(217,106,90,.1); }
+.swap-rpc-warning p { color: #E6A093; }
+.swap-rpc-warning-url code { background: rgba(0,0,0,.25); color: #E6A093; }
 .token-circle { color: var(--f-amberhi); background: rgba(111,169,122,.14); }
 .token-error { color: #E6A093; }
 /* FX facts chips */

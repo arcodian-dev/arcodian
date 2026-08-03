@@ -372,6 +372,13 @@ export const ARC_MAINNET = {
   hexId: "0x13b2",
   name: "Arc Mainnet",
   rpc: ARC_MAINNET_RPC,
+  // Dedicated subdomain (2026-08-03) for the one URL we hand to wallets via
+  // wallet_addEthereumChain — see rpcUrlsFor() in shared.tsx for why a
+  // clean, purpose-built host matters: some wallets (OKX confirmed) probe
+  // the bare root of every candidate RPC URL before trusting it, and a
+  // subdomain whose ONLY job is answering that probe is more robust than a
+  // path on the main app domain.
+  walletRpc: "https://rpc-arc.arcodian.fun/",
   // baracat (arc-mainnet-rpc.baracat.meme) dropped 2026-08-02 — caught ~65
   // blocks behind the other two while still answering with a stale-but-
   // HTTP-200 result, same reason it was dropped from rpc-mainnet.php.

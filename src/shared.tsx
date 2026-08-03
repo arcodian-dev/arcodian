@@ -165,8 +165,8 @@ export function normalizeSocial(value: string, type: "twitter" | "discord") {
 // to whichever URL is actually healthy, it rejects the network entirely
 // over the one that failed its probe. One URL we fully control beats three
 // where we only control one.
-export function rpcUrlsFor(chain: { rpc: string; rpcs?: readonly string[] }): string[] {
-  return [chain.rpc];
+export function rpcUrlsFor(chain: { rpc: string; rpcs?: readonly string[]; walletRpc?: string }): string[] {
+  return [chain.walletRpc || chain.rpc];
 }
 export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?: number } = ARC) {
   const urls = chain.rpcs && chain.rpcs.length ? chain.rpcs : [chain.rpc];
