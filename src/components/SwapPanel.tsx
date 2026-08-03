@@ -154,12 +154,22 @@ export default function SwapPanel({ account, activeProvider, onConnect, chainId,
   useEffect(() => {
     if (!account || !activeProvider || !isMainnet) { setWalletRpcBroken(false); return; }
     let alive = true;
-    const probe = activeProvider.request({ method: "eth_blockNumber" });
-    const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 6_000));
-    Promise.race([probe, timeout])
-      .then(() => { if (alive) setWalletRpcBroken(false); })
-      .catch(() => { if (alive) setWalletRpcBroken(true); });
-    return () => { alive = false; };
+    const check = () => {
+      const probe = activeProvider.request({ method: "eth_blockNumber" });
+      const timeout = new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 6_000));
+      Promise.race([probe, timeout])
+        .then(() => { if (alive) setWalletRpcBroken(false); })
+        .catch(() => { if (alive) setWalletRpcBroken(true); });
+    };
+    check();
+    // Fixing this (editing the wallet's saved RPC, or removing/re-adding the
+    // chain) happens entirely on the wallet's side — nothing fires an event
+    // back to the page when it does. A one-shot probe would leave the
+    // banner stuck showing forever even after the user fixes it (reported
+    // 2026-08-03); poll so it clears itself once the wallet is actually
+    // responding again.
+    const poll = window.setInterval(check, 8_000);
+    return () => { alive = false; window.clearInterval(poll); };
   }, [account, activeProvider, isMainnet]);
 
   useEffect(() => {

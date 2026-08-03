@@ -378,15 +378,28 @@ export default function App() {
       );
     const updateAccounts = (value: unknown) =>
       setAccount(Array.isArray(value) ? String(value[0] || "") : "");
-    activeProvider
-      .request({ method: "eth_chainId" })
-      .then(updateChain)
-      .catch(() => setChainId(null));
+    const checkChain = () =>
+      activeProvider
+        .request({ method: "eth_chainId" })
+        .then(updateChain)
+        .catch(() => setChainId(null));
+    checkChain();
     activeProvider.on?.("chainChanged", updateChain);
     activeProvider.on?.("accountsChanged", updateAccounts);
+    // A one-time check on connect isn't enough: if the wallet's eth_chainId
+    // read failed or timed out right when it happened (e.g. it still had a
+    // broken RPC saved for this chain — see rpcUrlsFor in shared.tsx), that
+    // failure never gets retried. Editing a wallet's RPC for a chain it
+    // already has doesn't change the chain ID itself, so wallets don't fire
+    // chainChanged for it — a user fixing their RPC mid-session had no way
+    // to recover without a full disconnect/reconnect (reported 2026-08-03:
+    // balance stayed unreadable on /terminal even after fixing the RPC).
+    // Poll as a safety net so state self-heals.
+    const poll = window.setInterval(checkChain, 8_000);
     return () => {
       activeProvider.removeListener?.("chainChanged", updateChain);
       activeProvider.removeListener?.("accountsChanged", updateAccounts);
+      window.clearInterval(poll);
     };
   }, [activeProvider]);
 
@@ -425,6 +438,31 @@ export default function App() {
       setAccount(accounts[0] || "");
       setWalletOpen(false);
       setStatus("");
+      // Prompt the network switch/add right at connect time, not only the
+      // first time a user happens to attempt a swap — but only on the
+      // surfaces that actually run on Arc Mainnet. Lend and the
+      // agent-economy tools are deliberately Arc Testnet only (see the
+      // acknowledgment gate copy); forcing a mainnet switch prompt there
+      // would be actively wrong, not just unnecessary. A wallet that's
+      // never seen Arc Mainnet before gets the native "Add this network?"
+      // popup immediately (with our correct RPC — see rpcUrlsFor), so it's
+      // never left silently on the wrong chain wondering why nothing loads.
+      const mainnetTabs: Tab[] = ["swap", "terminal", "screener", "bridge"];
+      try {
+        const currentChain = (await option.provider.request({ method: "eth_chainId" })) as string;
+        if (mainnetTabs.includes(tab) && Number.parseInt(currentChain, 16) !== ARC_MAINNET.id) {
+          try {
+            await option.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_MAINNET.hexId }] });
+          } catch (switchError) {
+            if ((switchError as { code?: number })?.code === 4902) {
+              await option.provider.request({
+                method: "wallet_addEthereumChain",
+                params: [{ chainId: ARC_MAINNET.hexId, chainName: ARC_MAINNET.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(ARC_MAINNET), blockExplorerUrls: [ARC_MAINNET.explorer] }],
+              });
+            }
+          }
+        }
+      } catch { /* user declined, or wallet doesn't support programmatic network switch — not fatal, they can still use the app on whatever chain they're on */ }
     } catch (error) {
       setStatus(describeTxError(error));
     }
