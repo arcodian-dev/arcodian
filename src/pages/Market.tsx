@@ -36,6 +36,21 @@ import {
 // legible than the exact figure — a freshly-launched coin's numbers are
 // still small enough that compacting them ("1K" for 1,003.96) throws away
 // the precision without buying any real readability.
+// Percentage-change display: null/undefined means "no baseline old enough
+// to compute this window" (e.g. a token's first trade was 2 minutes ago —
+// there's no real "5m ago" price), which is genuinely different from an
+// actual 0.00% move. Coercing it to 0 (the old `value || 0` pattern) made
+// every quiet market look permanently frozen at "+0.00%" no matter how
+// much real buying/selling had happened. Render "—" for the unknown case.
+function pctText(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+}
+function pctClass(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "";
+  return value >= 0 ? "positive" : "negative";
+}
+
 function compactNumber(value: number): string {
   if (!isFinite(value)) return "0";
   if (Math.abs(value) < 10_000) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
@@ -670,7 +685,7 @@ export default function Screener({
                 displayCurrency,
                 fxRate,
               ).toLocaleString(undefined, { maximumFractionDigits: 2 })} <small>{displayCurrency}</small></span>
-              <span className={`mt-num ${(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}`}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</span>
+              <span className={`mt-num ${pctClass(item.priceChange24h)}`}>{pctText(item.priceChange24h)}</span>
               <span className="mt-num">{item.holderCount || 0}</span>
               <span className="mt-progress"><i><em style={{ width: `${Math.min(100, item.progress)}%` }} /></i><b>{item.progress.toFixed(1)}%</b></span>
               <span className={`mt-status ${item.graduated ? "dex" : "curve"}`}>{item.graduated ? "Arcodian DEX" : item.risk}</span>
@@ -683,8 +698,8 @@ export default function Screener({
               <span className="mt-market">{item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}<span><strong>{item.symbol}</strong><small>{item.name} · {item.dex}</small></span></span>
               <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
               <span className="mt-num">{compactNumber(displayVolume24h(item))} <small>USDC</small></span>
-              <span className="mt-num"><small>5m </small>{(item.priceChange5m || 0) >= 0 ? "+" : ""}{(item.priceChange5m || 0).toFixed(2)}%</span>
-              <span className="mt-num"><small>1h </small>{(item.priceChange1h || 0) >= 0 ? "+" : ""}{(item.priceChange1h || 0).toFixed(2)}%</span>
+              <span className={`mt-num ${pctClass(item.priceChange5m)}`}><small>5m </small>{pctText(item.priceChange5m)}</span>
+              <span className={`mt-num ${pctClass(item.priceChange1h)}`}><small>1h </small>{pctText(item.priceChange1h)}</span>
               <span className="mt-num">{compactNumber(displayLiquidity(item))} <small>liq</small></span>
               <span className="mt-status dex">{item.dex} · {(Number(item.feeTier || 0) / 10000).toFixed(2)}%</span>
               <span className="mt-watch">↗</span>
@@ -733,10 +748,10 @@ export default function Screener({
               {isGlobalPool(item) ? (
                 <>
                   <div className="global-pool-metrics">
-                    <span><small>5m</small><b className={(item.priceChange5m || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange5m || 0) >= 0 ? "+" : ""}{(item.priceChange5m || 0).toFixed(2)}%</b></span>
-                    <span><small>10m</small><b className={(item.priceChange10m || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange10m || 0) >= 0 ? "+" : ""}{(item.priceChange10m || 0).toFixed(2)}%</b></span>
-                    <span><small>1h</small><b className={(item.priceChange1h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange1h || 0) >= 0 ? "+" : ""}{(item.priceChange1h || 0).toFixed(2)}%</b></span>
-                    <span><small>24h</small><b className={(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</b></span>
+                    <span><small>5m</small><b className={pctClass(item.priceChange5m)}>{pctText(item.priceChange5m)}</b></span>
+                    <span><small>10m</small><b className={pctClass(item.priceChange10m)}>{pctText(item.priceChange10m)}</b></span>
+                    <span><small>1h</small><b className={pctClass(item.priceChange1h)}>{pctText(item.priceChange1h)}</b></span>
+                    <span><small>24h</small><b className={pctClass(item.priceChange24h)}>{pctText(item.priceChange24h)}</b></span>
                   </div>
                   <div className="global-pool-submetrics"><span>Market cap <b>{compactNumber(displayMarketCap(item))} USDC</b></span><span>Liquidity <b>{compactNumber(displayLiquidity(item))} USDC</b></span><span>24h volume <b>{compactNumber(displayVolume24h(item))} USDC</b></span></div>
                   <button>Open in Terminal →</button>
@@ -746,7 +761,7 @@ export default function Screener({
                   <div className="coin-discovery-metrics">
                     <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span>
                     <span><small>Holders</small><b>{item.holderCount || 0}</b></span>
-                    <span><small>24h</small><b className={(item.priceChange24h || 0) >= 0 ? "positive" : "negative"}>{(item.priceChange24h || 0) >= 0 ? "+" : ""}{(item.priceChange24h || 0).toFixed(2)}%</b></span>
+                    <span><small>24h</small><b className={pctClass(item.priceChange24h)}>{pctText(item.priceChange24h)}</b></span>
                   </div>
                   <div className="mini-chart">
                     <i />
@@ -1523,7 +1538,7 @@ function TradingDesk({
           </div>
           <div className="orbit-top-price">
             <div className="p mono">{priceLabel(lastPrice)} {currency}</div>
-            <div className={`orbit-chg mono ${(asset.priceChange24h || 0) >= 0 ? "pos" : "neg"}`}>{(asset.priceChange24h || 0) >= 0 ? "+" : ""}{(asset.priceChange24h || 0).toFixed(2)}%</div>
+            <div className={`orbit-chg mono ${asset.priceChange24h != null && asset.priceChange24h < 0 ? "neg" : "pos"}`}>{pctText(asset.priceChange24h)}</div>
           </div>
           <div className="orbit-stats">
             <div className="orbit-stat"><b>{compactNumber(Number(formatEther(marketCap)))}</b><span>Mcap</span></div>

@@ -115,6 +115,31 @@ const LOG_CHUNK_BLOCKS = 90_000;
 // when the block window is wide. Keep global venue/pool scans narrower than
 // the legacy launch scan; subsequent timer runs only cover the new head.
 const ADDRESS_LOG_CHUNK_BLOCKS = Number(process.env.INDEX_ADDRESS_LOG_CHUNK_BLOCKS || 10_000);
+// Price change over a trailing window, using the correct baseline: the
+// last priced trade BEFORE the window opened (i.e. "price N seconds ago"),
+// not the first trade inside the window. The latter (the original bug here)
+// collapses to 0% any time exactly one trade lands inside a short window
+// (first-in-window === last-overall), which is the common case for a 5m
+// window — so every market appeared frozen at "+0.00%" regardless of real
+// trading, even seconds after a real buy/sell. `priced` must be sorted
+// ascending by time. Returns null (not 0) when there's no trade old enough
+// to serve as a baseline — genuinely unknown, not "no change".
+function changeFor(priced, now, seconds) {
+  const last = priced.at(-1);
+  if (!last) return null;
+  const cutoff = now - seconds;
+  let before = null;
+  for (const trade of priced) {
+    if (trade.timestamp >= cutoff) break;
+    before = trade;
+  }
+  if (!before || before === last) return null;
+  const lastPrice = Number(BigInt(last.native)) / Number(BigInt(last.tokens));
+  const beforePrice = Number(BigInt(before.native)) / Number(BigInt(before.tokens));
+  if (!beforePrice) return null;
+  return (lastPrice / beforePrice) * 100 - 100;
+}
+
 async function contractLogs(contract, fromBlock) {
   if (fromBlock > latestBlock) return [];
   const address = await contract.getAddress();
@@ -228,18 +253,13 @@ async function indexGlobalV3Pools() {
         const volumeFor = (seconds) => trades.filter((trade) => trade.timestamp >= now - seconds).reduce((sum, trade) => sum + BigInt(trade.native), 0n);
         const priced = trades.filter((trade) => BigInt(trade.tokens) > 0n);
         const last = priced.at(-1);
-        const changeFor = (seconds) => {
-          const first = priced.find((trade) => trade.timestamp >= now - seconds);
-          if (!first || !last) return 0;
-          return (Number(BigInt(last.native)) / Number(BigInt(last.tokens))) / (Number(BigInt(first.native)) / Number(BigInt(first.tokens))) * 100 - 100;
-        };
         const row = {
           address: tokenAddress, pool, curve: "", pair: pool, globalPool: true, dex: venue.dex, venue: venue.dex,
           feeTier: Number(parsed.args.fee), token0, token1, quoteKind: 0, currency: "USDC", name, symbol, image, creator: "",
           reserve: usdcBalance.toString(), virtualReserve: "0", threshold: "1", inventory: tokenBalance.toString(), graduated: true,
           factory: venue.address, tradeCount: trades.length, holderCount: new Set(trades.map((trade) => trade.user.toLowerCase())).size,
           volume: trades.reduce((sum, trade) => sum + BigInt(trade.native), 0n).toString(), volume5m: volumeFor(300).toString(), volume10m: volumeFor(600).toString(), volume1h: volumeFor(3600).toString(), volume24h: volumeFor(86400).toString(),
-          priceChange5m: changeFor(300), priceChange10m: changeFor(600), priceChange1h: changeFor(3600), priceChange24h: changeFor(86400),
+          priceChange5m: changeFor(priced, now, 300), priceChange10m: changeFor(priced, now, 600), priceChange1h: changeFor(priced, now, 3600), priceChange24h: changeFor(priced, now, 86400),
           marketCap: last && tokenBalance > 0n ? ((BigInt(last.native) * tokenBalance) / BigInt(last.tokens)).toString() : "0",
           liquidity: (usdcBalance * 2n).toString(), createdAt: log.blockNumber, indexedBlock: latestBlock, progress: 100, risk: venue.dex, type: "Graduated", trades,
         };
@@ -409,11 +429,7 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   const volume24h = trades.filter((trade) => trade.timestamp >= now - 86400).reduce((sum, trade) => sum + BigInt(trade.native), 0n);
   const holderCount = new Set(trades.map((trade) => trade.user.toLowerCase())).size;
   const pricedTrades = trades.filter((trade) => BigInt(trade.tokens) > 0n);
-  const first24h = pricedTrades.find((trade) => trade.timestamp >= now - 86400);
-  const lastTrade = pricedTrades.at(-1);
-  const priceChange24h = first24h && lastTrade
-    ? (Number(BigInt(lastTrade.native)) / Number(BigInt(lastTrade.tokens))) / (Number(BigInt(first24h.native)) / Number(BigInt(first24h.tokens))) * 100 - 100
-    : 0;
+  const priceChange24h = changeFor(pricedTrades, now, 86400);
   return {
     address, curve, pair, quoteKind: 0, currency: "USDC",
     lpSupply: lpSupply.toString(), lpBurned: lpBurned.toString(),
@@ -432,6 +448,69 @@ const globalResult = await indexGlobalV3Pools();
 const radarPools = await indexRadarGlobalTokens(globalResult.pools);
 const globalPools = [...globalResult.pools, ...radarPools];
 const launchesOut = [...perFactory.flatMap((f) => f.launches), ...globalPools].reverse();
+
+// mainnet-live-tape.mjs (a separate, dedicated 1-second-tick scanner) has
+// repeatedly proven to catch swaps on graduated pools that this heavy
+// indexer's own per-launch/per-pool incremental scan misses — found
+// 2026-08-03 via Architects: this indexer's own trade history for it had
+// been stuck at a swap from 16+ hours ago while the live tape had one from
+// 3 minutes ago, meaning whatever silently interrupts contractLogs()/
+// addressLogs() for a graduated pool's Swap events here can leave that
+// launch's trade history frozen indefinitely without ever throwing loudly
+// enough to be noticed. Rather than chase that intermittent gap, merge the
+// live tape's independently-verified-fresh trades in as an authoritative
+// supplement before deriving anything from the trade history below.
+let liveTapeByToken = new Map();
+try {
+  const tape = JSON.parse(await readFile(process.env.MAINNET_LIVE_TAPE_PATH || "/www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json", "utf8"));
+  for (const trade of Array.isArray(tape.trades) ? tape.trades : []) {
+    const key = String(trade.token || "").toLowerCase();
+    if (!liveTapeByToken.has(key)) liveTapeByToken.set(key, []);
+    liveTapeByToken.get(key).push(trade);
+  }
+} catch { /* live tape not available yet — fall back to this indexer's own trades only */ }
+
+// Trailing-window volume/price-change fields get computed at the moment a
+// launch/pool's trade history is first scanned, then carried forward as
+// plain object fields through every later merge. Nothing re-derives them
+// against the CURRENT wall clock on ticks where a launch's own incremental
+// scan finds zero new swaps (e.g. RPC hiccup, or genuinely no new trades) —
+// so a token could show "$30 volume in the last 5 minutes" while its most
+// recent trade in the very same payload is 16 hours old. Recompute every
+// window field fresh from each item's own (now live-tape-merged) trades
+// array right before writing, so what's displayed can never contradict the
+// trade history sitting next to it. Radar-sourced rows are exempt: their
+// trades array is intentionally empty (Radar's API gives us aggregates, not
+// raw swaps), and change5m/1h/24h there are Radar's own numbers, not ours
+// to derive.
+const nowSeconds = Math.floor(Date.now() / 1000);
+for (const item of launchesOut) {
+  if (item.factory === "radar-index") continue;
+  const extra = liveTapeByToken.get(String(item.address).toLowerCase()) || [];
+  const trades = [...(item.trades || []), ...extra]
+    .filter((trade, index, all) => all.findIndex((candidate) => candidate.tx === trade.tx && candidate.side === trade.side) === index)
+    .sort((a, b) => (a.block || 0) - (b.block || 0))
+    .slice(-1000);
+  item.trades = trades;
+  const priced = trades.filter((trade) => BigInt(trade.tokens || 0) > 0n);
+  const volumeFor = (seconds) => trades.filter((trade) => trade.timestamp >= nowSeconds - seconds).reduce((sum, trade) => sum + BigInt(trade.native || 0), 0n);
+  item.volume = trades.reduce((sum, trade) => sum + BigInt(trade.native || 0), 0n).toString();
+  item.volume5m = volumeFor(300).toString();
+  item.volume10m = volumeFor(600).toString();
+  item.volume1h = volumeFor(3600).toString();
+  item.volume24h = volumeFor(86400).toString();
+  item.priceChange5m = changeFor(priced, nowSeconds, 300);
+  item.priceChange10m = changeFor(priced, nowSeconds, 600);
+  item.priceChange1h = changeFor(priced, nowSeconds, 3600);
+  item.priceChange24h = changeFor(priced, nowSeconds, 86400);
+  item.tradeCount = trades.length;
+  item.holderCount = new Set(trades.map((trade) => trade.user.toLowerCase())).size;
+  const last = priced.at(-1);
+  const inventory = BigInt(item.inventory || 0);
+  if (last && inventory > 0n && BigInt(last.tokens) > 0n) {
+    item.marketCap = ((BigInt(last.native) * inventory) / BigInt(last.tokens)).toString();
+  }
+}
 const recentTrades = launchesOut.flatMap((launch) => launch.trades.slice(-20).map((trade) => ({ ...trade, token: launch.address, symbol: launch.symbol }))).sort((a, b) => b.block - a.block).slice(0, 60);
 
 const payload = {
