@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserProvider, Contract, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
+import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
 import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
@@ -1905,11 +1905,12 @@ function Launch({
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
   const identityReady = Boolean(name.trim() && /^[A-Za-z0-9]{2,10}$/.test(symbol));
+  const imageUriBytes = new TextEncoder().encode(image).length;
   // uploadImage() returns ipfs:// once Pinata is configured (the common
   // case now) and only falls back to https:// when it isn't — this used to
   // require https:// only, so every IPFS-backed upload silently failed step
   // 3 forever. imageUrl() in shared.tsx already treats ipfs:// as first-class.
-  const launchReady = identityReady && /^(https:\/\/|ipfs:\/\/)/.test(image);
+  const launchReady = identityReady && /^(https:\/\/|ipfs:\/\/)/.test(image) && imageUriBytes <= 200;
 
   async function uploadImage(file: File) {
     setBusy(true);
@@ -1952,11 +1953,15 @@ function Launch({
     }
     if (
       !name.trim() ||
+      name.trim().length > 40 ||
       !/^[A-Za-z0-9]{2,10}$/.test(symbol) ||
-      !/^(https:\/\/|ipfs:\/\/)/.test(image)
+      !/^(https:\/\/|ipfs:\/\/)/.test(image) ||
+      imageUriBytes > 200
     ) {
       setStatus(
-        "Enter name, 2–10 character symbol, and upload a valid image first.",
+        imageUriBytes > 200
+          ? "Image URI is too long for the launch contract. Upload the image again to create a compact IPFS URI."
+          : "Enter name, 2–10 character symbol, and upload a valid image first.",
       );
       return;
     }
@@ -1969,17 +1974,22 @@ function Launch({
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
       const isEurc = !isMainnet && quoteChoice === "EURC";
+      const factoryAddress = (isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory).toLowerCase();
       const factory = new Contract(
-        isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory,
+        factoryAddress,
         ARC_PUMP_FACTORY_ABI,
         signer,
       );
       // Mobile OKX may run its own eth_estimateGas against a stale/busy
-      // endpoint even after the chain switch succeeds. Estimate against our
-      // canonical Arc RPC first, then pass the measured limit to the wallet so
-      // it can sign without performing a second estimation request. A failed
-      // canonical estimate stops here; no transaction is sent in that case.
-      const canonical = arcProvider(activeArc);
+      // endpoint even after the chain switch succeeds. Use exactly one
+      // canonical RPC for this preflight; the market read fallback is not
+      // suitable here because one of its optional endpoints can be stale or
+      // unavailable while the canonical endpoint is healthy.
+      const canonical = new JsonRpcProvider(
+        activeArc.rpc,
+        Network.from(activeArc.id),
+        { staticNetwork: Network.from(activeArc.id), batchMaxCount: 1 },
+      );
       let gasLimit: bigint;
       try {
         const creator = await signer.getAddress();
@@ -1990,7 +2000,7 @@ function Launch({
         ]);
         const estimated = await canonical.estimateGas({
           from: creator,
-          to: isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory,
+          to: factoryAddress,
           data,
         });
         gasLimit = (estimated * 125n) / 100n;
