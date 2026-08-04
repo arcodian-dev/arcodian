@@ -554,6 +554,22 @@ try {
 // raw swaps), and change5m/1h/24h there are Radar's own numbers, not ours
 // to derive.
 const nowSeconds = Math.floor(Date.now() / 1000);
+function holderSnapshot(trades) {
+  const balances = new Map();
+  for (const trade of trades) {
+    const address = String(trade.user || "").toLowerCase();
+    if (!address || address === "0x0000000000000000000000000000000000000000") continue;
+    const amount = BigInt(trade.tokens || 0);
+    const next = (balances.get(address) || 0n) + (trade.side === "SELL" ? -amount : amount);
+    balances.set(address, next);
+  }
+  return [...balances.entries()]
+    .filter(([, balance]) => balance > 0n)
+    .sort(([, a], [, b]) => a > b ? -1 : a < b ? 1 : 0)
+    .slice(0, 10)
+    .map(([address, balance]) => ({ address, balance: balance.toString() }));
+}
+
 for (const item of launchesOut) {
   if (item.factory === "radar-index") continue;
   const extra = liveTapeByToken.get(String(item.address).toLowerCase()) || [];
@@ -574,7 +590,8 @@ for (const item of launchesOut) {
   item.priceChange1h = changeFor(priced, nowSeconds, 3600);
   item.priceChange24h = changeFor(priced, nowSeconds, 86400);
   item.tradeCount = trades.length;
-  item.holderCount = new Set(trades.map((trade) => trade.user.toLowerCase())).size;
+  item.topHolders = holderSnapshot(trades);
+  item.holderCount = item.topHolders.length;
   const last = priced.at(-1);
   const inventory = BigInt(item.inventory || 0);
   if (last && inventory > 0n && BigInt(last.tokens) > 0n) {

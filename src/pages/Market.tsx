@@ -945,7 +945,11 @@ function TradingDesk({
   const [netCost, setNetCost] = useState(0n);
   const [liveTrades, setLiveTrades] = useState<
     Array<{ side: "BUY" | "SELL"; amount: bigint; tokens: bigint }>
-  >([]);
+  >(() => (asset.trades || []).slice(-12).reverse().map((event) => ({
+    side: event.side,
+    amount: BigInt(event.native),
+    tokens: BigInt(event.tokens),
+  })));
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
   // Canonical launch curves use Arc native USDC (18 decimals) on both
   // networks. Only Radar/global ERC-20 pool records use 6-decimal USDC.
@@ -977,6 +981,15 @@ function TradingDesk({
     return () => { alive = false; };
   }, [asset.address, isMainnet]);
   const optimisticTapeUntil = useRef(0);
+  useEffect(() => {
+    const seeded = (asset.trades || []).slice(-12).reverse().map((event) => ({
+      side: event.side,
+      amount: BigInt(event.native),
+      tokens: BigInt(event.tokens),
+    }));
+    setChartTrades(asset.trades || []);
+    setLiveTrades(seeded);
+  }, [asset.address, asset.trades]);
   const liveAsset = { ...asset, graduated, pair };
   const currency = asset.currency || "USDC";
   const validAmount = Number(amount) > 0;
@@ -1727,15 +1740,16 @@ function TradingDesk({
                 )}
                 {deskTab === "holders" && (
                   <table>
-                    <thead><tr><th>#</th><th>Wallet</th><th>Balance</th></tr></thead>
+                    <thead><tr><th>#</th><th>Wallet</th><th>Balance</th><th>Supply</th></tr></thead>
                     <tbody>
                       {(asset.topHolders || []).slice(0, 10).length ? (asset.topHolders || []).slice(0, 10).map((holder, index) => (
                         <tr key={holder.address}>
                           <td style={{ color: "var(--muted)" }}>{index + 1}</td>
                           <td><a className="orbit-wallet" href={`${activeArc.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">{short(holder.address)}</a></td>
                           <td>{Number(formatEther(BigInt(holder.balance))).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                          <td>{(Number((BigInt(holder.balance) * 10_000n) / totalSupplyWei) / 100).toFixed(2)}%</td>
                         </tr>
-                      )) : <tr><td colSpan={3} className="orbit-empty-row">Holder distribution appears after indexed trades.</td></tr>}
+                      )) : <tr><td colSpan={4} className="orbit-empty-row">Holder distribution appears after indexed trades.</td></tr>}
                     </tbody>
                   </table>
                 )}

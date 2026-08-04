@@ -5200,6 +5200,18 @@ footer::before {
 .coin-page-shell .orbit-connect-gate button{font-family:var(--display);color:#04170f;background:linear-gradient(180deg,#26d98a,#0b8f5c)}
 .coin-page-shell .orbit-mob-nav{background:rgba(8,11,17,.96)}
 
+/* Coin routes are trading terminals, so they own the full viewport width.
+   Older market-card rules applied a 12–32px inset to this wrapper and left
+   unused gutters beside an otherwise full-width terminal. */
+.coin-page-shell{
+  width:100vw;
+  max-width:none;
+  margin:0;
+  padding:0;
+}
+.coin-page-shell .orbit-terminal{width:100%;}
+.coin-page-shell .orbit-tape table{min-width:100%;}
+
 /* The chart is shared with /terminal. Keep its host sizing stable so
    lightweight-charts can measure it on first paint and after mobile rotation. */
 .coin-page-shell .orbit-chart-wrap .terminal-chart-canvas{inset:8px;width:calc(100% - 16px);height:calc(100% - 16px)}
