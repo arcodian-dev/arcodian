@@ -2011,14 +2011,30 @@ function Launch({
       } finally {
         canonical.destroy();
       }
-      const tx = await factory.createLaunch(
+      // OKX mobile treats an omitted transaction type as an EIP-1559
+      // transaction and performs its own fee preflight, even when gasPrice
+      // was supplied. That request hits the wallet's stale/busy RPC before
+      // the signing prompt. Send a fully-populated legacy transaction so the
+      // wallet has no fee or gas estimation work left to perform.
+      const nonce = await signer.getNonce("pending");
+      const data = factory.interface.encodeFunctionData("createLaunch", [
         name.trim(),
         symbol.toUpperCase(),
         image,
-        { gasLimit, gasPrice },
-      );
+      ]);
+      const tx = await signer.sendTransaction({
+        type: 0,
+        chainId: activeArc.id,
+        nonce,
+        to: factoryAddress,
+        data,
+        gasLimit,
+        gasPrice,
+        value: 0n,
+      });
       setStatus(`Launch submitted: ${tx.hash}`);
       const receipt = await tx.wait();
+      if (!receipt) throw new Error("Launch transaction was not mined yet. Check the transaction in your wallet.");
       const created = receipt.logs
         .map((log: { topics: readonly string[]; data: string }) => {
           try {
