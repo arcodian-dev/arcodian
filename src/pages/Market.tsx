@@ -2030,18 +2030,18 @@ function Launch({
         const QSCALE = 10n ** 12n;
         const curve = new Contract(curveAddress, [
           isEurc ? "function realQuoteReserve() view returns(uint256)" : "function realNativeReserve() view returns(uint256)",
+          isEurc ? "function VIRTUAL_QUOTE() view returns(uint256)" : "function VIRTUAL_NATIVE() view returns(uint256)",
           "function graduationThreshold() view returns(uint256)", "function graduated() view returns(bool)"], provider);
         const token = new Contract(tokenAddress, ["function balanceOf(address) view returns(uint256)"], provider);
-        const [rawReserve, rawThreshold, graduated, inventory] = await Promise.all([
+        const [rawReserve, rawVirtualReserve, rawThreshold, graduated, inventory] = await Promise.all([
           isEurc ? curve.realQuoteReserve() : curve.realNativeReserve(),
+          isEurc ? curve.VIRTUAL_QUOTE() : curve.VIRTUAL_NATIVE(),
           curve.graduationThreshold(), curve.graduated(), token.balanceOf(curveAddress)]);
         // Normalize EURC's 6-dec collateral to the 18-dec magnitudes the UI expects.
         const scale = isEurc ? QSCALE : 1n;
-        // Canonical v9 fixes the virtual reserve at 1,000 quote units. Do not
-        // call the legacy VIRTUAL_* getter here: v9 keeps its selector as a
-        // reverting compatibility stub, which previously made a successful
-        // create look failed during post-confirmation hydration.
-        const reserve = (rawReserve as bigint) * scale, virtualReserve = 1_000n * 10n ** 18n, threshold = (rawThreshold as bigint) * scale;
+        const reserve = (rawReserve as bigint) * scale;
+        const virtualReserve = (rawVirtualReserve as bigint) * scale;
+        const threshold = (rawThreshold as bigint) * scale;
         onCreated?.({ symbol: symbol.toUpperCase(), name: name.trim(), type: "Meme", risk: "Curve", address: tokenAddress, curve: curveAddress, image, creator: account, quoteKind: isEurc ? 1 : 0, currency: quoteChoice, progress: graduated ? 100 : Number((reserve * 10000n) / threshold) / 100, reserve, virtualReserve, threshold, inventory, graduated, tradeCount: 0, holderCount: 0, volume: "0", volume1h: "0", volume24h: "0", priceChange24h: 0, topHolders: [], trades: [] });
       }
     } catch (error) {
