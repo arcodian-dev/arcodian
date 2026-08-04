@@ -36,6 +36,7 @@ type Launch = {
   threshold: bigint;
   volume: bigint;
   volume24h: bigint;
+  globalPool: boolean;
   holderCount: number;
   tradeCount: number;
   graduated: boolean;
@@ -43,7 +44,7 @@ type Launch = {
   spark: string;
 };
 
-type Totals = { coins: number; trades: number; holders: number; volume: bigint; graduated: number };
+type Totals = { coins: number; trades: number; holders: number; volume: number; graduated: number };
 
 const RAILS = [
   {
@@ -143,8 +144,8 @@ function sparkFrom(trades: Trade[]): string {
 }
 
 /** Quote amounts are 18-dec for USDC-native curves and 6-dec for EURC ones. */
-function quoteAmount(value: bigint, currency: string): number {
-  return Number(currency === "EURC" ? formatUnits(value, 6) : formatEther(value));
+function quoteAmount(value: bigint, currency: string, globalPool = false): number {
+  return Number(globalPool || currency === "EURC" ? formatUnits(value, 6) : formatEther(value));
 }
 
 function money(value: number, currency: string): string {
@@ -194,13 +195,14 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     // has traded it" rather than faking precision).
     let alive = true;
     (async () => {
-      const response = await fetch("/data/mainnet-market-index.json", { cache: "no-store" });
+      const response = await fetch("/data/mainnet-market-index.json", { cache: "no-cache" });
       if (!response.ok) throw new Error("INDEX_UNAVAILABLE");
       const index = await response.json() as {
         launches?: Array<{
           address: string; symbol: string; name: string; image: string;
           reserve: string; threshold: string; graduated: boolean;
           volume: string; tradeCount: number; holderCount: number;
+          globalPool?: boolean;
           trades?: Array<{ native: string; tokens: string }>;
         }>;
       };
@@ -209,6 +211,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         return {
           address: item.address, symbol: item.symbol, name: item.name, image: item.image, currency: "USDC",
           reserve, threshold, volume: BigInt(item.volume || "0"), volume24h: 0n,
+          globalPool: Boolean(item.globalPool),
           holderCount: item.holderCount, tradeCount: item.tradeCount,
           graduated: item.graduated, progress: item.graduated ? 100 : Number(reserve * 10_000n / (threshold || 1n)) / 100,
           spark: sparkFrom((item.trades || []).map((trade) => ({ side: "buy", native: trade.native, tokens: trade.tokens }))),
@@ -220,7 +223,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         coins: rows.length,
         trades: rows.reduce((sum, row) => sum + row.tradeCount, 0),
         holders: rows.reduce((sum, row) => sum + row.holderCount, 0),
-        volume: rows.reduce((sum, row) => sum + row.volume, 0n),
+        volume: rows.reduce((sum, row) => sum + quoteAmount(row.volume, row.currency, row.globalPool), 0),
         graduated: rows.filter((row) => row.graduated).length,
       });
     })().catch(() => { if (alive) { setFailed(true); setLaunches([]); } });
@@ -229,7 +232,11 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
 
   // Busiest first, so the radar leads with whatever actually has a tape.
   const ranked = useMemo(
-    () => [...launches].sort((a, b) => (b.volume > a.volume ? 1 : b.volume < a.volume ? -1 : b.tradeCount - a.tradeCount)),
+    () => [...launches].sort((a, b) => {
+      const av = quoteAmount(a.volume, a.currency, a.globalPool);
+      const bv = quoteAmount(b.volume, b.currency, b.globalPool);
+      return bv - av || b.tradeCount - a.tradeCount;
+    }),
     [launches],
   );
   const active = RAILS.find((item) => item.key === rail) || RAILS[0];
@@ -238,7 +245,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
   const statTiles = totals ? [
     { value: String(totals.coins), label: "Coins launched" },
     { value: String(totals.trades), label: "Trades settled" },
-    { value: `$${Number(formatEther(totals.volume)).toLocaleString(undefined, { maximumFractionDigits: 2 })}`, label: "Volume, all time" },
+    { value: money(totals.volume, "USDC"), label: "Volume, all time" },
     { value: String(totals.holders), label: "Holders" },
   ] : [];
 
@@ -258,7 +265,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
               {ranked.map((row) => (
                 <span key={`${copy}-${row.address}`}>
                   <b>{row.symbol}</b>
-                  <small>{money(quoteAmount(row.volume, row.currency), row.currency)}</small>
+                  <small>{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</small>
                   <em>{row.progress.toFixed(1)}%</em>
                 </span>
               ))}
@@ -352,7 +359,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 {row.spark
                   ? <svg viewBox="0 0 120 34" aria-hidden="true"><polyline points={row.spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   : <span className="lp-nospark">{row.tradeCount} confirmed trade{row.tradeCount === 1 ? "" : "s"}</span>}
-                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume, row.currency), row.currency)}</b><small>{row.progress.toFixed(1)}%</small></span>
+                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</b><small>{row.progress.toFixed(1)}%</small></span>
               </button>
             ))
           ) : (
@@ -414,7 +421,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 <small>{row.name}</small>
               </span>
             </span>
-            <span className="lp-right lp-num">{money(quoteAmount(row.volume, row.currency), row.currency)}</span>
+            <span className="lp-right lp-num">{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</span>
             <span className="lp-right lp-num">{row.holderCount}</span>
             <span className="lp-right lp-num lp-hide-sm">{row.tradeCount}</span>
             <span className="lp-right lp-hide-sm lp-prog">
