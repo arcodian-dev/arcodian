@@ -1974,10 +1974,34 @@ function Launch({
         ARC_PUMP_FACTORY_ABI,
         signer,
       );
+      // Mobile OKX may run its own eth_estimateGas against a stale/busy
+      // endpoint even after the chain switch succeeds. Estimate against our
+      // canonical Arc RPC first, then pass the measured limit to the wallet so
+      // it can sign without performing a second estimation request. A failed
+      // canonical estimate stops here; no transaction is sent in that case.
+      const canonical = arcProvider(activeArc);
+      let gasLimit: bigint;
+      try {
+        const creator = await signer.getAddress();
+        const data = factory.interface.encodeFunctionData("createLaunch", [
+          name.trim(),
+          symbol.toUpperCase(),
+          image,
+        ]);
+        const estimated = await canonical.estimateGas({
+          from: creator,
+          to: isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory,
+          data,
+        });
+        gasLimit = (estimated * 125n) / 100n;
+      } finally {
+        canonical.destroy();
+      }
       const tx = await factory.createLaunch(
         name.trim(),
         symbol.toUpperCase(),
         image,
+        { gasLimit },
       );
       setStatus(`Launch submitted: ${tx.hash}`);
       const receipt = await tx.wait();
