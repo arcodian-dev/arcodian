@@ -12,6 +12,7 @@ import { describeTxError } from "../txError";
 import {
   arcProvider,
   communitySigningMessage,
+  ensureWalletChain,
   imageUrl,
   normalizeSocial,
   patchActivity,
@@ -1964,26 +1965,7 @@ function Launch({
       `Switching to ${activeArc.name}. Review the fixed-1B image launch in your wallet.`,
     );
     try {
-      try {
-        await activeProvider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: activeArc.hexId }],
-        });
-      } catch (switchError) {
-        if ((switchError as { code?: number }).code !== 4902) throw switchError;
-        await activeProvider.request({
-          method: "wallet_addEthereumChain",
-          params: [
-            {
-              chainId: activeArc.hexId,
-              chainName: activeArc.name,
-              nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
-              rpcUrls: rpcUrlsFor(activeArc),
-              blockExplorerUrls: [activeArc.explorer],
-            },
-          ],
-        });
-      }
+      await ensureWalletChain(activeProvider, activeArc);
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
       const isEurc = !isMainnet && quoteChoice === "EURC";

@@ -1,5 +1,5 @@
 import { FallbackProvider, JsonRpcProvider, Network, parseEther } from "ethers";
-import { ARC } from "./config";
+import { ARC, ARC_MAINNET } from "./config";
 
 export type WalletOption = { info: EIP6963ProviderInfo; provider: EthereumProvider };
 export type LaunchAsset = {
@@ -167,6 +167,83 @@ export function normalizeSocial(value: string, type: "twitter" | "discord") {
 // where we only control one.
 export function rpcUrlsFor(chain: { rpc: string; rpcs?: readonly string[]; walletRpc?: string }): string[] {
   return [chain.walletRpc || chain.rpc];
+}
+
+/**
+ * Ensure an injected wallet is actually usable on the requested Arc chain.
+ *
+ * Some wallets return an error other than 4902 when a saved chain has a stale
+ * RPC. Treat every failed switch as a chance to re-submit the canonical chain
+ * definition, then switch and verify the provider after the wallet finishes
+ * rotating. The wallet may still refuse to overwrite an existing RPC; in that
+ * case the final error is intentionally explicit instead of looking like an
+ * RPC or contract revert.
+ */
+export async function ensureWalletChain(
+  provider: EthereumProvider,
+  target: typeof ARC | typeof ARC_MAINNET,
+): Promise<void> {
+  const expected = target.hexId.toLowerCase();
+  const readChain = async () => String(await provider.request({ method: "eth_chainId" })).toLowerCase();
+  const waitForChain = async () => {
+    let observed = "";
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      observed = await readChain();
+      if (observed === expected) return true;
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+    return observed === expected;
+  };
+  const addCanonicalChain = async () => {
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [{
+        chainId: target.hexId,
+        chainName: target.name,
+        nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
+        rpcUrls: rpcUrlsFor(target),
+        blockExplorerUrls: [target.explorer],
+      }],
+    });
+  };
+
+  let current = await readChain();
+  if (current === expected) {
+    // A matching chain ID does not prove the wallet's saved RPC is healthy.
+    // Probe once; on failure ask the wallet to refresh the canonical config.
+    try {
+      await Promise.race([
+        provider.request({ method: "eth_blockNumber" }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("RPC_TIMEOUT")), 5_000)),
+      ]);
+      return;
+    } catch {
+      await addCanonicalChain();
+      await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.hexId }] });
+      if (!(await waitForChain())) throw new Error(`Wallet RPC for ${target.name} is still unavailable. Re-add the network in OKX using ${rpcUrlsFor(target)[0]}.`);
+      return;
+    }
+  }
+
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.hexId }] });
+  } catch (switchError) {
+    try {
+      // Do this for every switch failure, not only 4902. OKX can report a
+      // stale/busy saved RPC with a generic provider error.
+      await addCanonicalChain();
+    } catch (addError) {
+      const code = Number((addError as { code?: unknown })?.code || (switchError as { code?: unknown })?.code || 0);
+      if (code === 4001) throw new Error("Network setup was rejected in the wallet.");
+      // Continue to the retry: some wallets say the chain already exists
+      // while still accepting a subsequent switch.
+    }
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: target.hexId }] });
+  }
+  current = await readChain();
+  if (current !== expected && !(await waitForChain())) {
+    throw new Error(`Wallet did not switch to ${target.name}. If the network already exists in OKX, remove it and reconnect so the site can add it with RPC ${rpcUrlsFor(target)[0]}.`);
+  }
 }
 export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?: number } = ARC) {
   const urls = chain.rpcs && chain.rpcs.length ? chain.rpcs : [chain.rpc];

@@ -57,7 +57,7 @@ const CCTP_USDC_ABI = [
   "function approve(address,uint256) returns(bool)",
   "function allowance(address,address) view returns(uint256)",
 ];
-import { BrandMark, FAQ_ITEMS, rpcUrlsFor, short, type WalletOption } from "./shared";
+import { BrandMark, FAQ_ITEMS, ensureWalletChain, rpcUrlsFor, short, type WalletOption } from "./shared";
 import { describeTxError } from "./txError";
 
 const Screener = lazy(() => import("./pages/Market"));
@@ -449,21 +449,13 @@ export default function App() {
       // popup immediately (with our correct RPC — see rpcUrlsFor), so it's
       // never left silently on the wrong chain wondering why nothing loads.
       const mainnetTabs: Tab[] = ["swap", "terminal", "screener", "bridge"];
-      try {
-        const currentChain = (await option.provider.request({ method: "eth_chainId" })) as string;
-        if (mainnetTabs.includes(tab) && Number.parseInt(currentChain, 16) !== ARC_MAINNET.id) {
-          try {
-            await option.provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC_MAINNET.hexId }] });
-          } catch (switchError) {
-            if ((switchError as { code?: number })?.code === 4902) {
-              await option.provider.request({
-                method: "wallet_addEthereumChain",
-                params: [{ chainId: ARC_MAINNET.hexId, chainName: ARC_MAINNET.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(ARC_MAINNET), blockExplorerUrls: [ARC_MAINNET.explorer] }],
-              });
-            }
-          }
+      if (mainnetTabs.includes(tab)) {
+        try {
+          await ensureWalletChain(option.provider, ARC_MAINNET);
+        } catch (error) {
+          setStatus(error instanceof Error ? error.message : "Wallet network setup failed.");
         }
-      } catch { /* user declined, or wallet doesn't support programmatic network switch — not fatal, they can still use the app on whatever chain they're on */ }
+      }
     } catch (error) {
       setStatus(describeTxError(error));
     }
