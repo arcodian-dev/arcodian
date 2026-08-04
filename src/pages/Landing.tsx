@@ -163,6 +163,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
   const [totals, setTotals] = useState<Totals | null>(null);
   const [failed, setFailed] = useState(false);
   const [rail, setRail] = useState<string>("market");
+  const [showAllMarkets, setShowAllMarkets] = useState(false);
   const [openFaq, setOpenFaq] = useState(0);
   const [bridgeStats, setBridgeStats] = useState<{ outOfArc: { grossUsd: number; txCount: number }; intoArc: { grossUsd: number; txCount: number }; totalFeeUsd: number; totalTxCount: number } | null>(null);
 
@@ -239,6 +240,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     }),
     [launches],
   );
+  const visibleLiveMarkets = showAllMarkets ? ranked : ranked.slice(0, 5);
   const active = RAILS.find((item) => item.key === rail) || RAILS[0];
   const activeHref = navHref(active.tab, host);
 
@@ -401,7 +403,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           <p className="lp-kicker">/ Live market</p>
           <h2>The radar is always on.</h2>
         </div>
-        <button type="button" className="lp-link" onClick={enterMarket}>View all coins →</button>
+        <a className="lp-link" href="/market">View all coins →</a>
       </div>
       <div className="lp-table">
         <div className="lp-tr lp-th">
@@ -411,7 +413,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           <span className="lp-right lp-hide-sm">TRADES</span>
           <span className="lp-right lp-hide-sm">GRADUATION</span>
         </div>
-        {ranked.map((row, index) => (
+        {visibleLiveMarkets.map((row, index) => (
           <button type="button" key={row.address} className="lp-tr" onClick={() => chooseCoin(row.address)}>
             <span className="lp-rank">{index + 1}</span>
             <span className="lp-asset">
@@ -432,6 +434,11 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         ))}
         {ranked.length === 0 && <p className="lp-empty">{failed ? "Could not reach Arc Mainnet." : "No coins launched on Arc Mainnet yet — be the first."}</p>}
       </div>
+      {ranked.length > 5 && (
+        <button type="button" className="lp-link lp-expand" onClick={() => setShowAllMarkets((value) => !value)}>
+          {showAllMarkets ? "Show top 5 ↑" : `Expand all ${ranked.length} markets ↓`}
+        </button>
+      )}
     </section>
 
     <section className="lp-section">
