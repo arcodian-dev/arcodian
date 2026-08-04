@@ -1745,7 +1745,11 @@ function TradingDesk({
                       {(asset.topHolders || []).slice(0, 10).length ? (asset.topHolders || []).slice(0, 10).map((holder, index) => (
                         <tr key={holder.address}>
                           <td style={{ color: "var(--muted)" }}>{index + 1}</td>
-                          <td><a className="orbit-wallet" href={`${activeArc.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">{short(holder.address)}</a></td>
+                          <td>
+                            <a className="orbit-wallet" href={`${activeArc.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">
+                              {holder.kind === "bonding_curve" ? "Bonding curve" : holder.kind === "liquidity_pool" ? "Liquidity pool" : short(holder.address)}
+                            </a>
+                          </td>
                           <td>{Number(formatEther(BigInt(holder.balance))).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                           <td>{(Number((BigInt(holder.balance) * 10_000n) / totalSupplyWei) / 100).toFixed(2)}%</td>
                         </tr>

@@ -554,7 +554,7 @@ try {
 // raw swaps), and change5m/1h/24h there are Radar's own numbers, not ours
 // to derive.
 const nowSeconds = Math.floor(Date.now() / 1000);
-function holderSnapshot(trades) {
+function holderSnapshot(trades, reservedHolder = "", reservedBalance = 0n, reservedKind = "bonding_curve") {
   const balances = new Map();
   for (const trade of trades) {
     const address = String(trade.user || "").toLowerCase();
@@ -563,11 +563,22 @@ function holderSnapshot(trades) {
     const next = (balances.get(address) || 0n) + (trade.side === "SELL" ? -amount : amount);
     balances.set(address, next);
   }
+  const reservedAddress = String(reservedHolder || "").toLowerCase();
+  if (reservedAddress && reservedBalance > 0n) {
+    // The curve (or, after graduation, the liquidity venue) owns tokens that
+    // never appear as a BUY recipient. Include that onchain inventory so the
+    // holder ranking reflects the complete ERC-20 distribution.
+    balances.set(reservedAddress, reservedBalance);
+  }
   return [...balances.entries()]
     .filter(([, balance]) => balance > 0n)
     .sort(([, a], [, b]) => a > b ? -1 : a < b ? 1 : 0)
     .slice(0, 10)
-    .map(([address, balance]) => ({ address, balance: balance.toString() }));
+    .map(([address, balance]) => ({
+      address,
+      balance: balance.toString(),
+      ...(address === reservedAddress ? { kind: reservedKind } : {}),
+    }));
 }
 
 for (const item of launchesOut) {
@@ -590,7 +601,8 @@ for (const item of launchesOut) {
   item.priceChange1h = changeFor(priced, nowSeconds, 3600);
   item.priceChange24h = changeFor(priced, nowSeconds, 86400);
   item.tradeCount = trades.length;
-  item.topHolders = holderSnapshot(trades);
+  const inventoryHolder = item.graduated ? item.pair : item.curve;
+  item.topHolders = holderSnapshot(trades, inventoryHolder, BigInt(item.inventory || 0), item.graduated ? "liquidity_pool" : "bonding_curve");
   item.holderCount = item.topHolders.length;
   const last = priced.at(-1);
   const inventory = BigInt(item.inventory || 0);
