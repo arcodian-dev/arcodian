@@ -947,7 +947,9 @@ function TradingDesk({
     Array<{ side: "BUY" | "SELL"; amount: bigint; tokens: bigint }>
   >([]);
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
-  const quoteDecimals = isMainnet ? 6 : 18;
+  // Canonical launch curves use Arc native USDC (18 decimals) on both
+  // networks. Only Radar/global ERC-20 pool records use 6-decimal USDC.
+  const quoteDecimals = asset.globalPool ? 6 : 18;
   const formatTradeQuote = (value: bigint) => Number(formatUnits(value, quoteDecimals));
   const formatTradeToken = (value: bigint) => Number(formatEther(value));
   const tradePrice = (native: bigint, tokens: bigint) => {
@@ -1485,9 +1487,13 @@ function TradingDesk({
   for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
   const candles = [...candleMap.entries()].sort(([a], [b]) => a - b).slice(-chartWindow).map(([time, points]) => { const prices=points.map(point=>point.price); return { time, open: prices[0], close: prices[prices.length - 1], high: Math.max(...prices), low: Math.min(...prices), volume: points.reduce((sum,point)=>sum+point.volume,0) }; });
   const visibleCandles = candles;
-  const lastPrice = tradePrices.at(-1)?.price || (inventory ? Number(x) / Number(inventory) : 0);
+  const lastPrice = tradePrices.at(-1)?.price || 0;
+  // Price impact must compare execution against the current pool/curve spot
+  // before the user's trade. Comparing against the previous trade made a
+  // normal quote look like 18% impact after a large earlier buy.
+  const spotPrice = inventory > 0n ? Number(x) / Number(inventory) : lastPrice;
   const averageExecutionPrice = quote > 0n && amountWei > 0n ? side === "buy" ? Number(amountWei) / Number(quote) : Number(quote) / Number(amountWei) : 0;
-  const priceImpact = lastPrice > 0 && averageExecutionPrice > 0 ? Math.abs(averageExecutionPrice - lastPrice) / lastPrice * 100 : 0;
+  const priceImpact = spotPrice > 0 && averageExecutionPrice > 0 ? Math.abs(averageExecutionPrice - spotPrice) / spotPrice * 100 : 0;
   const priceLabel = (price: number) => price > 0 && price < .000001 ? price.toFixed(12).replace(/0+$/, "") : price.toLocaleString(undefined, { maximumFractionDigits: 8 });
   useEffect(() => {
     fetch(`/api/community.php?token=${encodeURIComponent(asset.address)}`, { cache: "no-store" })

@@ -27,8 +27,10 @@ type MarketRecord = {
 };
 type TapeTrade = MarketTrade & { token: string };
 
-function usdc(raw: string | number | undefined): number {
-  return raw === undefined ? 0 : Number(raw) / 1e6;
+function usdc(raw: string | number | undefined, decimals = 18): number {
+  // Canonical Arc launch values use native USDC (18 decimals). Radar/global
+  // ERC-20 aggregates and V3 swap deltas use 6-decimal USDC.
+  return raw === undefined ? 0 : Number(raw) / 10 ** decimals;
 }
 
 function money(value: number): string {
@@ -38,9 +40,11 @@ function money(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
-function tradePrice(trade: MarketTrade | undefined): number {
+function tradePrice(trade: MarketTrade | undefined, globalPool = false): number {
   if (!trade?.native || !trade.tokens || BigInt(trade.tokens) <= 0n) return 0;
-  return Number(trade.native) / Number(trade.tokens) * 1e12;
+  // Canonical launches have 18-decimal quote and token legs. Global pools
+  // have a 6-decimal USDC quote leg, so normalize that ratio once.
+  return Number(trade.native) / Number(trade.tokens) * (globalPool ? 1e12 : 1);
 }
 
 function mergeTrades(previous: MarketTrade[], incoming: MarketTrade[]): MarketTrade[] {
@@ -50,15 +54,15 @@ function mergeTrades(previous: MarketTrade[], incoming: MarketTrade[]): MarketTr
     .slice(-500);
 }
 
-function buildCandles(trades: MarketTrade[], timeframe: string): Candle[] {
+function buildCandles(trades: MarketTrade[], timeframe: string, globalPool = false): Candle[] {
   const seconds = timeframe === "1m" ? 60 : timeframe === "5m" ? 300 : timeframe === "15m" ? 900 : timeframe === "1H" ? 3600 : 14400;
   const buckets = new Map<number, Array<{ price: number; volume: number }>>();
   for (const trade of trades) {
-    const price = tradePrice(trade);
+    const price = tradePrice(trade, globalPool);
     const timestamp = Number(trade.timestamp || 0);
     if (!price || !timestamp) continue;
     const bucket = Math.floor(timestamp / seconds) * seconds;
-    buckets.set(bucket, [...(buckets.get(bucket) || []), { price, volume: usdc(trade.native) }]);
+    buckets.set(bucket, [...(buckets.get(bucket) || []), { price, volume: usdc(trade.native, globalPool ? 6 : 18) }]);
   }
   return [...buckets.entries()].sort(([a], [b]) => a - b).slice(-120).map(([time, points]) => {
     const prices = points.map((point) => point.price);
@@ -89,7 +93,7 @@ function ChartEmptyState({ market }: { market: MarketRecord }) {
 }
 
 function MarketChart({ market, timeframe, trades }: { market: MarketRecord; timeframe: string; trades: MarketTrade[] }) {
-  const candles = useMemo(() => buildCandles(trades, timeframe), [trades, timeframe]);
+  const candles = useMemo(() => buildCandles(trades, timeframe, Boolean(market.globalPool)), [trades, timeframe, market.globalPool]);
   return candles.length ? <TerminalChart candles={candles} priceLabel={(value) => value < 0.000001 ? value.toFixed(12) : value.toFixed(8)} onHover={() => undefined} /> : <ChartEmptyState market={market} />;
 }
 
@@ -214,7 +218,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
     }
   }
 
-  const price = market?.price || tradePrice(tapeTrades.at(-1)) || 0;
+  const price = market?.price || tradePrice(tapeTrades.at(-1), Boolean(market?.globalPool)) || 0;
   const feedLabel = tapeHealth === "live" ? "Live" : tapeHealth === "delayed" ? "Delayed" : "Offline";
   if (marketLoading) return <main className="trading-terminal-page"><div className="terminal-data-empty">Loading selected Arc Mainnet market…</div></main>;
   if (!market) return <main className="trading-terminal-page"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></main>;
@@ -222,7 +226,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
     <header className="terminal-header">
       <a className="terminal-brand" href="/market"><span>{market.image ? <img src={imageUrl(market.image)} alt="" /> : market.symbol.slice(0, 2)}</span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
       <div className="terminal-price"><strong>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
-      <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity))}</b></span></div>
+      <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap, market.globalPool ? 6 : 18))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h, market.globalPool ? 6 : 18))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity, market.globalPool ? 6 : 18))}</b></span></div>
       <div className="terminal-actions"><span className={wrongNetwork ? "terminal-network wrong" : mobileChain ? "terminal-network online" : "terminal-network"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>
     </header>
     {wrongNetwork && <div className="terminal-network-banner">Your wallet is on a different network than this market. {market.symbol} trades on <b>Arc Mainnet</b> — switch to see your real balance and trade. <button onClick={() => void switchToArcMainnet()}>Switch to Arc Mainnet</button></div>}
@@ -241,7 +245,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
               500 as DOM rows on every 1s tick is what made this list feel
               janky. Only the newest ~120 are ever visible in this panel
               anyway, so slice before mapping instead of after. */}
-          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade) > 0 ? tradePrice(trade).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
+          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade, Boolean(market.globalPool)) > 0 ? tradePrice(trade, Boolean(market.globalPool)).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native, market.globalPool ? 6 : 18))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
         </div>
       </section>
       <PoolInfo market={market} />
