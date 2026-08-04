@@ -517,8 +517,46 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
 
 const globalResult = await indexGlobalV3Pools();
 const radarPools = await indexRadarGlobalTokens(globalResult.pools);
-const globalPools = [...globalResult.pools, ...radarPools];
-const launchesOut = [...perFactory.flatMap((f) => f.launches), ...globalPools].reverse();
+// A token can have several external pools (different fee tiers or venues),
+// but the market catalog must show one row per token. Keep the deepest pool
+// as the representative row so liquidity, volume, and the terminal link all
+// point at the same canonical market.
+function dedupeGlobalPools(pools) {
+  const selected = new Map();
+  const score = (pool) => {
+    const liquidity = BigInt(pool.liquidity || pool.reserve || "0");
+    const volume = BigInt(pool.volume24h || pool.volume || "0");
+    return { liquidity, volume };
+  };
+  for (const pool of pools) {
+    const key = String(pool.address || "").toLowerCase();
+    if (!key) continue;
+    const current = selected.get(key);
+    if (!current) { selected.set(key, pool); continue; }
+    const nextScore = score(pool);
+    const currentScore = score(current);
+    if (nextScore.liquidity > currentScore.liquidity
+      || (nextScore.liquidity === currentScore.liquidity && nextScore.volume > currentScore.volume)) {
+      selected.set(key, pool);
+    }
+  }
+  return [...selected.values()];
+}
+const globalPools = dedupeGlobalPools([...globalResult.pools, ...radarPools]);
+function dedupeCatalogByToken(items) {
+  const selected = new Map();
+  for (const item of items) {
+    const key = String(item.address || "").toLowerCase();
+    if (!key) continue;
+    const current = selected.get(key);
+    if (!current) { selected.set(key, item); continue; }
+    // A canonical launch is the authoritative row when the same token also
+    // appears in an external pool scanner.
+    if (current.globalPool && !item.globalPool) selected.set(key, item);
+  }
+  return [...selected.values()];
+}
+const launchesOut = dedupeCatalogByToken([...perFactory.flatMap((f) => f.launches), ...globalPools].reverse());
 
 // mainnet-live-tape.mjs (a separate, dedicated 1-second-tick scanner) has
 // repeatedly proven to catch swaps on graduated pools that this heavy

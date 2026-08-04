@@ -83,6 +83,37 @@ function displayVolume24h(item: LaunchAsset): number {
     ? globalUsdc(item.volume24h || "0")
     : Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
 }
+
+// The server index is deduped by token address, but keep this client-side
+// guard for older cached snapshots and transient mixed-version responses.
+// External venues can expose multiple pools for one token; the screener must
+// still render one market row and keep the deepest representative pool.
+function dedupeMarketAssets(items: LaunchAsset[]): LaunchAsset[] {
+  const selected = new Map<string, LaunchAsset>();
+  const score = (item: LaunchAsset) => ({
+    liquidity: displayLiquidity(item),
+    volume: displayVolume24h(item),
+  });
+  for (const item of items) {
+    const key = item.address.toLowerCase();
+    const current = selected.get(key);
+    if (!current) { selected.set(key, item); continue; }
+    // Prefer the canonical launch over an external duplicate for the same
+    // token, then choose the deepest external pool.
+    if (Boolean(current.globalPool) && !Boolean(item.globalPool)) {
+      selected.set(key, item);
+      continue;
+    }
+    if (Boolean(current.globalPool) === Boolean(item.globalPool)) {
+      const next = score(item);
+      const previous = score(current);
+      if (next.liquidity > previous.liquidity || (next.liquidity === previous.liquidity && next.volume > previous.volume)) {
+        selected.set(key, item);
+      }
+    }
+  }
+  return [...selected.values()];
+}
 // V8 (marketUsdcFactory, ARCD) is retired — no longer read at all, mainnet
 // Market only ever lists V9 launches now. The original V9 factory
 // (0x071f978A...327066) was retired 2026-08-02 for a treasury-address bug
@@ -425,7 +456,7 @@ export default function Screener({
       address: TOKENS[1].address,
     },
   ];
-  const launchRows = launches.slice().filter((item) => {
+  const launchRows = dedupeMarketAssets(launches).filter((item) => {
     if (filter === "Watchlist") return watchlist.has(item.address.toLowerCase());
     // Radar/global Uniswap pools are discoverable in the market catalog, but
     // they were not created by our factory and must never look like launches.
