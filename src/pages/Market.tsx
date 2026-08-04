@@ -152,6 +152,9 @@ export default function Screener({
   const [arenaHistory, setArenaHistory] = useState<ArenaWinner[]>([]);
   const marketIndexStamp = useRef("");
   const [visibleLimit, setVisibleLimit] = useState(40);
+  const [marketNotice, setMarketNotice] = useState<{ token: string; symbol: string; side: "BUY" | "SELL"; native: string } | null>(null);
+  const seenMarketTrades = useRef<Set<string>>(new Set());
+  const marketTradeFeedReady = useRef(false);
   const [arenaNow, setArenaNow] = useState(() => Date.now());
   const [watchlist, setWatchlist] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("arcodian-watchlist") || "[]")); }
@@ -168,6 +171,38 @@ export default function Screener({
     const timer = window.setInterval(() => setArenaNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+  useEffect(() => {
+    let stopped = false;
+    let busy = false;
+    const poll = async () => {
+      if (stopped || busy || document.visibilityState === "hidden") return;
+      busy = true;
+      try {
+        const response = await fetch("/data/mainnet-live-tape.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("TAPE_UNAVAILABLE");
+        const tape = await response.json() as { trades?: Array<{ token: string; symbol?: string; side: "BUY" | "SELL"; tx: string; native: string; timestamp?: number }> };
+        const trades = (tape.trades || []).slice().sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        if (!marketTradeFeedReady.current) {
+          trades.forEach((trade) => seenMarketTrades.current.add(`${trade.tx}:${trade.side}`));
+          marketTradeFeedReady.current = true;
+        } else {
+          const fresh = trades.filter((trade) => !seenMarketTrades.current.has(`${trade.tx}:${trade.side}`));
+          trades.forEach((trade) => seenMarketTrades.current.add(`${trade.tx}:${trade.side}`));
+          const latest = fresh.at(-1);
+          if (latest) setMarketNotice({ token: latest.token, symbol: latest.symbol || "TOKEN", side: latest.side, native: latest.native });
+        }
+      } catch { /* Keep the last notice and retry on the next tick. */ }
+      finally { busy = false; }
+    };
+    const timer = window.setInterval(() => { void poll(); }, 3_000);
+    void poll();
+    return () => { stopped = true; window.clearInterval(timer); };
+  }, []);
+  useEffect(() => {
+    if (!marketNotice) return;
+    const timer = window.setTimeout(() => setMarketNotice(null), 6_000);
+    return () => window.clearTimeout(timer);
+  }, [marketNotice]);
   useEffect(() => {
     let cancelled = false;
     const provider = arcProvider(activeArc);
@@ -551,6 +586,13 @@ export default function Screener({
   }
   return (
     <section className="market-board market-terminal" id="market">
+      {marketNotice && (
+        <div className={`market-trade-notice ${marketNotice.side === "BUY" ? "buy" : "sell"}`} role="status" aria-live="polite">
+          <span className="market-trade-notice-dot" />
+          <span className="market-trade-notice-copy"><b>${marketNotice.symbol}</b><strong>{Number(formatUnits(BigInt(marketNotice.native || "0"), 6)).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC · {marketNotice.side}</strong><small>Live onchain trade</small></span>
+          <button type="button" onClick={() => chooseCoin(marketNotice.token)}>Open ↗</button>
+        </div>
+      )}
       <div className="terminal-stats">
         <span>
           <b>LIVE</b> {isMainnet ? "Arc Mainnet" : "Arc Testnet"}
