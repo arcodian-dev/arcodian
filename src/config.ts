@@ -429,6 +429,14 @@ export const ARC_MAINNET_CONTRACTS = {
   externalV3Factory: "0xf0db7b58379503491d857dB50AC9ece64c653918",
   externalV3Router: "0x53BF6B0684Ec7eF91e1387Da3D1a1769bC5A6F77",
   externalV3FeeRouter: "0xe4664b28Cb0624860aAeE28E573697473f2Bf46e",
+  ausd: "0xf5b08979251f398180385b54381ee3d6fa1bbe09",
+  aeur: "0x8cd7e5a2240a1a7efaa9b164caa1dc80e9ed23a3",
+  ausdIntentSettlement: "0x03a13352ef67977d1601ec1276e9bc27c0ee7b75",
+  ausdTokenRegistry: "0x4a55a197b674dc1f48bd10bc257390a0b7b00252",
+  ausdProofVerifier: "0xb7a820d755cb00a38df9cd61e99dda639db89cd8",
+  ausdBaseIntentSettlement: "0xF2993f19dAc23a2Df38a07f90cCA74f983B16dEc",
+  ausdBaseTokenRegistry: "0xDf543Ec9be0f5F2B0F00A02713C44BFEbb61598e",
+  ausdBaseAUSD: "0x42867eeBf208E4fB8Ad01146832E3d47A8b7757b",
   // Agent economy — 2026-08-01. identityRegistry/reputationRegistry/
   // validationRegistry are the official ERC-8004 mainnet vanity proxies
   // (same addresses on 40+ other chains), self-deployed via the project's

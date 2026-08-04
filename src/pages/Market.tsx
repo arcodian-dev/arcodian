@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserProvider, Contract, formatEther, parseEther, verifyMessage } from "ethers";
+import { BrowserProvider, Contract, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
 import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
@@ -151,6 +151,7 @@ export default function Screener({
   const [wrongNetworkArc, setWrongNetworkArc] = useState<typeof ARC_MAINNET | typeof ARC | null>(null);
   const [arenaHistory, setArenaHistory] = useState<ArenaWinner[]>([]);
   const marketIndexStamp = useRef("");
+  const [visibleLimit, setVisibleLimit] = useState(40);
   const [arenaNow, setArenaNow] = useState(() => Date.now());
   const [watchlist, setWatchlist] = useState<Set<string>>(() => {
     try { return new Set(JSON.parse(localStorage.getItem("arcodian-watchlist") || "[]")); }
@@ -206,6 +207,7 @@ export default function Screener({
         if (response.ok) {
           const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
           if (Array.isArray(index.launches) && isFreshMarketIndex(index.indexedAt)) {
+            marketIndexStamp.current = index.indexedAt;
             setArenaHistory(index.arena?.history || []);
             setLaunches(index.launches.map((item) => {
               const reserve = BigInt(item.reserve), virtualReserve = BigInt(item.virtualReserve), threshold = BigInt(item.threshold), inventory = BigInt(item.inventory);
@@ -308,7 +310,7 @@ export default function Screener({
       if (stopped || busy || document.visibilityState === "hidden") return;
       busy = true;
       try {
-        const response = await fetch(`${isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json"}?t=${Date.now()}`, { cache: "no-store" });
+        const response = await fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-cache" });
         if (!response.ok) return;
         const index = await response.json() as { indexedAt: string; arena?: { history?: ArenaWinner[] }; launches: Array<Omit<LaunchAsset, "reserve" | "virtualReserve" | "threshold" | "inventory" | "progress" | "type" | "risk"> & { reserve: string; virtualReserve: string; threshold: string; inventory: string }> };
         if (!Array.isArray(index.launches) || !isFreshMarketIndex(index.indexedAt) || index.indexedAt === marketIndexStamp.current) return;
@@ -325,7 +327,6 @@ export default function Screener({
     const timer = window.setInterval(() => { void pollMarket(); }, 3_000);
     window.addEventListener("focus", pollMarket);
     document.addEventListener("visibilitychange", onVisibility);
-    void pollMarket();
     return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("focus", pollMarket); document.removeEventListener("visibilitychange", onVisibility); };
   }, [isMainnet]);
   const selected = coinAddress
@@ -387,7 +388,11 @@ export default function Screener({
   ];
   const launchRows = launches.slice().filter((item) => {
     if (filter === "Watchlist") return watchlist.has(item.address.toLowerCase());
-    if (filter === "New") return !item.graduated;
+    // Radar/global Uniswap pools are discoverable in the market catalog, but
+    // they were not created by our factory and must never look like launches.
+    const isCanonicalLaunch = !item.globalPool;
+    if (filter === "New" || filter === "Launchpad") return isCanonicalLaunch && !item.graduated;
+    if (filter === "Global") return Boolean(item.globalPool || item.graduated);
     if (filter === "Trending") return true;
     if (filter === "Gainers") return (item.priceChange24h || 0) > 0;
     if (filter === "Graduating") return !item.graduated && item.progress >= 50;
@@ -422,6 +427,10 @@ export default function Screener({
     return item.progress;
   }
   const tableRows = sortKey ? [...rows].sort((a, b) => (rowMetric(b, sortKey) - rowMetric(a, sortKey)) * (sortDir === -1 ? 1 : -1)) : rows;
+  const visibleRows = tableRows.slice(0, visibleLimit);
+  useEffect(() => {
+    setVisibleLimit(40);
+  }, [filter, query, sortKey, sortDir]);
   const sortMark = (key: string) => (sortKey === key ? (sortDir === -1 ? " ↓" : " ↑") : "");
   function openMarketAsset(item: LaunchAsset) {
     if (item.globalPool) {
@@ -637,7 +646,7 @@ export default function Screener({
         />
       </div>
       <div className="filters">
-        {["All", "New", "Trending", "Gainers", "Graduating", "Graduated", "Arcodian DEX", "Uniswap V3", "Watchlist"].map((item) => (
+        {["All", "Launchpad", "New", "Global", "Trending", "Gainers", "Graduating", "Graduated", "Arcodian DEX", "Uniswap V3", "Watchlist"].map((item) => (
           <button
             className={filter === item ? "active" : ""}
             key={item}
@@ -671,7 +680,7 @@ export default function Screener({
             <span>Status</span>
             <span aria-hidden="true" />
           </div>
-          {tableRows.map((item) => "curve" in item && !item.globalPool ? (
+          {visibleRows.map((item) => "curve" in item && !item.globalPool ? (
             <div className="mt-row" role="row" tabIndex={0} key={`t-${item.address}`}
               onClick={() => openMarketAsset(item)}
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
@@ -717,7 +726,7 @@ export default function Screener({
           {!tableRows.length && <div className="loading-board">No market matches this filter.</div>}
         </div>
         <div className="coin-grid market-cards-view">
-          {rows.map((item) => (
+          {visibleRows.map((item) => (
             <article
               className={`coin-card ${"curve" in item ? "tradeable" : ""}`}
               key={item.address}
@@ -755,7 +764,7 @@ export default function Screener({
                     <span><small>24h</small><b className={pctClass(item.priceChange24h)}>{pctText(item.priceChange24h)}</b></span>
                   </div>
                   <div className="global-pool-submetrics"><span>Market cap <b>{compactNumber(displayMarketCap(item))} USDC</b></span><span>Liquidity <b>{compactNumber(displayLiquidity(item))} USDC</b></span><span>24h volume <b>{compactNumber(displayVolume24h(item))} USDC</b></span></div>
-                  <button>Open in Terminal →</button>
+                  <button type="button" onClick={(event) => { event.stopPropagation(); openMarketAsset(item); }}>Open in Terminal →</button>
                 </>
               ) : "progress" in item ? (
                 <>
@@ -794,8 +803,13 @@ export default function Screener({
                   </a>
                 </>
               )}
-            </article>
+          </article>
           ))}
+          {rows.length > visibleLimit && (
+            <button className="market-load-more" type="button" onClick={() => setVisibleLimit((limit) => Math.min(limit + 40, rows.length))}>
+              Show more markets ({rows.length - visibleLimit} remaining)
+            </button>
+          )}
         </div>
         </>
       )}
@@ -891,6 +905,13 @@ function TradingDesk({
     Array<{ side: "BUY" | "SELL"; amount: bigint; tokens: bigint }>
   >([]);
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
+  const quoteDecimals = isMainnet ? 6 : 18;
+  const formatTradeQuote = (value: bigint) => Number(formatUnits(value, quoteDecimals));
+  const formatTradeToken = (value: bigint) => Number(formatEther(value));
+  const tradePrice = (native: bigint, tokens: bigint) => {
+    const tokenAmount = formatTradeToken(tokens);
+    return tokenAmount > 0 ? formatTradeQuote(native) / tokenAmount : 0;
+  };
   const [tapeHealth, setTapeHealth] = useState<"live" | "delayed" | "offline">("delayed");
   const [copied, setCopied] = useState(false);
   // Best-effort verification check (mainnet only — no confirmed-working
@@ -1417,7 +1438,7 @@ function TradingDesk({
   const burnedPct = asset.lpSupply && BigInt(asset.lpSupply) > 0n
     ? Number((BigInt(asset.lpBurned || "0") * 10_000n) / BigInt(asset.lpSupply)) / 100
     : 0;
-  const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: Number(BigInt(trade.native)) / Math.max(1, Number(BigInt(trade.tokens))), volume: Number(formatEther(BigInt(trade.native))) }));
+  const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: tradePrice(BigInt(trade.native), BigInt(trade.tokens)), volume: formatTradeQuote(BigInt(trade.native)) }));
   const candleMap = new Map<number, Array<{price:number;volume:number}>>();
   for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
   const candles = [...candleMap.entries()].sort(([a], [b]) => a - b).slice(-chartWindow).map(([time, points]) => { const prices=points.map(point=>point.price); return { time, open: prices[0], close: prices[prices.length - 1], high: Math.max(...prices), low: Math.min(...prices), volume: points.reduce((sum,point)=>sum+point.volume,0) }; });
@@ -1649,8 +1670,8 @@ function TradingDesk({
                       {liveTrades.length ? liveTrades.map((event, index) => (
                         <tr key={`${event.side}-${index}`}>
                           <td className={`orbit-side ${event.side === "BUY" ? "positive" : "negative"}`}>{event.side}</td>
-                          <td>{Number(formatEther(event.amount)).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
-                          <td>{Number(formatEther(event.tokens)).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                          <td>{formatTradeQuote(event.amount).toLocaleString(undefined, { maximumFractionDigits: 4 })}</td>
+                          <td>{formatTradeToken(event.tokens).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                         </tr>
                       )) : <tr><td colSpan={3} className="orbit-empty-row">No trades yet — indexed tape is {feedLabel.toLowerCase()}.</td></tr>}
                     </tbody>

@@ -351,7 +351,7 @@ async function indexRadarGlobalTokens(existingPools) {
       batch.forEach((item, index) => { if (results[index]) resolvedByAddress.set(item.address.toLowerCase(), results[index]); });
     }
 
-    return items.map((item) => {
+    return Promise.all(items.map(async (item) => {
       const versions = Array.isArray(item.versions) ? item.versions : [];
       const venue = versions.length ? versions.map((version) => `Uniswap ${String(version).toUpperCase()}`).join(" + ") : "Other";
       const quoteUnits = (value) => Math.max(0, Math.round(Number(value || 0) * 1_000_000)).toString();
@@ -360,10 +360,18 @@ async function indexRadarGlobalTokens(existingPools) {
       const resolvedPool = freshResolve?.pool || (old?.radarPoolResolved ? old.pool : "") || "";
       const resolvedFeeTier = freshResolve?.feeTier ?? old?.feeTier ?? 0;
       const radarPoolResolved = Boolean(freshResolve?.resolved || old?.radarPoolResolved);
-      return {
-        ...(old || {}),
-        address: item.address, pool: resolvedPool, pair: resolvedPool, globalPool: true, radarIndexed: true,
-        dex: venue, venue, feeTier: resolvedFeeTier, token0: item.hasUsdc ? USDC : "", token1: item.address, quoteKind: 0, currency: "USDC",
+    let token0 = item.hasUsdc ? USDC : "";
+    let token1 = item.address;
+    if (resolvedPool) {
+      try {
+        const poolContract = new Contract(resolvedPool, ["function token0() view returns(address)", "function token1() view returns(address)"], provider);
+        [token0, token1] = await Promise.all([poolContract.token0(), poolContract.token1()]);
+      } catch {}
+    }
+    return {
+      ...(old || {}),
+      address: item.address, pool: resolvedPool, pair: resolvedPool, globalPool: true, radarIndexed: true,
+        dex: venue, venue, feeTier: resolvedFeeTier, token0, token1, quoteKind: 0, currency: "USDC",
         name: item.name || item.symbol || "Unknown", symbol: item.symbol || "—", image: item.icon || old?.image || "", creator: item.deployer || "",
         reserve: quoteUnits(item.liquidityUsdc / 2), virtualReserve: "0", threshold: "1", inventory: "0", graduated: true,
         factory: "radar-index", tradeCount: Number(item.txns24 || 0), holderCount: Number(item.traders24 || 0),
@@ -372,7 +380,7 @@ async function indexRadarGlobalTokens(existingPools) {
         marketCap: quoteUnits(item.mcap), liquidity: quoteUnits(item.liquidityUsdc), price: Number(item.price || 0), createdAt: Number(item.firstSeen || 0), indexedBlock: latestBlock,
         progress: 100, risk: venue, type: "Global", trades: old?.trades || [], radarVersions: versions, radarPoolResolved,
       };
-    });
+    }));
   } catch (error) {
     console.error(`Radar global index unavailable: ${error?.message || error}`);
     return [...previousRadar.values()];

@@ -1,0 +1,6 @@
+{
+  "arcRpc": "https://arcodian.fun/api/rpc-mainnet.php",
+  "baseRpc": "https://mainnet.base.org",
+  "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF",
+  "feeBps": 150
+}

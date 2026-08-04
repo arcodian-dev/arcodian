@@ -10,6 +10,8 @@
     "canary:check": "node scripts/canary-check.mjs",
     "smoke:bridge": "node --experimental-strip-types scripts/smoke-bridge-routes.mjs",
     "e2e:live": "node scripts/e2e-live.mjs",
+    "animus:ausd": "node scripts/animus-ausd-relayer.mjs",
+    "wirex:animus": "node scripts/wirex-animus-adapter.mjs",
     "sdk:check": "node scripts/check-circle-sdk.mjs",
     "state:backup": "node scripts/mcp-state-backup.mjs",
     "state:restore-drill": "node scripts/mcp-state-restore-drill.mjs",

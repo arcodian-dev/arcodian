@@ -89,8 +89,9 @@ const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
 const AgentProfile = lazy(() => import("./pages/AgentProfile"));
 const AgentsIndex = lazy(() => import("./pages/AgentsIndex"));
 const TradingTerminal = lazy(() => import("./pages/TradingTerminal"));
+const AUSD = lazy(() => import("./pages/AUSD"));
 
-type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "jobs" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "terminal" | "fx" | "profile" | "how" | "faq" | "contracts" | "canary";
+type Tab = "home" | "wallet" | "arcpay" | "agentpay" | "jobs" | "analytics" | "treasury" | "developers" | "screener" | "bridge" | "swap" | "terminal" | "fx" | "ausd" | "profile" | "how" | "faq" | "contracts" | "canary";
 
 const CHAIN_NAMES: Record<number, string> = {
   1: "Ethereum",
@@ -151,7 +152,7 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
-const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "terminal", "fx", "profile", "how", "faq", "contracts"] as const;
+const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "terminal", "fx", "ausd", "profile", "how", "faq", "contracts"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -882,13 +883,14 @@ export default function App() {
           <span className="brand-name">ARCODIAN<small>ARC MARKETS</small></span>
         </button>
         <div className="nav-links">
-          <details className={`nav-group ${["wallet", "swap", "terminal", "bridge", "arcpay", "fx"].includes(tab) ? "active" : ""}`}>
+          <details className={`nav-group ${["wallet", "swap", "terminal", "bridge", "arcpay", "fx", "ausd"].includes(tab) ? "active" : ""}`}>
             <summary>Product <i>⌄</i></summary>
             <div>
               <a href={navHref("wallet", host) || "/wallet"}><b>Wallet</b><small>Self-custody on Arc</small></a>
               <button onClick={() => chooseTab("swap")}><b>Swap</b><small>Trade Arc assets</small></button>
               <button onClick={() => chooseTab("terminal")}><b>Trading Terminal</b><small>Full-screen market desk</small></button>
               <button onClick={() => chooseTab("bridge")}><b>Bridge</b><small>Move USDC over CCTP</small></button>
+              <button onClick={() => chooseTab("ausd")}><b>AUSD Rail</b><small>Intent bridge into Arc</small></button>
               <button onClick={() => chooseTab("arcpay")}><b>Pay</b><small>Exact-value invoices</small></button>
               <button onClick={() => chooseTab("fx")}><b>Stablecoin FX</b><small>USDC ⇄ EURC</small></button>
             </div>
@@ -1025,6 +1027,8 @@ export default function App() {
         <WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} />
       ) : tab === "arcpay" ? (
         <ArcPayLanding account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+      ) : tab === "ausd" ? (
+        <AUSD account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
       ) : tab === "analytics" ? (
         <Analytics />
       ) : tab === "treasury" ? (
@@ -1343,7 +1347,7 @@ export default function App() {
       </nav>
       {mobileMoreOpen && <aside className="mobile-more-menu" aria-label="All products"><div className="mm-head"><img src="/arcodian-mark.svg" alt="" width="22" height="22" /><b>ARCODIAN</b><button className="mm-close" onClick={() => setMobileMoreOpen(false)}>Close ×</button></div>
         <p className="mm-group">Product</p>
-        <a href="/swap">Swap</a><a href="/arcpay">Pay</a><a href="/fx">Stablecoin FX</a>
+        <a href="/swap">Swap</a><a href="/ausd">AUSD Rail</a><a href="/arcpay">Pay</a><a href="/fx">Stablecoin FX</a>
         <p className="mm-group">Market</p>
         <a href="/screener">Markets</a><a href="https://lend.arcodian.fun/">Lend</a>
         <p className="mm-group">Agent</p>
