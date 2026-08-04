@@ -1576,8 +1576,14 @@ function TradingDesk({
   // construction, no owner-privileged function exists in the contract at
   // all), the rest are read from live state.
   const totalSupplyWei = 1_000_000_000n * 10n ** 18n;
-  const topHolderShare = asset.topHolders?.[0]
-    ? Number((BigInt(asset.topHolders[0].balance) * 10_000n) / totalSupplyWei) / 100
+  // The bonding curve (or post-graduation liquidity pool) is an inventory
+  // venue, not an external holder. Keep it in the Holders distribution so
+  // the token allocation is complete, but exclude it from the wallet
+  // concentration safety signal. Otherwise every pre-graduation coin would
+  // report its unsold curve inventory as the "top holder" by definition.
+  const topExternalHolder = asset.topHolders?.find((holder) => !holder.kind)
+  const topHolderShare = topExternalHolder
+    ? Number((BigInt(topExternalHolder.balance) * 10_000n) / totalSupplyWei) / 100
     : null;
   const lpCheck: boolean | null = graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
   const safetyChecks: Array<{ label: string; ok: boolean | null; value: string }> = [
