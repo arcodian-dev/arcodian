@@ -41,9 +41,9 @@ describe("describeTxError", () => {
     expect(describeTxError({ code: "INSUFFICIENT_FUNDS" })).toContain("doesn't have enough balance");
   });
 
-  it("recognizes RPC rate-limit signatures without dumping the raw JSON-RPC error", () => {
+  it("recognizes wallet preflight failures without dumping the raw JSON-RPC error", () => {
     const message = describeTxError({ code: "CALL_EXCEPTION", message: "missing revert data (could not coalesce error)" });
-    expect(message).toContain("busy");
+    expect(message).toContain("Wallet preflight failed");
   });
 
   it("decodes the ArcAgentJobsV2 self-dealing guard", () => {

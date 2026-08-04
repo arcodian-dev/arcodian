@@ -149,8 +149,11 @@ export function describeTxError(error: unknown): string {
   if (code === "INSUFFICIENT_FUNDS" || rawMessage.includes("insufficient funds")) {
     return "Your wallet doesn't have enough balance to cover this amount plus gas.";
   }
-  if (rawMessage.includes("request limit") || rawMessage.includes("missing revert data") || rawMessage.includes("could not coalesce")) {
+  if (rawMessage.includes("request limit")) {
     return "Arc RPC is busy right now. No funds were sent — wait a few seconds and try again.";
+  }
+  if (rawMessage.includes("missing revert data") || rawMessage.includes("could not coalesce")) {
+    return "Wallet preflight failed before signing. No funds were sent — reopen Arc Mainnet in OKX and retry.";
   }
   if (code === "NETWORK_ERROR" || code === "SERVER_ERROR" || code === "TIMEOUT") return "Couldn't reach the network. Check your connection and try again.";
   if (code === "UNSUPPORTED_OPERATION" && rawMessage.includes("network")) {
