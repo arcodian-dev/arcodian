@@ -3358,7 +3358,7 @@ body::before { background-size:80px 80px; opacity:.45; }
 
 /* --- ticker --- */
 .lp-ticker { border-block: 1px solid var(--lp-border); background: var(--lp-panel); overflow: hidden; }
-.lp-ticker-track { display: flex; width: max-content; animation: lp-marquee 240s linear infinite; }
+.lp-ticker-track { display: flex; width: max-content; animation: lp-marquee 345s linear infinite; }
 .lp-ticker-run { display: flex; }
 .lp-ticker span {
   display: flex; align-items: center; gap: 9px; padding: 13px 26px;
