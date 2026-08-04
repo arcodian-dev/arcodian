@@ -1991,6 +1991,7 @@ function Launch({
         { staticNetwork: Network.from(activeArc.id), batchMaxCount: 1 },
       );
       let gasLimit: bigint;
+      let gasPrice: bigint;
       try {
         const creator = await signer.getAddress();
         const data = factory.interface.encodeFunctionData("createLaunch", [
@@ -2004,6 +2005,9 @@ function Launch({
           data,
         });
         gasLimit = (estimated * 125n) / 100n;
+        const feeData = await canonical.getFeeData();
+        gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
+        if (gasPrice <= 0n) throw new Error("Canonical RPC returned no usable gas price.");
       } finally {
         canonical.destroy();
       }
@@ -2011,7 +2015,7 @@ function Launch({
         name.trim(),
         symbol.toUpperCase(),
         image,
-        { gasLimit },
+        { gasLimit, gasPrice },
       );
       setStatus(`Launch submitted: ${tx.hash}`);
       const receipt = await tx.wait();
