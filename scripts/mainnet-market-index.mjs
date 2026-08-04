@@ -8,8 +8,8 @@
 // started showing "temporarily offline" even though the chain itself was
 // fine. This mirrors the existing testnet index-market.mjs pattern (one
 // server-side scan on a timer, browsers just fetch the resulting JSON) but
-// trimmed to mainnet's simpler shape: one USDC-only factory, no EURC, no
-// legacy factories.
+// trimmed to mainnet's simpler shape: USDC-only factories, with legacy
+// factories retained so existing user positions remain readable.
 import { Contract, JsonRpcProvider } from "ethers";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
@@ -31,6 +31,7 @@ const USDC = "0x3600000000000000000000000000000000000000";
 const FACTORIES = [
   { address: process.env.ARC_MAINNET_FACTORY_V9_LEGACY || "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066", fromBlock: 13_190_000, kind: "v3" },
   { address: process.env.ARC_MAINNET_FACTORY_V9 || "0x6e1d1a09b07a4022B535269434C16A3452e195f9", fromBlock: 13_501_954, kind: "v3" },
+  { address: process.env.ARC_MAINNET_FACTORY_V10 || "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED", fromBlock: 13_830_022, kind: "v3" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },

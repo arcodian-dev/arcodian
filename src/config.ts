@@ -137,14 +137,10 @@ export const FX_AGGREGATOR_ALLOWED_TARGETS = (import.meta.env.VITE_FX_AGGREGATOR
 // Engine v9 preserves the curve price at graduation by burning excess unsold
 // inventory before seeding ArcPair. The launch factory is the stack root.
 // ---------------------------------------------------------------------------
-// Engine v10 is a graduation-threshold migration, not an economics change:
-// same ArcPumpV8 curve math, same 1% (100 bps) curve fee, same ArcPair 0.30%
-// post-graduation swap fee. Only the net collateral raise required to
-// graduate moved from 4,500 to 12,000 (USDC and EURC alike). The threshold is
-// immutable per suite, and the graduation authority is a hub sealed with
-// exactly two members at deploy time (see ARC_GRADUATION_HUB_ADDRESS below),
-// so raising it can only be done by standing up a new hub + pair registry +
-// both pump factories together — never by mutating the live ones.
+// Legacy engine v10 is retained below for historical testnet data. Mainnet
+// launches now use the V10 fair-launch factory in ARC_MAINNET_CONTRACTS:
+// 800M curve allocation, 200M permanent LP reserve, 4,500 USDC virtual
+// reserve, 12,000 USDC graduation, and the same 1% curve fee.
 export const ENGINE_VERSION = 10;
 export const PUMP_FACTORY_ADDRESS = "0x453a38aB960137e0294665d7C5A1BC0B1C41b9cc";
 export const GRADUATION_THRESHOLD_18 = "12000000000000000000000"; // 12,000 USDC, 18 decimals
@@ -419,7 +415,10 @@ export const ARC_MAINNET_CONTRACTS = {
   // launch ("Architects") keeps running there — it can't be migrated — and
   // stays indexed via MAINNET_LEGACY_FACTORIES below; every new launch now
   // goes through this corrected factory.
+  // V10: new launches use the fairer 800M curve / 200M LP reserve model.
+  // V9 remains readable through MAINNET_LEGACY_FACTORIES for existing users.
   marketUsdcFactoryV9: "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
+  marketUsdcFactoryV10: "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
   v3Factory: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
   v3SwapRouter: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
   v3Quoter: "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",

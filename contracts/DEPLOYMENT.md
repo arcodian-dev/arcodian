@@ -278,3 +278,27 @@ ordinary ERC-20 with no precompile, so the suite asserts the pool really holds
 the collateral and that the graduated pool can be traded. **The USDC graduation
 settlement path still has never executed on chain** — it needs ~4500 USDC and
 the deployer holds ~30.
+
+## Fair-launch factory V10 — Arc Mainnet 5042 (2026-08-04)
+
+New mainnet launches use a separate factory so existing V8/V9 launches remain
+fully sellable under their original immutable economics.
+
+| Contract | Address |
+| --- | --- |
+| ArcPumpFactoryV10 | `0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED` |
+| Uniswap V3 factory | `0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd` |
+| Position manager | `0x332733D05a942da29087Ee4AF3497DE1911bA620` |
+
+Immutable economics: 1B total supply, 800M curve allocation, 200M permanent
+LP reserve, 4,500 USDC virtual reserve, 12,000 USDC net graduation threshold,
+and a 1% symmetric bonding-curve fee. The first 300 USDC buy is approximately
+49.5M tokens after the curve fee. At graduation, unsold curve allocation is
+burned and exactly 200M tokens plus the real USDC reserve are seeded into the
+full-range Uniswap V3 position, minted directly to the dead address.
+
+On-chain verification: `ENGINE_VERSION() == 10`, `graduationThreshold() ==
+12000e18`, and `treasury()` equals the production treasury multisig. The public
+factory and curve ABI retain `LaunchCreated`, `Bought`, `Sold`, `buy`, and
+`sell`, so scanners, Telegram bots, and direct buyers can discover and trade
+new launches without a special integration path.

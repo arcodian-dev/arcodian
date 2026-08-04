@@ -88,7 +88,10 @@ function displayVolume24h(item: LaunchAsset): number {
 // (fee went to the deployer EOA, not the treasury multisig) — its one live
 // launch ("Architects") stays readable here as a legacy factory since it
 // can't migrate to the corrected one.
-const MAINNET_LEGACY_FACTORIES: string[] = ["0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066"];
+const MAINNET_LEGACY_FACTORIES: string[] = [
+  "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
+  "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
+];
 
 export default function Screener({
   account,
@@ -128,7 +131,7 @@ export default function Screener({
   // as of 2026-08-01 — every createLaunch() and every listing reads here. V8
   // (ArcPairFactoryV2 graduation, ARCD) is retired: no longer read anywhere,
   // so it no longer shows up in the Market screener.
-  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9 : PUMP_FACTORY_ADDRESS;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10 : PUMP_FACTORY_ADDRESS;
   const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
@@ -373,7 +376,7 @@ export default function Screener({
     setWrongNetworkArc(null);
     if (loading || !coinAddress || selected) return;
     const otherArc = isMainnet ? ARC : ARC_MAINNET;
-    const otherFactory = isMainnet ? PUMP_FACTORY_ADDRESS : ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9;
+    const otherFactory = isMainnet ? PUMP_FACTORY_ADDRESS : ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10;
     let alive = true;
     const provider = arcProvider(otherArc);
     (async () => {

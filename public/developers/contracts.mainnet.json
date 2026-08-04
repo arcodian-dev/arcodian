@@ -1,8 +1,8 @@
 {
-  "version": 2,
+  "version": 3,
   "phase": "mainnet-phase-1-usdc-only",
   "deployedAt": "2026-07-30T00:00:00Z",
-  "updatedAt": "2026-08-02T00:00:00Z",
+  "updatedAt": "2026-08-04T11:20:12Z",
   "network": { "name": "Arc Mainnet", "chainId": 5042, "rpc": "https://arc-rpc.stakeme.pro", "explorer": "https://arc.exploreme.pro" },
   "note": "Phase 1 covers only contracts with no external Circle/Pyth/ERC-8004 mainnet dependency. Confirmed by direct on-chain probe 2026-07-30: the native USDC ERC-20 view precompile at 0x3600...0000 IS live on mainnet at the same fixed address as testnet, but the testnet EURC token, Pyth oracle, and ERC-8004 Identity/Reputation/Validation Registry addresses all return no code on mainnet — nobody has deployed/published those there yet. Every contract below needed no address but our own and USDC. 2026-07-31: rpc.blockdaemon.mainnet.arc.io (used for the phase-1 deploy above) started returning 401 with no warning and stayed down — no official Circle RPC/explorer for Arc Mainnet is public yet. arc-rpc.stakeme.pro / arc.exploreme.pro is third-party, unofficial infrastructure, independently verified (chainId, real transaction/balance/bytecode cross-checks against our own known state) but not Circle's own; swap it out the moment an official endpoint exists.",
   "contracts": {
@@ -17,6 +17,7 @@
     "marketPairFactoryLegacyWrongTreasury": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
     "marketUsdcFactory": "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
     "marketUsdcFactoryV9": "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
+    "marketUsdcFactoryV10": "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
     "marketUsdcFactoryV9LegacyWrongTreasury": "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
     "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
   },

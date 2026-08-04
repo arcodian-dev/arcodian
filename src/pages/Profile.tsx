@@ -8,7 +8,10 @@ import { arcProvider, imageUrl, readActivities, short, type LaunchAsset, type Wa
 // array here would allocate fresh every render and (since the holdings
 // effect depends on it) retrigger an infinite refetch loop, same failure
 // mode fixed in Market.tsx.
-const MAINNET_LEGACY_FACTORIES: string[] = [ARC_MAINNET_CONTRACTS.marketUsdcFactory];
+const MAINNET_LEGACY_FACTORIES: string[] = [
+  ARC_MAINNET_CONTRACTS.marketUsdcFactory,
+  ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,
+];
 
 export default function Profile({
   account,
@@ -27,7 +30,7 @@ export default function Profile({
   // holdings/launches (ARDN etc.) never showed up here at all.
   const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
   const activeArc = isMainnet ? ARC_MAINNET : ARC;
-  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9 : PUMP_FACTORY_ADDRESS;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10 : PUMP_FACTORY_ADDRESS;
   const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [holdings, setHoldings] = useState<
     Array<LaunchAsset & { balance: bigint; value: bigint }>

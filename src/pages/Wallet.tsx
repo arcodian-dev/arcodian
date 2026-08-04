@@ -790,7 +790,7 @@ export default function Wallet({
     // factory as of 2026-07-31; V8 stays wired read-only so pre-V9 coins
     // (ARCD) keep showing up — same split Market.tsx uses.
     const factoryAddresses = isArcMainnetChain
-      ? [ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, ARC_MAINNET_CONTRACTS.marketUsdcFactory]
+      ? [ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, ARC_MAINNET_CONTRACTS.marketUsdcFactory]
       : [PUMP_FACTORY_ADDRESS];
     (async () => {
       const found: Array<{ symbol: string; name: string; balance: string; address: string }> = [];
