@@ -40,6 +40,19 @@ does not route to it until Gateway, migration, and independent-audit gates pass.
 Gateway ERC-1271 integration is testnet-only because Circle's supported-chain
 list does not currently include Arc Mainnet.
 
+### Official dependency evidence checked 2026-08-05
+
+- The official `erc-8004/erc-8004-contracts` repository lists the Arc
+  Testnet Identity and Reputation registries, but does not list an Arc
+  Mainnet registry deployment. A GitHub repository or a testnet address is
+  not evidence that the registry exists on chain `5042`.
+- The official `circlefin/evm-gateway-contracts` repository contains the
+  Gateway contract source and deployment tooling, but its public deployment
+  material does not establish an Arc Mainnet Gateway deployment.
+- Agent Pay therefore keeps Passport, identity-aware V6 flows, and Gateway
+  authorization disabled on Mainnet until the dependency addresses and live
+  bytecode are independently verified.
+
 ## Safety model
 
 The owner signs every policy, merchant permission, funding, and withdrawal
