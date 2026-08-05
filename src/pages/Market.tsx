@@ -996,7 +996,7 @@ function TradingDesk({
   // false for a V8-graduated ArcPair (v2-style, in-house AMM), true for a
   // V9-graduated real Uniswap V3 pool — the two need entirely different
   // quote/execution paths (ArcPair.swap() vs SwapRouter.exactInputSingle()).
-  const [pairIsV3, setPairIsV3] = useState(false);
+  const [pairIsV3, setPairIsV3] = useState(Boolean(asset.globalPool && asset.pair));
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [eurcBalance, setEurcBalance] = useState(0n);
@@ -1105,6 +1105,20 @@ function TradingDesk({
     // 18-dec values, but after graduation reserve0/reserve1 are ERC-20 units.
     // Normalize every pair quote reserve to the terminal's 18-dec convention.
     const pairScale = 10n ** 12n;
+    if (asset.globalPool && asset.pair) {
+      const token = new Contract(asset.address, ["function balanceOf(address) view returns(uint256)"], provider);
+      const quote = new Contract(ARC_USDC_ERC20, ["function balanceOf(address) view returns(uint256)"], provider);
+      const [nextInventory, rawReserve] = await Promise.all([
+        token.balanceOf(asset.pair) as Promise<bigint>,
+        quote.balanceOf(asset.pair) as Promise<bigint>,
+      ]);
+      setGraduated(true);
+      setPair(asset.pair);
+      setPairIsV3(true);
+      setReserve(rawReserve * pairScale);
+      setInventory(nextInventory);
+      return;
+    }
     const curveState = new Contract(asset.curve, ["function graduated() view returns(bool)"], provider);
     const nextGraduated = await curveState.graduated() as boolean;
     // V8 curves expose pair() (ArcPair, our own v2-style AMM). V9 curves
@@ -1360,6 +1374,7 @@ function TradingDesk({
       // a revert-trick under the hood, same as every Uniswap V3 frontend).
       let v3QuoteOut = 0n;
       if (graduated && pairIsV3) {
+        const v3FeeTier = Number(asset.feeTier || 3000);
         const quoter = new Contract(
           ARC_MAINNET_CONTRACTS.v3Quoter,
           ["function quoteExactInputSingle(address,address,uint24,uint256,uint160) returns(uint256)"],
@@ -1369,7 +1384,7 @@ function TradingDesk({
         const tokenOutAddr = side === "buy" ? asset.address : ARC_USDC_ERC20;
         const amountInRaw = side === "buy" ? venueAmountWei / QSCALE : amountWei;
         v3QuoteOut = amountInRaw > 0n
-          ? await quoter.quoteExactInputSingle.staticCall(tokenInAddr, tokenOutAddr, 3000, amountInRaw, 0) as bigint
+          ? await quoter.quoteExactInputSingle.staticCall(tokenInAddr, tokenOutAddr, v3FeeTier, amountInRaw, 0) as bigint
           : 0n;
         freshInventory = 0n;
         freshReserve = 0n;
@@ -1462,8 +1477,9 @@ function TradingDesk({
           ["function exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns(uint256)"],
           signer,
         );
+        const v3FeeTier = Number(asset.feeTier || 3000);
         tx = await swapRouter.exactInputSingle([
-          tokenInAddr, tokenOutAddr, 3000, owner, deadline, v3AmountIn, v3AmountOutMinimum, 0,
+          tokenInAddr, tokenOutAddr, v3FeeTier, owner, deadline, v3AmountIn, v3AmountOutMinimum, 0,
         ]);
       } else if (graduated) {
         if (!pairReader) throw new Error("NO_LIQUIDITY");
@@ -1558,12 +1574,16 @@ function TradingDesk({
       : ((x - (x * inventory) / (inventory + balance)) * 99n) / 100n
     : 0n;
   const pnl = sellValue - netCost;
-  const marketCap = inventory
-    ? (x * 1_000_000_000_000_000_000_000_000_000n) / inventory
-    : 0n;
+  const marketCap = asset.globalPool
+    ? BigInt(asset.marketCap || "0") * 10n ** 12n
+    : inventory
+      ? (x * 1_000_000_000_000_000_000_000_000_000n) / inventory
+      : 0n;
   // Constant-product pairs hold equal value on both sides. `reserve` is the
   // normalized quote side, so Dexscreener-style pool liquidity is 2x quote.
-  const dexLiquidity = graduated ? reserve * 2n : reserve;
+  const dexLiquidity = asset.globalPool
+    ? BigInt(asset.liquidity || asset.reserve || "0") * 10n ** 12n
+    : graduated ? reserve * 2n : reserve;
   const burnedPct = asset.lpSupply && BigInt(asset.lpSupply) > 0n
     ? Number((BigInt(asset.lpBurned || "0") * 10_000n) / BigInt(asset.lpSupply)) / 100
     : 0;
@@ -1657,11 +1677,11 @@ function TradingDesk({
   const topHolderShare = topExternalHolder
     ? Number((BigInt(topExternalHolder.balance) * 10_000n) / totalSupplyWei) / 100
     : null;
-  const lpCheck: boolean | null = graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
+  const lpCheck: boolean | null = asset.globalPool ? null : graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
   const safetyChecks: Array<{ label: string; ok: boolean | null; value: string }> = [
     { label: "Mint authority", ok: true, value: "No mint function" },
     { label: "Freeze authority", ok: true, value: "No freeze function" },
-    { label: "LP status", ok: lpCheck, value: graduated ? (pairIsV3 ? "Locked (NFT)" : lpCheck ? "Locked (burned)" : "Verify onchain") : "N/A — pre-graduation" },
+    { label: "LP status", ok: lpCheck, value: asset.globalPool ? "External — verify locker" : graduated ? (pairIsV3 ? "Locked (NFT)" : lpCheck ? "Locked (burned)" : "Verify onchain") : "N/A — pre-graduation" },
     { label: "Contract", ok: isMainnet ? verified : null, value: isMainnet ? (verified === null ? "Checking…" : verified ? "Verified" : "Unverified") : "Not tracked (testnet)" },
     { label: "Top holder", ok: topHolderShare === null ? null : topHolderShare < 20, value: topHolderShare === null ? "No data yet" : `${topHolderShare.toFixed(1)}%` },
   ];
@@ -1704,7 +1724,7 @@ function TradingDesk({
           <div className="orbit-stats">
             <div className="orbit-stat"><b>{compactNumber(Number(formatEther(marketCap)))}</b><span>Mcap</span></div>
             <div className="orbit-stat"><b>{compactNumber(Number(formatEther(dexLiquidity)))}</b><span>{graduated ? "Liq" : "Raised"}</span></div>
-            <div className="orbit-stat hide-md"><b>{compactNumber(asset.volume ? Number(formatEther(BigInt(asset.volume))) : 0)}</b><span>Vol</span></div>
+            <div className="orbit-stat hide-md"><b>{compactNumber(displayVolume24h(asset))}</b><span>Vol 24h</span></div>
             <div className="orbit-stat hide-md"><b>{asset.holderCount || 0}</b><span>Holders</span></div>
             <div className="orbit-stat hide-md"><b>{asset.tradeCount || 0}</b><span>Trades</span></div>
           </div>
@@ -1721,8 +1741,10 @@ function TradingDesk({
             <div className="orbit-block">
               <div className="orbit-block-h"><div className="orbit-block-t">{graduated ? "Market status" : "Bonding curve"}</div></div>
               {graduated ? <>
-                <div className="orbit-curve-top"><div className="orbit-curve-pct done">Graduated</div></div>
-                <div className="orbit-curve-note">Liquidity is <b>permanently locked</b> — trading now routes through {pairIsV3 ? "a real Uniswap V3 pool" : "the canonical Arcodian pair"}, the same venue any external router or bot reads.</div>
+                <div className="orbit-curve-top"><div className="orbit-curve-pct done">{asset.globalPool ? "External · Unverified" : "Graduated"}</div></div>
+                <div className="orbit-curve-note">{asset.globalPool
+                  ? <>This token was discovered from an external USDC pool. It is <b>not an Arcodian launch</b>; liquidity shown is the current onchain pool-balance estimate and can change.</>
+                  : <>Liquidity is <b>permanently locked</b> — trading now routes through {pairIsV3 ? "a real Uniswap V3 pool" : "the canonical Arcodian pair"}, the same venue any external router or bot reads.</>}</div>
               </> : <>
                 <div className="orbit-curve-top"><div className="orbit-curve-pct">{asset.progress.toFixed(1)}%</div><div className="orbit-curve-sub">to graduation</div></div>
                 <div className="orbit-track"><i style={{ width: `${Math.min(100, asset.progress)}%` }}></i></div>

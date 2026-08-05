@@ -202,7 +202,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         launches?: Array<{
           address: string; symbol: string; name: string; image: string;
           reserve: string; threshold: string; graduated: boolean;
-          volume: string; tradeCount: number; holderCount: number;
+          volume: string; volume24h?: string; tradeCount: number; holderCount: number;
           globalPool?: boolean;
           trades?: Array<{ native: string; tokens: string }>;
         }>;
@@ -211,7 +211,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         const reserve = BigInt(item.reserve), threshold = BigInt(item.threshold || "1");
         return {
           address: item.address, symbol: item.symbol, name: item.name, image: item.image, currency: "USDC",
-          reserve, threshold, volume: BigInt(item.volume || "0"), volume24h: 0n,
+          reserve, threshold, volume: BigInt(item.volume || "0"), volume24h: BigInt(item.volume24h || "0"),
           globalPool: Boolean(item.globalPool),
           holderCount: item.holderCount, tradeCount: item.tradeCount,
           graduated: item.graduated, progress: item.graduated ? 100 : Number(reserve * 10_000n / (threshold || 1n)) / 100,
@@ -231,11 +231,13 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     return () => { alive = false; };
   }, []);
 
-  // Busiest first, so the radar leads with whatever actually has a tape.
+  // "Busiest now" means the trailing 24-hour window, not lifetime volume.
+  // Lifetime sorting let one malformed historical external-pool event pin a
+  // market at the top forever and made the number look like live liquidity.
   const ranked = useMemo(
     () => [...launches].sort((a, b) => {
-      const av = quoteAmount(a.volume, a.currency, a.globalPool);
-      const bv = quoteAmount(b.volume, b.currency, b.globalPool);
+      const av = quoteAmount(a.volume24h, a.currency, a.globalPool);
+      const bv = quoteAmount(b.volume24h, b.currency, b.globalPool);
       return bv - av || b.tradeCount - a.tradeCount;
     }),
     [launches],
@@ -267,7 +269,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
               {ranked.map((row) => (
                 <span key={`${copy}-${row.address}`}>
                   <b>{row.symbol}</b>
-                  <small>{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</small>
+                  <small>{money(quoteAmount(row.volume24h, row.currency, row.globalPool), row.currency)} 24h</small>
                   <em>{row.progress.toFixed(1)}%</em>
                 </span>
               ))}
@@ -361,7 +363,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 {row.spark
                   ? <svg viewBox="0 0 120 34" aria-hidden="true"><polyline points={row.spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   : <span className="lp-nospark">{row.tradeCount} confirmed trade{row.tradeCount === 1 ? "" : "s"}</span>}
-                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</b><small>{row.progress.toFixed(1)}%</small></span>
+                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume24h, row.currency, row.globalPool), row.currency)}</b><small>24h · {row.globalPool ? "External" : `${row.progress.toFixed(1)}%`}</small></span>
               </button>
             ))
           ) : (

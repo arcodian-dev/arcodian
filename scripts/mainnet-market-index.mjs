@@ -52,7 +52,10 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Same 429-aware retry/queue as the testnet indexer — the whole point of
 // this script is to be the ONE well-behaved client against a rate-limited
 // free RPC instead of N uncoordinated browser tabs.
-const rpcQueue = [Promise.resolve()];
+const rpcQueue = Array.from(
+  { length: Math.max(1, Number(process.env.INDEX_RPC_CONCURRENCY || 8)) },
+  () => Promise.resolve(),
+);
 let rpcCursor = 0;
 class ThrottledProvider extends JsonRpcProvider {
   async _send(payload) {
@@ -78,7 +81,9 @@ class ThrottledProvider extends JsonRpcProvider {
 const provider = new ThrottledProvider(RPC, undefined, { batchMaxCount: 1, staticNetwork: true });
 
 const factoryAbi = ["function launchCount() view returns(uint256)", "function tokenByLaunch(uint256) view returns(address)", "function curveByLaunch(uint256) view returns(address)"];
-const tokenAbi = ["function name() view returns(string)", "function symbol() view returns(string)", "function imageURI() view returns(string)", "function balanceOf(address) view returns(uint256)"];
+const tokenAbi = ["function name() view returns(string)", "function symbol() view returns(string)", "function imageURI() view returns(string)", "function balanceOf(address) view returns(uint256)", "function totalSupply() view returns(uint256)"];
+const usdcContract = new Contract(USDC, tokenAbi, provider);
+const usdcTotalSupply = await usdcContract.totalSupply();
 const curveAbiV2 = [
   "function realNativeReserve() view returns(uint256)",
   "function VIRTUAL_NATIVE() view returns(uint256)",
@@ -290,6 +295,26 @@ async function indexGlobalV3Pools() {
       indexedBlock: complete ? latestBlock : Math.max(0, fromBlock - 1),
     });
   }
+  // Pool discovery is incremental, but reserves are live state. Previously we
+  // refreshed balances only inside the PoolCreated branch, so every existing
+  // V3 market kept showing its creation-time liquidity forever. Refresh both
+  // sides on every index tick and discard impossible quote deltas (a genuine
+  // USDC Swap delta can never exceed USDC's entire onchain total supply).
+  await Promise.all(results.map(async (row) => {
+    try {
+      const [tokenBalance, usdcBalance] = await Promise.all([
+        new Contract(row.address, tokenAbi, provider).balanceOf(row.pool),
+        usdcContract.balanceOf(row.pool),
+      ]);
+      row.inventory = tokenBalance.toString();
+      row.reserve = usdcBalance.toString();
+      row.liquidity = (usdcBalance * 2n).toString();
+      row.indexedBlock = latestBlock;
+      row.trades = (row.trades || []).filter((trade) => BigInt(trade.native || 0) <= usdcTotalSupply);
+    } catch (error) {
+      console.error(`Pool refresh failed for ${row.pool}: ${error?.shortMessage || error?.message || error}`);
+    }
+  }));
   return { pools: results, cursors: venueCursors };
 }
 
@@ -633,6 +658,7 @@ for (const item of launchesOut) {
   if (item.factory === "radar-index") continue;
   const extra = liveTapeByToken.get(String(item.address).toLowerCase()) || [];
   const trades = [...(item.trades || []), ...extra]
+    .filter((trade) => !item.globalPool || BigInt(trade.native || 0) <= usdcTotalSupply)
     .filter((trade, index, all) => all.findIndex((candidate) => candidate.tx === trade.tx && candidate.side === trade.side) === index)
     .sort((a, b) => (a.block || 0) - (b.block || 0))
     .slice(-1000);
