@@ -17,11 +17,15 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  // simply stays empty on mainnet rather than faking data.
  const isMainnet=chainId===ARC_MAINNET.id;
  const activeArc=isMainnet?ARC_MAINNET:ARC;
- const identityAware=true;
- // New mainnet vaults must use the identity-aware factory. The legacy factory
- // remains readable for old accounts, but must not be used for new vaults.
- const activeFactory=isMainnet?ARC_MAINNET_CONTRACTS.agentPayFactoryV3:AGENT_PAY_V5_FACTORY_ADDRESS;
- const activeFactoryAbi=isMainnet?AGENT_PAY_V3_FACTORY_ABI:AGENT_PAY_V5_FACTORY_ABI;
+ // Mainnet currently exposes the deployed non-identity V2 factory. The
+ // identity-aware Passport/Jobs/Reputation stack remains testnet-only because
+ // the official ERC-8004 mainnet implementation is not active yet.
+ const identityAware=!isMainnet;
+ // Mainnet new vaults use the deployed non-identity V2 factory. Testnet new
+ // vaults use the additive identity-aware V5 factory; older V3 vaults remain
+ // readable as a fallback.
+ const activeFactory=isMainnet?ARC_MAINNET_CONTRACTS.agentPayFactory:AGENT_PAY_V5_FACTORY_ADDRESS;
+ const activeFactoryAbi=isMainnet?FACTORY_ABI:AGENT_PAY_V5_FACTORY_ABI;
  const fallbackFactory=isMainnet?"":AGENT_PAY_V3_FACTORY_ADDRESS;
  const activeVaultAbi=identityAware?AGENT_PAY_V3_VAULT_ABI:VAULT_ABI;
  // Agent Passport (ERC-8004) — mainnet's IdentityRegistry proxy exists at the
@@ -39,7 +43,7 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  useEffect(()=>{if(isMainnet){setIndex(null);return}fetch("/data/agentpay-index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(setIndex).catch(()=>{})},[status,isMainnet]);
  async function signer(){if(!activeProvider){connect();throw Error("Connect wallet first")}if(chainId!==activeArc.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:activeArc.hexId}]});throw Error("Network switched. Review and submit again.")}return new BrowserProvider(activeProvider).getSigner()}
  async function submit(label:string,target:string,abi:string[],fn:(c:Contract,s:any)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const tx=await fn(new Contract(target,abi,s),s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh()}catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
- async function registerPassport(){setBusy(true);setStatus("Passport: pinning metadata to IPFS…");try{
+ async function registerPassport(){if(isMainnet){setStatus("Agent Passport is currently available on Arc Testnet only.");return}setBusy(true);setStatus("Passport: pinning metadata to IPFS…");try{
   const meta={name:agentName,description:agentDesc,image:agentImage,version:"1",capabilities:agentCaps.split(",").map(s=>s.trim()).filter(Boolean),supportedPaymentModes:agentModes.split(",").map(s=>s.trim()).filter(Boolean)};
   const res=await fetch(AGENT_METADATA_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(meta)});
   if(!res.ok)throw Error("Metadata pin failed");
@@ -49,7 +53,7 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
   const mint=rc.logs.map((l:any)=>{try{return reg.interface.parseLog(l)}catch{return null}}).find((e:any)=>e&&e.name==="Transfer"&&e.args.from===ZeroAddress);
   const aid=mint?mint.args.tokenId.toString():"";setNewAgentId(aid);setBindAgentId(aid);setStatus(`Passport registered — Agent ID ${aid} · ${url}`)
  }catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
- const bindAgentWallet=()=>submit("Bind wallet",activePassport,AGENT_PASSPORT_ABI,c=>c.bindWallet(BigInt(bindAgentId),bindWalletAddr));
+ const bindAgentWallet=()=>isMainnet?setStatus("Agent Passport is currently available on Arc Testnet only."):submit("Bind wallet",activePassport,AGENT_PASSPORT_ABI,c=>c.bindWallet(BigInt(bindAgentId),bindWalletAddr));
  const invoiceId=useMemo(()=>/^0x[0-9a-fA-F]{64}$/.test(invoice)?invoice:id(`${selectedVault}:${merchant}:${invoice}`),[invoice,merchant,selectedVault]);
  const create=()=>submit("Vault creation",activeFactory,activeFactoryAbi,c=>c.createVault({value:parseEther(initialFunding||"0")}));
  const indexedVault=index?.vaults?.find((v:any)=>v.vault.toLowerCase()===selectedVault.toLowerCase());
