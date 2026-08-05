@@ -79,6 +79,11 @@ export const AGENT_PASSPORT_ADDRESS = "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cC
 // authority alive. Old V3 vaults keep working as before (immutable, no
 // forced migration) — this is the template for new ones only.
 export const AGENT_PAY_V3_FACTORY_ADDRESS = "0x8F4Ba684C7c294DF3Af50AC023975F6695CA4299";
+// V5 additive testnet factory (2026-08-05): ERC-1271 smart-wallet validation
+// and relayed EIP-712 invoice execution. Existing V3/V4 vaults remain canonical
+// for their owners until V5 completes Gateway E2E and security review.
+export const AGENT_PAY_V5_FACTORY_ADDRESS = "0x5441b397fC82C67B0A59EFf82ea1744935fACC3E";
+export const AGENT_PAY_V5_FACTORY_ABI = ["function arcPay() view returns(address)","function passport() view returns(address)","function vaultOf(address) view returns(address)","function vaultCount() view returns(uint256)","function createVault() payable returns(address)"];
 export const AGENT_METADATA_ENDPOINT = "https://arcodian.fun/api/agent-metadata.php";
 export const IDENTITY_REGISTRY_ABI = ["function register(string metadataURI) returns(uint256)","function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)","event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"];
 export const AGENT_PASSPORT_ABI = ["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)","function ownerOfAgent(uint256) view returns(address)","function bindWallet(uint256,address)","function unbind(uint256)","event WalletBound(uint256 indexed agentId,address indexed oldWallet,address indexed newWallet,address owner)"];
