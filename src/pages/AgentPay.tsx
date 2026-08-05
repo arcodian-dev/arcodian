@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {BrowserProvider,Contract,JsonRpcProvider,ZeroAddress,formatEther,id,isAddress,parseEther} from "ethers";
-import {AGENT_PAY_ADDRESS,AGENT_PAY_FACTORY_ADDRESS,AGENT_PAY_V3_FACTORY_ADDRESS,AGENT_PAY_V5_FACTORY_ADDRESS,ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,AGENT_PAY_V3_VAULT_ABI,AGENT_PAY_V3_FACTORY_ABI,AGENT_PAY_V5_FACTORY_ABI,AGENT_METADATA_ENDPOINT} from "../config";
+import {AGENT_PAY_ADDRESS,AGENT_PAY_FACTORY_ADDRESS,AGENT_PAY_V3_FACTORY_ADDRESS,AGENT_PAY_V5_FACTORY_ADDRESS,AGENT_PAY_V6_MAINNET_FACTORY_ADDRESS,AGENT_PAY_V6_MAINNET_FACTORY_ABI,AGENT_PAY_V6_MAINNET_FEATURE_FLAG,AGENT_PAY_V6_MAINNET_CAPABILITY_SIGNED_OFF,AGENT_PAY_V6_VAULT_ABI,ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,AGENT_PAY_V3_VAULT_ABI,AGENT_PAY_V3_FACTORY_ABI,AGENT_PAY_V5_FACTORY_ABI,AGENT_METADATA_ENDPOINT} from "../config";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
 
@@ -20,14 +20,15 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  // Mainnet currently exposes the deployed non-identity V2 factory. The
  // identity-aware Passport/Jobs/Reputation stack remains testnet-only because
  // the official ERC-8004 mainnet implementation is not active yet.
- const identityAware=!isMainnet;
+ const [v6Available,setV6Available]=useState(false);
+ const identityAware=!isMainnet||v6Available;
  // Mainnet new vaults use the deployed non-identity V2 factory. Testnet new
  // vaults use the additive identity-aware V5 factory; older V3 vaults remain
  // readable as a fallback.
- const activeFactory=isMainnet?ARC_MAINNET_CONTRACTS.agentPayFactory:AGENT_PAY_V5_FACTORY_ADDRESS;
- const activeFactoryAbi=isMainnet?FACTORY_ABI:AGENT_PAY_V5_FACTORY_ABI;
+ const activeFactory=isMainnet?(v6Available?AGENT_PAY_V6_MAINNET_FACTORY_ADDRESS:ARC_MAINNET_CONTRACTS.agentPayFactory):AGENT_PAY_V5_FACTORY_ADDRESS;
+ const activeFactoryAbi=isMainnet?(v6Available?AGENT_PAY_V6_MAINNET_FACTORY_ABI:FACTORY_ABI):AGENT_PAY_V5_FACTORY_ABI;
  const fallbackFactory=isMainnet?"":AGENT_PAY_V3_FACTORY_ADDRESS;
- const activeVaultAbi=identityAware?AGENT_PAY_V3_VAULT_ABI:VAULT_ABI;
+ const activeVaultAbi=v6Available?AGENT_PAY_V6_VAULT_ABI:(identityAware?AGENT_PAY_V3_VAULT_ABI:VAULT_ABI);
  // Agent Passport (ERC-8004) — mainnet's IdentityRegistry proxy exists at the
  // official vanity address but isn't upgraded to a real implementation yet
  // (see ARC_MAINNET_CONTRACTS comment in config.ts), so register()/bindWallet()
@@ -38,11 +39,12 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  const [index,setIndex]=useState<any>(null);
  const [agentName,setAgentName]=useState("");const [agentDesc,setAgentDesc]=useState("");const [agentImage,setAgentImage]=useState("");const [agentCaps,setAgentCaps]=useState("payments");const [agentModes,setAgentModes]=useState("arcpay");const [newAgentId,setNewAgentId]=useState("");const [bindAgentId,setBindAgentId]=useState("");const [bindWalletAddr,setBindWalletAddr]=useState("");
  const selectedVault=executionVault||ownerVault;const isVaultOwner=Boolean(ownerVault&&selectedVault.toLowerCase()===ownerVault.toLowerCase());
+ useEffect(()=>{let cancelled=false;async function probe(){if(!isMainnet||!AGENT_PAY_V6_MAINNET_FEATURE_FLAG||!AGENT_PAY_V6_MAINNET_CAPABILITY_SIGNED_OFF){setV6Available(false);return}const p=new JsonRpcProvider(activeArc.rpc,undefined,{batchMaxCount:1});try{const factory=new Contract(AGENT_PAY_V6_MAINNET_FACTORY_ADDRESS,AGENT_PAY_V6_MAINNET_FACTORY_ABI,p);const [factoryCode,passportAddress,arcPayAddress]=await Promise.all([p.getCode(AGENT_PAY_V6_MAINNET_FACTORY_ADDRESS),factory.passport(),factory.arcPay()]);const passportCode=await p.getCode(passportAddress);const arcPayCode=await p.getCode(arcPayAddress);if(!cancelled)setV6Available(factoryCode!=="0x"&&passportCode!=="0x"&&arcPayCode!=="0x")}catch{if(!cancelled)setV6Available(false)}finally{p.destroy()}}void probe();return()=>{cancelled=true}},[isMainnet,activeArc.rpc]);
  const refresh=useCallback(async()=>{if(!activeFactory)return;const p=new JsonRpcProvider(activeArc.rpc,undefined,{batchMaxCount:1});try{const primary=new Contract(activeFactory,activeFactoryAbi,p);const legacy=fallbackFactory?new Contract(fallbackFactory,AGENT_PAY_V3_FACTORY_ABI,p):null;setVaultCount(Number(await primary.vaultCount())+(legacy?Number(await legacy.vaultCount()):0));let own="";if(account){for(const f of [primary,legacy].filter(Boolean) as Contract[]){const v=await f.vaultOf(account);if(v!==ZeroAddress){own=v;setOwnerVault(v);setExecutionVault(x=>x||v);break;}}}if(selectedVault&&isAddress(selectedVault)){setBalance(formatEther(await p.getBalance(selectedVault)));let key:any=account;if(identityAware&&account){const passport=new Contract(activePassport,AGENT_PASSPORT_ABI,p);key=await passport.agentIdOf(account);setActiveAgentId(String(key));}const row=await new Contract(selectedVault,activeVaultAbi,p).policies(key);setPolicy({perPay:formatEther(row.perPayment),daily:formatEther(row.dailyLimit),spent:formatEther(row.spentToday),validUntil:Number(row.validUntil),enabled:row.enabled})}else if(!own){setBalance("0");setPolicy(null);setActiveAgentId("0")}}finally{p.destroy()}},[account,selectedVault,activeArc,activeFactory,activeFactoryAbi,activeVaultAbi,identityAware,activePassport,fallbackFactory]);
  useEffect(()=>{void refresh()},[refresh]);
  useEffect(()=>{if(isMainnet){setIndex(null);return}fetch("/data/agentpay-index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(setIndex).catch(()=>{})},[status,isMainnet]);
  async function signer(){if(!activeProvider){connect();throw Error("Connect wallet first")}if(chainId!==activeArc.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:activeArc.hexId}]});throw Error("Network switched. Review and submit again.")}return new BrowserProvider(activeProvider).getSigner()}
- async function submit(label:string,target:string,abi:string[],fn:(c:Contract,s:any)=>Promise<any>){setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const tx=await fn(new Contract(target,abi,s),s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh()}catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
+ async function submit(label:string,target:string,abi:string[],fn:(c:Contract,s:any)=>Promise<any>){if(v6Available&&label==="Agent payment"){setStatus("V6 batch execution is available through the SDK; direct single-invoice UI execution is disabled in staging.");return}setBusy(true);setStatus(`${label}: waiting for wallet…`);try{const s=await signer();const tx=await fn(new Contract(target,abi,s),s);setStatus(`${label} submitted ${short(tx.hash)}…`);await tx.wait();setStatus(`${label} confirmed ${tx.hash}`);await refresh()}catch(e){setStatus(describeTxError(e))}finally{setBusy(false)}}
  async function registerPassport(){if(isMainnet){setStatus("Agent Passport is currently available on Arc Testnet only.");return}setBusy(true);setStatus("Passport: pinning metadata to IPFS…");try{
   const meta={name:agentName,description:agentDesc,image:agentImage,version:"1",capabilities:agentCaps.split(",").map(s=>s.trim()).filter(Boolean),supportedPaymentModes:agentModes.split(",").map(s=>s.trim()).filter(Boolean)};
   const res=await fetch(AGENT_METADATA_ENDPOINT,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(meta)});

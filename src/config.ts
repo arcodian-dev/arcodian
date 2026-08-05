@@ -89,6 +89,13 @@ export const AGENT_PAY_V5_FACTORY_ABI = ["function arcPay() view returns(address
 // until the V6 migration path receives a full product review.
 export const AGENT_PAY_V6_FACTORY_ADDRESS = "0xBb998B06C4E5028ddF70af669920e20141a2f662";
 export const AGENT_PAY_V6_FACTORY_ABI = ["function arcPay() view returns(address)","function passport() view returns(address)","function vaultOf(address) view returns(address)","function vaultCount() view returns(uint256)","function createVault() payable returns(address)"];
+// Mainnet V6 is staged behind explicit release gates. The production UI must
+// not select the additive factory until capability evidence is signed off.
+export const AGENT_PAY_V6_MAINNET_FACTORY_ADDRESS = "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB";
+export const AGENT_PAY_V6_MAINNET_FACTORY_ABI = AGENT_PAY_V6_FACTORY_ABI;
+export const AGENT_PAY_V6_MAINNET_FEATURE_FLAG = import.meta.env.VITE_ENABLE_AGENT_PAY_V6_MAINNET === "true";
+export const AGENT_PAY_V6_MAINNET_CAPABILITY_SIGNED_OFF = import.meta.env.VITE_AGENT_PAY_V6_MAINNET_CAPABILITY_SIGNED_OFF === "true";
+export const AGENT_PAY_V6_VAULT_ABI = ["function owner() view returns(address)","function policies(uint256) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(uint256,address) view returns(bool)","function setPolicy(uint256,uint128,uint128,uint64,bool)","function setMerchant(uint256,address,bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)","function withdraw(address,uint256)"];
 export const AGENT_METADATA_ENDPOINT = "https://arcodian.fun/api/agent-metadata.php";
 export const IDENTITY_REGISTRY_ABI = ["function register(string metadataURI) returns(uint256)","function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)","event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"];
 export const AGENT_PASSPORT_ABI = ["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)","function ownerOfAgent(uint256) view returns(address)","function bindWallet(uint256,address)","function unbind(uint256)","event WalletBound(uint256 indexed agentId,address indexed oldWallet,address indexed newWallet,address owner)"];
