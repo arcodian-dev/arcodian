@@ -1,6 +1,6 @@
 import {useCallback,useEffect,useMemo,useState} from "react";
 import {BrowserProvider,Contract,JsonRpcProvider,ZeroAddress,formatEther,id,isAddress,parseEther} from "ethers";
-import {AGENT_PAY_ADDRESS,AGENT_PAY_FACTORY_ADDRESS,ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,AGENT_PAY_V3_VAULT_ABI,AGENT_PAY_V3_FACTORY_ABI,AGENT_METADATA_ENDPOINT} from "../config";
+import {AGENT_PAY_ADDRESS,AGENT_PAY_FACTORY_ADDRESS,AGENT_PAY_V3_FACTORY_ADDRESS,AGENT_PAY_V5_FACTORY_ADDRESS,ARC,ARC_MAINNET,ARC_MAINNET_CONTRACTS,IDENTITY_REGISTRY_ADDRESS,IDENTITY_REGISTRY_ABI,AGENT_PASSPORT_ADDRESS,AGENT_PASSPORT_ABI,AGENT_PAY_V3_VAULT_ABI,AGENT_PAY_V3_FACTORY_ABI,AGENT_PAY_V5_FACTORY_ABI,AGENT_METADATA_ENDPOINT} from "../config";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
 
@@ -17,11 +17,12 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  // simply stays empty on mainnet rather than faking data.
  const isMainnet=chainId===ARC_MAINNET.id;
  const activeArc=isMainnet?ARC_MAINNET:ARC;
- const identityAware=isMainnet;
+ const identityAware=true;
  // New mainnet vaults must use the identity-aware factory. The legacy factory
  // remains readable for old accounts, but must not be used for new vaults.
- const activeFactory=identityAware?ARC_MAINNET_CONTRACTS.agentPayFactoryV3:AGENT_PAY_FACTORY_ADDRESS;
- const activeFactoryAbi=identityAware?AGENT_PAY_V3_FACTORY_ABI:FACTORY_ABI;
+ const activeFactory=isMainnet?ARC_MAINNET_CONTRACTS.agentPayFactoryV3:AGENT_PAY_V5_FACTORY_ADDRESS;
+ const activeFactoryAbi=isMainnet?AGENT_PAY_V3_FACTORY_ABI:AGENT_PAY_V5_FACTORY_ABI;
+ const fallbackFactory=isMainnet?"":AGENT_PAY_V3_FACTORY_ADDRESS;
  const activeVaultAbi=identityAware?AGENT_PAY_V3_VAULT_ABI:VAULT_ABI;
  // Agent Passport (ERC-8004) — mainnet's IdentityRegistry proxy exists at the
  // official vanity address but isn't upgraded to a real implementation yet
@@ -33,7 +34,7 @@ export default function AgentPay({account,chainId,activeProvider,connect}:Props)
  const [index,setIndex]=useState<any>(null);
  const [agentName,setAgentName]=useState("");const [agentDesc,setAgentDesc]=useState("");const [agentImage,setAgentImage]=useState("");const [agentCaps,setAgentCaps]=useState("payments");const [agentModes,setAgentModes]=useState("arcpay");const [newAgentId,setNewAgentId]=useState("");const [bindAgentId,setBindAgentId]=useState("");const [bindWalletAddr,setBindWalletAddr]=useState("");
  const selectedVault=executionVault||ownerVault;const isVaultOwner=Boolean(ownerVault&&selectedVault.toLowerCase()===ownerVault.toLowerCase());
- const refresh=useCallback(async()=>{if(!activeFactory)return;const p=new JsonRpcProvider(activeArc.rpc,undefined,{batchMaxCount:1});try{const f=new Contract(activeFactory,activeFactoryAbi,p);setVaultCount(Number(await f.vaultCount()));let own="";if(account){const v=await f.vaultOf(account);if(v!==ZeroAddress){own=v;setOwnerVault(v);setExecutionVault(x=>x||v)}}if(selectedVault&&isAddress(selectedVault)){setBalance(formatEther(await p.getBalance(selectedVault)));let key:any=account;if(identityAware&&account){const passport=new Contract(activePassport,AGENT_PASSPORT_ABI,p);key=await passport.agentIdOf(account);setActiveAgentId(String(key));}const row=await new Contract(selectedVault,activeVaultAbi,p).policies(key);setPolicy({perPay:formatEther(row.perPayment),daily:formatEther(row.dailyLimit),spent:formatEther(row.spentToday),validUntil:Number(row.validUntil),enabled:row.enabled})}else if(!own){setBalance("0");setPolicy(null);setActiveAgentId("0")}}finally{p.destroy()}},[account,selectedVault,activeArc,activeFactory,activeFactoryAbi,activeVaultAbi,identityAware,activePassport]);
+ const refresh=useCallback(async()=>{if(!activeFactory)return;const p=new JsonRpcProvider(activeArc.rpc,undefined,{batchMaxCount:1});try{const primary=new Contract(activeFactory,activeFactoryAbi,p);const legacy=fallbackFactory?new Contract(fallbackFactory,AGENT_PAY_V3_FACTORY_ABI,p):null;setVaultCount(Number(await primary.vaultCount())+(legacy?Number(await legacy.vaultCount()):0));let own="";if(account){for(const f of [primary,legacy].filter(Boolean) as Contract[]){const v=await f.vaultOf(account);if(v!==ZeroAddress){own=v;setOwnerVault(v);setExecutionVault(x=>x||v);break;}}}if(selectedVault&&isAddress(selectedVault)){setBalance(formatEther(await p.getBalance(selectedVault)));let key:any=account;if(identityAware&&account){const passport=new Contract(activePassport,AGENT_PASSPORT_ABI,p);key=await passport.agentIdOf(account);setActiveAgentId(String(key));}const row=await new Contract(selectedVault,activeVaultAbi,p).policies(key);setPolicy({perPay:formatEther(row.perPayment),daily:formatEther(row.dailyLimit),spent:formatEther(row.spentToday),validUntil:Number(row.validUntil),enabled:row.enabled})}else if(!own){setBalance("0");setPolicy(null);setActiveAgentId("0")}}finally{p.destroy()}},[account,selectedVault,activeArc,activeFactory,activeFactoryAbi,activeVaultAbi,identityAware,activePassport,fallbackFactory]);
  useEffect(()=>{void refresh()},[refresh]);
  useEffect(()=>{if(isMainnet){setIndex(null);return}fetch("/data/agentpay-index.json",{cache:"no-store"}).then(r=>r.ok?r.json():null).then(setIndex).catch(()=>{})},[status,isMainnet]);
  async function signer(){if(!activeProvider){connect();throw Error("Connect wallet first")}if(chainId!==activeArc.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:activeArc.hexId}]});throw Error("Network switched. Review and submit again.")}return new BrowserProvider(activeProvider).getSigner()}
