@@ -9,6 +9,7 @@ contract MockPassportV6 is IAgentPassportV6 {
     function set(address wallet,uint256 id) external {ids[wallet]=id;} function setOwner(uint256 id,address owner) external {owners[id]=owner;}
     function agentIdOf(address wallet) external view returns(uint256){return ids[wallet];} function ownerOfAgent(uint256 id) external view returns(address){return owners[id];}
 }
+contract Mock1271OwnerV6 { function isValidSignature(bytes32,bytes calldata) external pure returns(bytes4){return 0x1626ba7e;} }
 
 contract ArcAgentPayV6Test is Test {
     ArcPay pay; ArcAgentPayV6 wallet; MockPassportV6 passport; uint256 ownerKey=0xA11CE; uint256 agentKey=0xA22CE; address owner; address agent; address merchant=address(3); uint256 constant AGENT_ID=7;
@@ -32,4 +33,5 @@ contract ArcAgentPayV6Test is Test {
         for(uint256 i;i<2;i++){batch.invoiceIds[i]=keccak256(abi.encodePacked("invoice-",i));batch.merchants[i]=merchant;batch.amounts[i]=1 ether;batch.invoiceExpiries[i]=uint64(block.timestamp+1 days);batch.memoHashes[i]=keccak256(abi.encodePacked("memo-",i));}
     }
     function testBatchRejectsOversizedPayload() public {bytes32[] memory ids=new bytes32[](17);address[] memory merchants=new address[](17);uint256[] memory amounts=new uint256[](17);uint64[] memory expiries=new uint64[](17);bytes32[] memory memos=new bytes32[](17);ArcAgentPayV6.BatchPayment memory batch=ArcAgentPayV6.BatchPayment(bytes32(0),ids,merchants,amounts,expiries,memos,0,uint64(block.timestamp+1 days));vm.expectRevert(ArcAgentPayV6.Invalid.selector);wallet.payBatchBySig(batch,"");}
+    function testERC1271DelegatesToSmartWalletOwner() public {Mock1271OwnerV6 smartOwner=new Mock1271OwnerV6();ArcAgentPayV6 smartVault=new ArcAgentPayV6(address(smartOwner),IArcPayAgentV6(address(pay)),IAgentPassportV6(address(passport)));assertEq(smartVault.isValidSignature(keccak256("gateway-intent"),"0x1234"),smartVault.ERC1271_MAGICVALUE());}
 }
