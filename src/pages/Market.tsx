@@ -84,6 +84,41 @@ function displayVolume24h(item: LaunchAsset): number {
     : Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
 }
 
+// V10 keeps the 200M-token graduation allocation in the curve contract, but
+// excludes it from bonding-curve pricing. token.balanceOf(curve) therefore
+// overstates tradable inventory by 25% on a fresh launch and produces a
+// minTokensOut that always reverts with SLIPPAGE before the wallet can open.
+// Probe the version onchain so stale index snapshots cannot break signing.
+async function readBondingInventory(
+  tokenAddress: string,
+  curveAddress: string,
+  runner: BrowserProvider | ReturnType<typeof arcProvider>,
+): Promise<bigint> {
+  try {
+    const curve = new Contract(
+      curveAddress,
+      [
+        "function ENGINE_VERSION() view returns(uint8)",
+        "function CURVE_SUPPLY() view returns(uint256)",
+        "function curveSold() view returns(uint256)",
+      ],
+      runner,
+    );
+    const version = Number(await curve.ENGINE_VERSION());
+    if (version >= 10) {
+      const [supply, sold] = await Promise.all([
+        curve.CURVE_SUPPLY() as Promise<bigint>,
+        curve.curveSold() as Promise<bigint>,
+      ]);
+      return supply > sold ? supply - sold : 0n;
+    }
+  } catch {
+    // Older curves do not expose ENGINE_VERSION/CURVE_SUPPLY/curveSold.
+  }
+  const token = new Contract(tokenAddress, ["function balanceOf(address) view returns(uint256)"], runner);
+  return token.balanceOf(curveAddress) as Promise<bigint>;
+}
+
 // The server index is deduped by token address, but keep this client-side
 // guard for older cached snapshots and transient mixed-version responses.
 // External venues can expose multiple pools for one token; the screener must
@@ -1120,7 +1155,8 @@ function TradingDesk({
       const nextReserveFn = isEurc ? "realQuoteReserve" : "realNativeReserve";
       const venue = new Contract(nextVenue, [`function ${nextReserveFn}() view returns(uint256)`], provider);
       [nextReserve, nextInventory] = await Promise.all([
-        venue[nextReserveFn]() as Promise<bigint>, token.balanceOf(nextVenue) as Promise<bigint>,
+        venue[nextReserveFn]() as Promise<bigint>,
+        readBondingInventory(asset.address, nextVenue, provider),
       ]);
       if (isEurc) nextReserve *= pairScale;
     }
@@ -1300,10 +1336,10 @@ function TradingDesk({
     setTradeStage("quote");
     setStatus("Refreshing quote and preparing wallet confirmation…");
     try {
-      await activeProvider.request({
-        method: "wallet_switchEthereumChain",
-        params: [{ chainId: activeArc.hexId }],
-      });
+      // OKX can resolve wallet_switchEthereumChain before its selected RPC
+      // has finished rotating. Reuse the launchpad's guarded network setup so
+      // quoting and signing only start after Arc Mainnet is actually healthy.
+      await ensureWalletChain(activeProvider, activeArc);
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
       const venueAddress = graduated && pair ? pair : asset.curve;
@@ -1351,7 +1387,8 @@ function TradingDesk({
         const reserveFn = isEurc ? "realQuoteReserve" : "realNativeReserve";
         const venueReader = new Contract(venueAddress, [`function ${reserveFn}() view returns(uint256)`], provider);
         [freshInventory, freshReserve] = await Promise.all([
-          tokenReader.balanceOf(venueAddress) as Promise<bigint>, venueReader[reserveFn]() as Promise<bigint>,
+          readBondingInventory(asset.address, venueAddress, provider),
+          venueReader[reserveFn]() as Promise<bigint>,
         ]);
         if (isEurc) freshReserve *= QSCALE;
       }
@@ -1492,10 +1529,10 @@ function TradingDesk({
       }
       setTradeStage("submitted");
       setTxHash(tx.hash);
-      writeActivity({ id: tx.hash, account, kind: side === "buy" ? "BUY" : "SELL", status: "submitted", title: `${side === "buy" ? "Buy" : "Sell"} ${asset.symbol}`, detail: `${amount} ${side === "buy" ? currency : asset.symbol} · ${graduated ? "ARC DEX" : "Bonding curve"}`, txHash: tx.hash, chainIn: "Arc_Testnet", chainOut: "Arc_Testnet", rail: "arc", createdAt: Date.now(), updatedAt: Date.now() });
+      writeActivity({ id: tx.hash, account, kind: side === "buy" ? "BUY" : "SELL", status: "submitted", title: `${side === "buy" ? "Buy" : "Sell"} ${asset.symbol}`, detail: `${amount} ${side === "buy" ? currency : asset.symbol} · ${graduated ? "ARC DEX" : "Bonding curve"}`, txHash: tx.hash, chainIn: activeArc.name.replaceAll(" ", "_"), chainOut: activeArc.name.replaceAll(" ", "_"), rail: "arc", createdAt: Date.now(), updatedAt: Date.now() });
       setStatus("Transaction submitted. Waiting for Arc confirmation…");
       await tx.wait();
-      patchActivity(tx.hash, { status: "completed", detail: `${side === "buy" ? "Buy" : "Sell"} confirmed on Arc Testnet` });
+      patchActivity(tx.hash, { status: "completed", detail: `${side === "buy" ? "Buy" : "Sell"} confirmed on ${activeArc.name}` });
       optimisticTapeUntil.current = Date.now() + 15_000;
       setLiveTrades((current) => [{ side: (side === "buy" ? "BUY" : "SELL") as "BUY" | "SELL", amount: amountWei, tokens: freshQuote }, ...current].slice(0, 12));
       const confirmedSide: "BUY" | "SELL" = side === "buy" ? "BUY" : "SELL";
@@ -1504,7 +1541,7 @@ function TradingDesk({
       await refreshOnchain(provider);
       setBalance(confirmedBalance);
       setTradeStage("confirmed");
-      setStatus("Trade confirmed on Arc Testnet.");
+      setStatus(`Trade confirmed on ${activeArc.name}.`);
     } catch (error) {
       setTradeStage("error");
       const rawMessage = String((error as { message?: unknown })?.message || "").toLowerCase();

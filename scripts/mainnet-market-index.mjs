@@ -90,6 +90,9 @@ const curveAbiV2 = [
   "event Sold(address indexed seller,uint256 tokensIn,uint256 nativeOut,uint256 protocolFee)",
 ];
 const curveAbiV3 = [
+  "function ENGINE_VERSION() view returns(uint8)",
+  "function CURVE_SUPPLY() view returns(uint256)",
+  "function curveSold() view returns(uint256)",
   "function realNativeReserve() view returns(uint256)",
   "function VIRTUAL_NATIVE() view returns(uint256)",
   "function graduationThreshold() view returns(uint256)",
@@ -402,6 +405,12 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   } else {
     [name, symbol, reserve, virtualReserve, threshold, graduated, inventory] = await Promise.all([token.name(), token.symbol(), market.realNativeReserve(), market.VIRTUAL_NATIVE(), market.graduationThreshold(), market.graduated(), token.balanceOf(curve)]);
   }
+  let engineVersion = Number(previousMarket?.engineVersion || 0);
+  try { engineVersion = Number(await market.ENGINE_VERSION()); } catch {}
+  if (!graduated && engineVersion >= 10) {
+    const [curveSupply, curveSold] = await Promise.all([market.CURVE_SUPPLY(), market.curveSold()]);
+    inventory = curveSupply > curveSold ? curveSupply - curveSold : 0n;
+  }
   let pair = previousMarket?.pair || "", lpSupply = BigInt(previousMarket?.lpSupply || 0), lpBurned = BigInt(previousMarket?.lpBurned || 0);
   let dexPair = null, dexPoolV3 = null;
   if (graduated && kind === "v2") try {
@@ -502,7 +511,7 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   const pricedTrades = trades.filter((trade) => BigInt(trade.tokens) > 0n);
   const priceChange24h = changeFor(pricedTrades, now, 86400);
   return {
-    address, curve, pair, quoteKind: 0, currency: "USDC",
+    address, curve, pair, engineVersion, quoteKind: 0, currency: "USDC",
     lpSupply: lpSupply.toString(), lpBurned: lpBurned.toString(),
     name, symbol, image, creator,
     reserve: reserve.toString(), virtualReserve: virtualReserve.toString(), threshold: threshold.toString(), inventory: inventory.toString(),
