@@ -32,6 +32,35 @@ contract ArcAgentPayV6Test is Test {
         batch.invoiceIds=new bytes32[](2);batch.merchants=new address[](2);batch.amounts=new uint256[](2);batch.invoiceExpiries=new uint64[](2);batch.memoHashes=new bytes32[](2);
         for(uint256 i;i<2;i++){batch.invoiceIds[i]=keccak256(abi.encodePacked("invoice-",i));batch.merchants[i]=merchant;batch.amounts[i]=1 ether;batch.invoiceExpiries[i]=uint64(block.timestamp+1 days);batch.memoHashes[i]=keccak256(abi.encodePacked("memo-",i));}
     }
+    function testBatchRejectsReplayAfterNonceConsumption() public {
+        ArcAgentPayV6.BatchPayment memory batch=_makeBatch();
+        bytes memory signature=_sign(batch,agentKey);
+        wallet.payBatchBySig(batch,signature);
+        vm.expectRevert(ArcAgentPayV6.NonceUsed.selector);
+        wallet.payBatchBySig(batch,signature);
+    }
+    function testBatchRejectsExpiredDeadline() public {
+        ArcAgentPayV6.BatchPayment memory batch=_makeBatch();
+        batch.deadline=uint64(block.timestamp-1);
+        vm.expectRevert(ArcAgentPayV6.Invalid.selector);
+        wallet.payBatchBySig(batch,"");
+    }
+    function testBatchRejectsMutatedSignedAmount() public {
+        ArcAgentPayV6.BatchPayment memory batch=_makeBatch();
+        bytes memory signature=_sign(batch,agentKey);
+        batch.amounts[0]=2 ether;
+        vm.expectRevert(ArcAgentPayV6.BadSignature.selector);
+        wallet.payBatchBySig(batch,signature);
+    }
+    function _sign(ArcAgentPayV6.BatchPayment memory batch,uint256 key) internal view returns(bytes memory) {
+        bytes32[] memory hashes=new bytes32[](batch.invoiceIds.length);
+        bytes32 itemType=keccak256("BatchItem(bytes32 invoiceId,address merchant,uint256 amount,uint64 invoiceExpiry,bytes32 memoHash)");
+        for(uint256 i;i<batch.invoiceIds.length;i++) hashes[i]=keccak256(abi.encode(itemType,batch.invoiceIds[i],batch.merchants[i],batch.amounts[i],batch.invoiceExpiries[i],batch.memoHashes[i]));
+        bytes32 batchType=keccak256("Batch(bytes32 batchId,bytes32 itemsHash,uint256 nonce,uint64 deadline)");
+        bytes32 digest=keccak256(abi.encodePacked("\x19\x01",wallet.DOMAIN_SEPARATOR(),keccak256(abi.encode(batchType,batch.batchId,keccak256(abi.encodePacked(hashes)),batch.nonce,batch.deadline))));
+        (uint8 v,bytes32 r,bytes32 s)=vm.sign(key,digest);
+        return abi.encodePacked(r,s,v);
+    }
     function testBatchRejectsOversizedPayload() public {bytes32[] memory ids=new bytes32[](17);address[] memory merchants=new address[](17);uint256[] memory amounts=new uint256[](17);uint64[] memory expiries=new uint64[](17);bytes32[] memory memos=new bytes32[](17);ArcAgentPayV6.BatchPayment memory batch=ArcAgentPayV6.BatchPayment(bytes32(0),ids,merchants,amounts,expiries,memos,0,uint64(block.timestamp+1 days));vm.expectRevert(ArcAgentPayV6.Invalid.selector);wallet.payBatchBySig(batch,"");}
     function testERC1271DelegatesToSmartWalletOwner() public {Mock1271OwnerV6 smartOwner=new Mock1271OwnerV6();ArcAgentPayV6 smartVault=new ArcAgentPayV6(address(smartOwner),IArcPayAgentV6(address(pay)),IAgentPassportV6(address(passport)));assertEq(smartVault.isValidSignature(keccak256("gateway-intent"),"0x1234"),smartVault.ERC1271_MAGICVALUE());}
 }
