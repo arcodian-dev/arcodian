@@ -84,6 +84,11 @@ export const AGENT_PAY_V3_FACTORY_ADDRESS = "0x8F4Ba684C7c294DF3Af50AC023975F669
 // for their owners until V5 completes Gateway E2E and security review.
 export const AGENT_PAY_V5_FACTORY_ADDRESS = "0x5441b397fC82C67B0A59EFf82ea1744935fACC3E";
 export const AGENT_PAY_V5_FACTORY_ABI = ["function arcPay() view returns(address)","function passport() view returns(address)","function vaultOf(address) view returns(address)","function vaultCount() view returns(uint256)","function createVault() payable returns(address)"];
+// V6 additive testnet factory (2026-08-05): atomic EIP-712 batch payments.
+// It is exposed for SDK and developer integrations; the UI remains on V5
+// until the V6 migration path receives a full product review.
+export const AGENT_PAY_V6_FACTORY_ADDRESS = "0x3fC5B05c5deA91C78c7B2ed9d2832B5bE82c9cD8";
+export const AGENT_PAY_V6_FACTORY_ABI = ["function arcPay() view returns(address)","function passport() view returns(address)","function vaultOf(address) view returns(address)","function vaultCount() view returns(uint256)","function createVault() payable returns(address)"];
 export const AGENT_METADATA_ENDPOINT = "https://arcodian.fun/api/agent-metadata.php";
 export const IDENTITY_REGISTRY_ABI = ["function register(string metadataURI) returns(uint256)","function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)","event Transfer(address indexed from,address indexed to,uint256 indexed tokenId)"];
 export const AGENT_PASSPORT_ABI = ["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)","function ownerOfAgent(uint256) view returns(address)","function bindWallet(uint256,address)","function unbind(uint256)","event WalletBound(uint256 indexed agentId,address indexed oldWallet,address indexed newWallet,address owner)"];
