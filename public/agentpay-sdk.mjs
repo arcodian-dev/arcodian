@@ -47,6 +47,7 @@ export async function inspectRelayedInvoice(provider,payload){const now=Math.flo
 export function relayPayment(relayer,payload){return new Contract(payload.vault,V5_ABI,relayer).payInvoiceBySig(payload.payment,payload.signature);}
 // V6 — one EIP-712 signature for an atomic batch of up to 16 invoices.
 export const ARC_AGENT_PAY_V6={chainId:5042002,factory:"0xBb998B06C4E5028ddF70af669920e20141a2f662",name:"ArcAgentPay",version:"6",maxBatchSize:16};
+export const ARC_AGENT_PAY_V6_MAINNET={chainId:5042,factory:"0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB",name:"ArcAgentPay",version:"6",maxBatchSize:16};
 const V6_ABI=["function nonces(address) view returns(uint256)","function payBatchBySig((bytes32 batchId,bytes32[] invoiceIds,address[] merchants,uint256[] amounts,uint64[] invoiceExpiries,bytes32[] memoHashes,uint256 nonce,uint64 deadline),bytes signature)"];
 const V6_TYPES={Batch:[{name:"batchId",type:"bytes32"},{name:"itemsHash",type:"bytes32"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint64"}]};
 const V6_ITEM_TYPE="BatchItem(bytes32 invoiceId,address merchant,uint256 amount,uint64 invoiceExpiry,bytes32 memoHash)";
