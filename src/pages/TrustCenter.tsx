@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
+import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, AGENT_PAY_V6_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 
 function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
@@ -155,6 +155,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Reputation Registry", REPUTATION_REGISTRY_ADDRESS, "Official ERC-8004 registry. Feedback is evidence-backed only when its tag names a real completed job and its authorized client or evaluator."],
         ["Validation Registry", VALIDATION_REGISTRY_ADDRESS, "Official ERC-8004 registry for independent validation of an agent's work, tied to the exact completed job."],
         ["Agent Pay Factory v3", AGENT_PAY_V3_FACTORY_ADDRESS, "Mints one isolated, non-custodial vault per owner whose bounded spending policies are keyed by Agent ID."],
+        ["Agent Pay Factory v6 · testnet", AGENT_PAY_V6_FACTORY_ADDRESS, "ERC-1271-aware additive vault template with atomic EIP-712 batch payments. Testnet only; production UI remains on the reviewed migration path."],
       ],
     },
     {
@@ -173,6 +174,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the mainnet pair factory below."],
         ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry for graduated mainnet coins."],
         ["Arc Pay (mainnet)", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement, deployed to Arc Mainnet."],
+        ["Agent Pay Factory v6 · mainnet", ARC_MAINNET_CONTRACTS.agentPayFactoryV6, "Additive ERC-1271-aware batch-payment factory. No automatic vault creation; production UI remains on the existing factory until Gateway and migration gates pass."],
         ["ArcBridgeRouter · Arc", CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id], "1.5% fee router over Circle's official CCTP v2 rails. Proven live: real transactions on all 5 chains, plus independent third-party wallets bridging unaided."],
         ["ArcBridgeRouter · Ethereum", CCTP_MAINNET_FEE_ROUTER[1], "Same router contract, deployed on Ethereum mainnet — opens that chain's own explorer, not Arc's."],
         ["ArcBridgeRouter · Optimism", CCTP_MAINNET_FEE_ROUTER[10], "Same router contract, deployed on Optimism mainnet."],
@@ -363,7 +365,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     <article id="docs-safety" className="docs-section">
       <div className="docs-section-head"><span>12</span><h2>Safety & custody</h2></div>
       <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints (or, where no official Arc Mainnet endpoint yet exists, an independently-verified third-party one — see Mainnet readiness below), and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Features without an explicit mainnet deployment and readiness sign-off stay Arc Testnet only.</p>
-      <aside className="docs-notice"><strong>Mixed testnet/mainnet notice</strong><p>Bridge and the USDC-only Market/Launchpad are live on Arc Mainnet, chain 5042 — real USDC, real risk. Always check the network your wallet shows before signing. Everything else on this page (Swap via Circle's SDK, StableCoin FX, Arc Lend, EURC launches, the agent-economy stack) runs on Arc Testnet chain 5042002, where test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through each network's explorer.</p></aside>
+      <aside className="docs-notice"><strong>Mixed testnet/mainnet notice</strong><p>Bridge, the USDC-only Market/Launchpad, and the additive Agent Pay V6 factory are deployed on Arc Mainnet, chain 5042. V6 has no automatic vault creation and the production UI remains on the reviewed migration path. Always check the network your wallet shows before signing. The active agent-economy surfaces and V6 batch vault testing run on Arc Testnet chain 5042002, where test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through each network's explorer.</p></aside>
     </article>
 
     <article id="docs-verify" className="docs-section">

@@ -1,10 +1,11 @@
 {
   "version": 4,
   "auditedAt": "2026-07-30T00:00:00Z",
-  "updatedAt": "2026-07-31T00:00:00Z",
+  "updatedAt": "2026-08-05T00:53:40Z",
   "decision": "PARTIAL_GO_USDC_ONLY",
   "target": "Arc mainnet",
   "currentNetwork": { "name": "Arc Mainnet", "chainId": 5042 },
+  "agentPayV6": { "factory": "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB", "status": "additive-deployed", "vaultCreation": "manual-only", "productionUi": "not-routed", "openGates": ["Gateway E2E", "independent audit", "migration review"] },
   "summary": { "passed": 12, "warning": 5, "blocked": 2 },
   "gates": [
     { "id": "official-mainnet-registry", "status": "warning", "evidence": "Chain 5042 confirmed real 2026-07-30 by cross-checking a user-supplied bridge tx against both rpc.blockdaemon.mainnet.arc.io and arc-mainnet.cloud.blockscout.com (same block, same status). rpc.blockdaemon.mainnet.arc.io then started returning 401 on every request 2026-07-31 with no warning and never recovered — no official Circle RPC/explorer for Arc Mainnet is public. Currently using arc-rpc.stakeme.pro / arc.exploreme.pro, an independently-verified but unofficial third-party operator (see the bridge-mainnet-deploy gate for the verification method). Native USDC precompile at 0x3600...0000 confirmed live at the same fixed address as testnet. EURC, Pyth, and the ERC-8004 Identity Registry mainnet addresses are still unpublished (docs.arc.io itself says mainnet addresses are not yet available) and confirmed by direct probe to have no code on chain 5042 — those integrations remain deferred. CCTP was previously listed here as deferred too — that was wrong; TokenMessengerV2/MessageTransmitterV2 are deterministic across every CCTP v2 chain and needed no separate publication. See public/developers/contracts.mainnet.json." },
