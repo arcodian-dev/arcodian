@@ -25,3 +25,12 @@ The flow is:
 The adapter is an unsigned integration surface. Production activation still
 requires Circle API credentials, a real testnet E2E receipt, replay/expiry
 negative tests, and an independent security review.
+
+## Arcodian Agent Kit network status
+
+- Arc Mainnet: base Arc Pay and non-identity Agent Pay V2 are deployed and
+  available through `ARC_AGENT_PAY_MAINNET`.
+- Arc Testnet: Passport, Jobs, Reputation, V5 relayed invoices, and V6 batch
+  vault flows are the active identity-aware development stack.
+- Arc Mainnet V6: factory deployed additively, but no vault is auto-created and
+  the production UI does not route to it yet.

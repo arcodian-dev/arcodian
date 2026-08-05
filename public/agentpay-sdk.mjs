@@ -29,6 +29,10 @@ export function leaveFeedback(signer,{agentId,score,tag1="arcjob",tag2="",endpoi
 export function requestValidation(signer,{validator,agentId,dataHash,requestUri=""}){const c=new Contract(ARC_REPUTATION.validation,VAL_ABI,signer);return c.validationRequest(validator,agentId,requestUri,dataHash);}
 export function submitValidation(signer,{dataHash,response,responseUri="",responseHash="0x"+"0".repeat(64),tag="arcjob"}){const c=new Contract(ARC_REPUTATION.validation,VAL_ABI,signer);return c.validationResponse(dataHash,response,responseUri,responseHash,tag);}
 export const ARC_AGENT_PAY={chainId:5042002,factory:"0x27c722F643ea787f7425449AF8B03601B90815eD",arcPay:"0x5e3d1b63213b8608539116d1c6248a36819684b5"};
+// Arc Mainnet base Agent Pay is live for the non-identity V2 vault flow.
+// Passport, Jobs, Reputation, V5 relayed invoices, and V6 batch vaults remain
+// testnet-only until their own mainnet dependencies and release gates clear.
+export const ARC_AGENT_PAY_MAINNET={chainId:5042,factory:"0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",arcPay:"0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",network:"Arc Mainnet",status:"v2-live"};
 const ABI=["function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)"];
 export async function inspectPolicy(provider,vault,agent,merchant){const c=new Contract(vault,ABI,provider);const [p,allowed,balance]=await Promise.all([c.policies(agent),c.merchantAllowed(agent,merchant),provider.getBalance(vault)]);return {enabled:p.enabled,allowed,balance,perPayment:p.perPayment,dailyLimit:p.dailyLimit,spentToday:p.spentToday,validUntil:Number(p.validUntil)};}
 export async function payBoundedInvoice(signer,{vault,merchant,amount,invoiceId,memo="",expiresIn=3600}){const c=new Contract(vault,ABI,signer);const key=/^0x[0-9a-fA-F]{64}$/.test(invoiceId)?invoiceId:id(invoiceId);return c.payInvoice(key,merchant,parseEther(String(amount)),Math.floor(Date.now()/1000)+expiresIn,id(memo||invoiceId));}
