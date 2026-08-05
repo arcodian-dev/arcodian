@@ -32,6 +32,18 @@ export const ARC_AGENT_PAY={chainId:5042002,factory:"0x27c722F643ea787f7425449AF
 const ABI=["function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)"];
 export async function inspectPolicy(provider,vault,agent,merchant){const c=new Contract(vault,ABI,provider);const [p,allowed,balance]=await Promise.all([c.policies(agent),c.merchantAllowed(agent,merchant),provider.getBalance(vault)]);return {enabled:p.enabled,allowed,balance,perPayment:p.perPayment,dailyLimit:p.dailyLimit,spentToday:p.spentToday,validUntil:Number(p.validUntil)};}
 export async function payBoundedInvoice(signer,{vault,merchant,amount,invoiceId,memo="",expiresIn=3600}){const c=new Contract(vault,ABI,signer);const key=/^0x[0-9a-fA-F]{64}$/.test(invoiceId)?invoiceId:id(invoiceId);return c.payInvoice(key,merchant,parseEther(String(amount)),Math.floor(Date.now()/1000)+expiresIn,id(memo||invoiceId));}
+// V5 — ERC-1271 + relayed EIP-712 invoice execution on Arc Testnet.
+// The SDK only creates/signs the payload. It never stores keys or calls a
+// relayer automatically; callers can submit it through their own relayer or
+// call relayPayment() with a separate gas-paying signer.
+export const ARC_AGENT_PAY_V5={chainId:5042002,factory:"0x5441b397fC82C67B0A59EFf82ea1744935fACC3E",name:"ArcAgentPay",version:"5"};
+const V5_ABI=["function nonces(address) view returns(uint256)","function payInvoiceBySig((bytes32 invoiceId,address merchant,uint256 amount,uint64 invoiceExpiry,bytes32 memoHash,uint256 nonce,uint64 deadline),bytes signature)"];
+const V5_TYPES={Payment:[{name:"invoiceId",type:"bytes32"},{name:"merchant",type:"address"},{name:"amount",type:"uint256"},{name:"invoiceExpiry",type:"uint64"},{name:"memoHash",type:"bytes32"},{name:"nonce",type:"uint256"},{name:"deadline",type:"uint64"}]};
+export async function signRelayedInvoice(signer,{vault,merchant,amount,invoiceId,memo="",expiresIn=3600,deadlineIn=3600}){
+  const provider=signer.provider;if(!provider)throw new Error("signRelayedInvoice requires a signer connected to a provider");const owner=await signer.getAddress();const reader=new Contract(vault,["function nonces(address) view returns(uint256)"],provider);const nonce=await reader.nonces(owner);const now=Math.floor(Date.now()/1000);const key=/^0x[0-9a-fA-F]{64}$/.test(invoiceId)?invoiceId:id(invoiceId);const memoHash=id(memo||invoiceId);const payment={invoiceId:key,merchant,amount:parseEther(String(amount)),invoiceExpiry:now+expiresIn,memoHash,nonce,deadline:now+deadlineIn};const domain={name:ARC_AGENT_PAY_V5.name,version:ARC_AGENT_PAY_V5.version,chainId:ARC_AGENT_PAY_V5.chainId,verifyingContract:vault};const signature=await signer.signTypedData(domain,V5_TYPES,payment);return {vault,payment,signature,domain,types:V5_TYPES};
+}
+export function serializeRelayedInvoice(payload){return {...payload,payment:{...payload.payment,amount:String(payload.payment.amount),nonce:String(payload.payment.nonce),invoiceExpiry:String(payload.payment.invoiceExpiry),deadline:String(payload.payment.deadline)}};}
+export function relayPayment(relayer,payload){return new Contract(payload.vault,V5_ABI,relayer).payInvoiceBySig(payload.payment,payload.signature);}
 export const ARC_IDENTITY={registry:"0x8004A818BFB912233c491871b3d84c89A494BD9e",passport:"0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf"};
 const ID_ABI=["function ownerOf(uint256) view returns(address)","function tokenURI(uint256) view returns(string)"];
 const PP_ABI=["function walletOf(uint256) view returns(address)","function agentIdOf(address) view returns(uint256)"];
