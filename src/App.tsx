@@ -664,17 +664,25 @@ export default function App() {
     setStatus(`Switching to ${from.name}…`);
     try {
       const sourceHex = `0x${fromChain.toString(16)}`;
-      try {
-        await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: sourceHex }] });
-      } catch (switchError) {
-        const code = (switchError as { code?: number })?.code;
-        if (code === 4902 && (from.id === ARC.id || from.id === ARC_MAINNET.id)) {
-          const arcNet = from.id === ARC_MAINNET.id ? ARC_MAINNET : ARC;
-          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: arcNet.name, nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 }, rpcUrls: rpcUrlsFor(arcNet), blockExplorerUrls: [arcNet.explorer] }] });
-        } else if (code === 4902 && MAINNET_CHAINS.some((c) => c.id === from.id)) {
-          await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: from.name, nativeCurrency: { name: from.gasSymbol, symbol: from.gasSymbol, decimals: 18 }, rpcUrls: rpcUrlsFor(from) }] });
-        } else if (code === 4001) { setStatus("Network switch was rejected. Approve it to continue."); setBusy(false); return; }
-        else if (code === 4902) { setStatus(`Add ${from.name} to your wallet, then try again.`); setBusy(false); return; }
+      if (from.id === ARC.id || from.id === ARC_MAINNET.id) {
+        // Arc is a custom network in wallets such as OKX. A plain switch can
+        // succeed while leaving the wallet on a stale saved RPC, causing the
+        // following approval preflight to fail with a misleading Bech32
+        // "Invalid prefix" error. Reuse the canonical switch + RPC probe used
+        // by Market so outbound bridge actions refresh and verify Arc first.
+        await ensureWalletChain(activeProvider, from.id === ARC_MAINNET.id ? ARC_MAINNET : ARC);
+      } else {
+        try {
+          await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: sourceHex }] });
+        } catch (switchError) {
+          const code = (switchError as { code?: number })?.code;
+          if (code === 4902 && MAINNET_CHAINS.some((c) => c.id === from.id)) {
+            await activeProvider.request({ method: "wallet_addEthereumChain", params: [{ chainId: sourceHex, chainName: from.name, nativeCurrency: { name: from.gasSymbol, symbol: from.gasSymbol, decimals: 18 }, rpcUrls: rpcUrlsFor(from) }] });
+            await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: sourceHex }] });
+          } else if (code === 4001) { setStatus("Network switch was rejected. Approve it to continue."); setBusy(false); return; }
+          else if (code === 4902) { setStatus(`Add ${from.name} to your wallet, then try again.`); setBusy(false); return; }
+          else throw switchError;
+        }
       }
       // wallet_switchEthereumChain can resolve before the wallet's own
       // provider has actually finished rotating — building a signer right
@@ -695,15 +703,24 @@ export default function App() {
         setBusy(false);
         return;
       }
-      const signer = await new BrowserProvider(activeProvider as never).getSigner();
+      let signer = await new BrowserProvider(activeProvider as never).getSigner();
       const owner = await signer.getAddress();
 
-      const usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
-      const allowance: bigint = await usdc.allowance(owner, spender);
+      let usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
+      let allowance: bigint = await usdc.allowance(owner, spender);
       if (allowance < value) {
-        setStatus(`Approving USDC on ${from.name}…`);
-        const approval = await usdc.approve(spender, value, { gasLimit: 120000n });
-        await approval.wait();
+        for (let attempt = 0; attempt < 2 && allowance < value; attempt += 1) {
+          setStatus(attempt === 0 ? `Approving USDC on ${from.name}…` : `Refreshing ${from.name} RPC and retrying approval…`);
+          if (attempt > 0 && (from.id === ARC.id || from.id === ARC_MAINNET.id)) {
+            await ensureWalletChain(activeProvider, from.id === ARC_MAINNET.id ? ARC_MAINNET : ARC);
+            signer = await new BrowserProvider(activeProvider as never).getSigner();
+            usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
+          }
+          const approval = await usdc.approve(spender, value, { gasLimit: 120000n });
+          await approval.wait();
+          allowance = await usdc.allowance(owner, spender);
+        }
+        if (allowance < value) throw new Error("Approval did not register on-chain after the wallet RPC was refreshed.");
       }
 
       const messenger = new Contract(feeRouter || tokenMessenger, feeRouter ? BRIDGE_FEE_ROUTER_ABI : TOKEN_MESSENGER_ABI, signer);

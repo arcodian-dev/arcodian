@@ -152,6 +152,9 @@ export function describeTxError(error: unknown): string {
   if (rawMessage.includes("request limit")) {
     return "Arc RPC is busy right now. No funds were sent — wait a few seconds and try again.";
   }
+  if (rawMessage.includes("invalid prefix") || rawMessage.includes("invalid bech32")) {
+    return "Your wallet is using an invalid address format for this EVM transaction. Reopen Arc Mainnet in the wallet and retry; the recipient must start with 0x.";
+  }
   if (rawMessage.includes("missing revert data") || rawMessage.includes("could not coalesce")) {
     return "Wallet preflight failed before signing. No funds were sent — reopen Arc Mainnet in OKX and retry.";
   }

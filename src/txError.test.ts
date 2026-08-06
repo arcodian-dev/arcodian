@@ -46,6 +46,12 @@ describe("describeTxError", () => {
     expect(message).toContain("Wallet preflight failed");
   });
 
+  it("turns wallet Bech32 prefix errors into an EVM network instruction", () => {
+    const message = describeTxError({ message: "Invalid prefix for bech32 address" });
+    expect(message).toContain("EVM transaction");
+    expect(message).toContain("0x");
+  });
+
   it("decodes the ArcAgentJobsV2 self-dealing guard", () => {
     expect(describeTxError({ code: "CALL_EXCEPTION", data: "0x74ca9bd8" })).toContain("neutral third party");
   });
