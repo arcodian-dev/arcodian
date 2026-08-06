@@ -707,7 +707,17 @@ export default function App() {
       const owner = await signer.getAddress();
 
       let usdc = new Contract(from.token, CCTP_USDC_ABI, signer);
-      let allowance: bigint = await usdc.allowance(owner, spender);
+      // Do not route read-only bridge preflights through an injected wallet.
+      // OKX mobile can expose the correct chain ID while its internal custom-
+      // network transport still rejects eth_call before it ever opens a
+      // signing popup (reported as missing revert data / invalid prefix).
+      // Arcodian's RPC is already health-checked independently, so use it for
+      // allowance reads and reserve the wallet provider strictly for signing.
+      // This also makes mobile and desktop follow the same deterministic read
+      // path instead of depending on wallet-specific RPC implementations.
+      const bridgeReadProvider = new JsonRpcProvider(from.rpc, from.id, { staticNetwork: true });
+      const readUsdc = new Contract(from.token, CCTP_USDC_ABI, bridgeReadProvider);
+      let allowance: bigint = await readUsdc.allowance(owner, spender);
       if (allowance < value) {
         for (let attempt = 0; attempt < 2 && allowance < value; attempt += 1) {
           setStatus(attempt === 0 ? `Approving USDC on ${from.name}…` : `Refreshing ${from.name} RPC and retrying approval…`);
@@ -718,7 +728,7 @@ export default function App() {
           }
           const approval = await usdc.approve(spender, value, { gasLimit: 120000n });
           await approval.wait();
-          allowance = await usdc.allowance(owner, spender);
+          allowance = await readUsdc.allowance(owner, spender);
         }
         if (allowance < value) throw new Error("Approval did not register on-chain after the wallet RPC was refreshed.");
       }
