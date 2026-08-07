@@ -677,7 +677,13 @@ for (const item of launchesOut) {
   item.tradeCount = trades.length;
   const inventoryHolder = item.graduated ? item.pair : item.curve;
   item.topHolders = holderSnapshot(trades, inventoryHolder, BigInt(item.inventory || 0), item.graduated ? "liquidity_pool" : "bonding_curve");
-  item.holderCount = item.topHolders.length;
+  // holderCount must be the real distinct-trader count, not topHolders.length:
+  // topHolders is capped at 10 and also carries a synthetic curve/pool entry,
+  // so using its length silently ceilinged every >10-holder token at "10" and
+  // counted the pool contract itself as a holder.
+  item.holderCount = new Set(
+    trades.map((trade) => String(trade.user || "").toLowerCase()).filter((address) => address && address !== "0x0000000000000000000000000000000000000000"),
+  ).size;
   const last = priced.at(-1);
   const inventory = BigInt(item.inventory || 0);
   if (last && inventory > 0n && BigInt(last.tokens) > 0n) {

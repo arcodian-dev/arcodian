@@ -98,7 +98,7 @@ export function buildGatewayBurnIntent({
 export async function signGatewayErc1271BurnIntent(signer, params) {
   if (!signer?.signTypedData) throw new Error("signGatewayErc1271BurnIntent requires a typed-data signer");
   const burnIntent = buildGatewayBurnIntent(params);
-  const domain = { ...GATEWAY_ERC1271_DOMAIN, chainId: ARC_GATEWAY_TESTNET.domain, verifyingContract: burnIntent.spec.sourceContract };
+  const domain = { ...GATEWAY_ERC1271_DOMAIN, chainId: ARC_GATEWAY_TESTNET.chainId, verifyingContract: burnIntent.spec.sourceContract };
   const signature = await signer.signTypedData(domain, GATEWAY_ERC1271_TYPES, burnIntent);
   return { burnIntent, signature, domain, types: GATEWAY_ERC1271_TYPES, contractSigner: true };
 }
