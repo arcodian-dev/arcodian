@@ -78,6 +78,7 @@ const WalletPage = lazy(() => import("./pages/Wallet"));
 const ProductLanding = lazy(() => import("./pages/ProductLanding"));
 const ArcPayLanding = lazy(() => import("./pages/ArcPayLanding"));
 const LendApp = lazy(() => import("./pages/LendApp"));
+const LendAdmin = lazy(() => import("./pages/LendAdmin"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Treasury = lazy(() => import("./pages/Treasury"));
 const AgentPay = lazy(() => import("./pages/AgentPay"));
@@ -883,7 +884,7 @@ export default function App() {
 
   if (productHost) {
     return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
-      {productName === "lend" ? <><LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
+      {productName === "lend" ? <>{window.location.pathname.replace(/\/$/, "") === "/admin" ? <LendAdmin account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/> : <LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>}{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
     </Suspense>;
   }
 
