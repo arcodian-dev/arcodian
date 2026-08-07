@@ -1,19 +1,66 @@
-.treasury{min-height:100vh;padding:130px max(24px,6vw) 90px;background:var(--f-ink);color:var(--f-bone)}.treasury>header{max-width:920px}.treasury header>p,.treasury-ledger header p{color:var(--f-amber);font:800 11px monospace;letter-spacing:.16em}.treasury h1{font-size:clamp(42px,7vw,88px);line-height:.92;margin:14px 0}.treasury header>span,.treasury small,.treasury footer{color:var(--f-dim)}.treasury>header>div{display:flex;gap:12px;align-items:center;margin:22px 0 32px}.treasury>header b{background:var(--f-amber);color:var(--f-ink);border-radius:30px;padding:7px 12px}.treasury button{border:1px solid #284158;background:var(--f-ink3);color:var(--f-bone);border-radius:10px;padding:9px 12px}.treasury-balances,.treasury-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.treasury-balances article,.treasury-summary article,.treasury-ledger,.treasury-alerts{border:1px solid var(--f-hair2);border-radius:16px;background:var(--f-ink2);padding:18px}.treasury-balances strong,.treasury-summary b{display:block;font-size:25px;margin-top:8px}.treasury-alerts{display:grid;gap:8px;margin:14px 0;border-color:#ae7a35}.treasury-alerts a,.treasury footer a,.treasury-ledger a{color:var(--f-amber);text-decoration:none}.treasury-summary{margin:14px 0}.treasury-ledger{margin-top:14px}.treasury-ledger>header{display:flex;justify-content:space-between;align-items:end}.treasury-ledger nav{display:flex;gap:6px;flex-wrap:wrap}.treasury-ledger button.active{background:var(--f-amber);color:var(--f-ink)}.treasury-ledger>article{display:grid;grid-template-columns:150px 1fr 110px 90px;gap:14px;align-items:center;border-top:1px solid var(--f-hair2);padding:14px 0}.treasury-ledger article div{display:grid}.treasury-ledger .in{color:var(--f-amber)}.treasury-ledger .out{color:#ff8a8a}.treasury code{color:var(--f-dim)}.treasury>footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--f-hair2);margin-top:28px;padding-top:20px}@media(max-width:850px){.treasury{padding:100px 15px}.treasury-balances,.treasury-summary{grid-template-columns:1fr 1fr}.treasury-ledger>article{grid-template-columns:1fr auto}.treasury-ledger>article code{display:none}.treasury-ledger>header,.treasury>footer{display:grid;gap:14px}}
-.treasury-network{margin-top:20px}
-.treasury-network-head{margin-bottom:14px}
-.treasury-network-head h2,.treasury-legacy summary h2{font-size:20px;margin:8px 0 0}
-.tag-mainnet,.tag-testnet{display:inline-block;font:800 10.5px monospace;letter-spacing:.1em;padding:5px 11px;border-radius:999px}
-.tag-mainnet{color:var(--f-amber);background:rgba(143,199,122,.14);border:1px solid rgba(143,199,122,.4)}
-.tag-testnet{color:var(--f-dim);background:rgba(233,239,250,.05);border:1px solid var(--f-hair2)}
-.treasury-legacy{margin-top:22px;padding:18px;border:1px solid var(--f-hair2);border-radius:16px;background:rgba(22,19,14,.4)}
-.treasury-legacy summary{cursor:pointer;list-style:none}
-.treasury-legacy summary::-webkit-details-marker{display:none}
-.treasury-legacy summary small{display:block;color:var(--f-faint);margin-top:6px;font-weight:400}
-.treasury-legacy[open] summary{margin-bottom:16px}
-.treasury-status{display:flex;gap:12px;align-items:center;margin-bottom:16px}
-.treasury-status b{background:var(--f-amber);color:var(--f-ink);border-radius:30px;padding:7px 12px}
-.treasury-empty{color:var(--f-faint);padding:14px 0}
-.ledger-more{width:100%;margin-top:12px;padding:12px;border:1px dashed var(--f-hair2);border-radius:10px;background:transparent;color:var(--f-dim);font-size:13px;cursor:pointer}
-.ledger-more:hover{border-color:var(--f-amber);color:var(--f-amber)}
-.real-value-badge{color:var(--f-amber)}
-.treasury-transfer{margin-top:14px;padding:22px;border:1px solid var(--f-amber);border-radius:16px;background:var(--f-ink2)}.treasury-transfer>p{color:var(--f-amber);font:800 11px monospace;letter-spacing:.16em}.treasury-transfer>span{display:block;color:var(--f-dim);margin-bottom:14px}.transfer-fields{display:grid;grid-template-columns:130px 1fr 180px;gap:10px}.transfer-fields label,.transfer-review label{display:grid;gap:6px;color:var(--f-dim)}.transfer-fields input,.transfer-fields select,.transfer-review input{width:100%;box-sizing:border-box;border:1px solid #284158;border-radius:10px;padding:11px;background:var(--f-navy);color:var(--f-bone)}.treasury-transfer>button{margin-top:14px}.transfer-blocked,.transfer-review{display:grid;gap:12px;padding:16px;border-radius:12px;background:var(--f-navy)}.transfer-blocked span,.transfer-error{color:#ff8a8a}.transfer-review dl{margin:0;display:grid;gap:8px}.transfer-review dl div{display:flex;justify-content:space-between;gap:12px}.transfer-review dd{margin:0;text-align:right;overflow-wrap:anywhere}.transfer-review>div{display:flex;gap:8px;justify-content:flex-end}.transfer-status{overflow-wrap:anywhere;color:var(--f-amber)}@media(max-width:850px){.transfer-fields{grid-template-columns:1fr}}
+.treasury{min-height:100vh;padding:130px max(24px,6vw) 90px;background:var(--f-ink);color:var(--f-bone);max-width:1040px;margin:0 auto}
+.treasury-loading{padding:200px 0;text-align:center;color:var(--f-dim);font-family:var(--f-mono)}
+.treasury>header{max-width:640px}
+.treasury header>p{color:var(--f-amber);font:800 11px var(--f-mono);letter-spacing:.16em}
+.treasury h1{font-family:var(--f-display);text-transform:uppercase;font-size:clamp(38px,6vw,72px);line-height:.94;margin:14px 0}
+.treasury header>span{display:block;color:var(--f-dim);font-size:15px;line-height:1.6;margin-bottom:10px}
+.mono{font-family:var(--f-mono)}
+
+/* ── The vault: a single, verifiable reading, not a dashboard ── */
+.vault{display:flex;flex-direction:column;align-items:center;gap:22px;margin:48px 0 8px;padding:48px 24px;border:1px solid var(--f-hair);border-radius:28px;background:radial-gradient(120% 140% at 50% -10%,rgba(143,199,122,.08),transparent 60%),var(--f-ink2)}
+.vault-seal{position:relative;display:grid;place-items:center;width:220px;height:220px}
+.vault-seal-ring{position:absolute;inset:0}
+.seal-outer{fill:none;stroke:var(--f-hair);stroke-width:1}
+.seal-inner{fill:none;stroke:rgba(143,199,122,.25);stroke-width:1}
+.seal-tick{stroke:var(--f-hair);stroke-width:1.5}
+.seal-pulse{fill:var(--f-amberhi);animation:seal-breathe 2.6s ease-in-out infinite}
+@keyframes seal-breathe{0%,100%{opacity:.35;r:3}50%{opacity:1;r:5}}
+.vault-reading{position:relative;display:grid;justify-items:center;gap:6px;text-align:center}
+.vault-reading strong{font-family:var(--f-display);font-size:clamp(30px,4.6vw,46px);line-height:1;letter-spacing:-.01em}
+.vault-reading small{color:var(--f-faint);font:700 11px var(--f-mono);letter-spacing:.08em;text-transform:uppercase}
+.vault-meta{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:18px}
+.vault-pulse{display:flex;align-items:center;gap:9px;font:800 12px var(--f-mono);letter-spacing:.04em}
+.vault-pulse.live{color:var(--f-amberhi)}
+.vault-pulse.stale{color:var(--f-faint)}
+.vault-pulse small{color:var(--f-faint);font-weight:500;letter-spacing:0;text-transform:none}
+.vault a{color:var(--f-amber);text-decoration:none;font-size:13px;border-bottom:1px solid rgba(143,199,122,.3)}
+.vault a:hover{color:var(--f-amberhi);border-color:var(--f-amberhi)}
+.treasury-alerts{display:grid;gap:8px;width:100%;max-width:420px;margin-top:4px;padding:14px 16px;border:1px solid #ae7a35;border-radius:14px;background:rgba(174,122,53,.08)}
+.treasury-alerts b{color:#e8b26a;font-size:12px}
+.treasury-alerts a{color:var(--f-amber);text-decoration:none;font-size:12.5px}
+
+.vault-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:14px 0 40px}
+.vault-stats article{border:1px solid var(--f-hair);border-radius:16px;background:var(--f-ink2);padding:20px;text-align:center}
+.vault-stats b{display:block;font-family:var(--f-display);font-size:20px;margin-bottom:6px;overflow-wrap:anywhere}
+.vault-stats span{color:var(--f-faint);font:700 10px var(--f-mono);letter-spacing:.08em;text-transform:uppercase}
+
+.treasury-transfer{margin-top:14px;padding:26px;border:1px solid var(--f-amber);border-radius:20px;background:var(--f-ink2)}
+.treasury-transfer>p{color:var(--f-amber);font:800 11px var(--f-mono);letter-spacing:.16em}
+.treasury-transfer h2{font-family:var(--f-display);text-transform:uppercase;margin:8px 0 16px;font-size:22px}
+.treasury-transfer>button{border:1px solid var(--f-amber);border-radius:10px;padding:11px 16px;background:var(--f-amber);color:var(--f-ink);font-weight:800;cursor:pointer}
+.transfer-fields{display:grid;grid-template-columns:1fr 180px;gap:10px}
+.transfer-fields label,.transfer-review label{display:grid;gap:6px;color:var(--f-dim);font-size:12.5px}
+.transfer-fields input,.transfer-review input{width:100%;box-sizing:border-box;border:1px solid var(--f-hair);border-radius:10px;padding:11px;background:rgba(233,239,250,.04);color:var(--f-bone);font-family:var(--f-mono)}
+.treasury-transfer small{display:block;color:var(--f-faint);margin:12px 0}
+.treasury-transfer>div>button,.transfer-review>button{border:1px solid var(--f-amber);border-radius:10px;padding:11px 16px;background:var(--f-amber);color:var(--f-ink);font-weight:800;cursor:pointer}
+.transfer-blocked,.transfer-review{display:grid;gap:12px;padding:16px;border-radius:12px;background:rgba(233,239,250,.03);border:1px solid var(--f-hair)}
+.transfer-blocked span,.transfer-error{color:#ff8a8a}
+.transfer-review dl{margin:0;display:grid;gap:8px}
+.transfer-review dl div{display:flex;justify-content:space-between;gap:12px}
+.transfer-review dd{margin:0;text-align:right;overflow-wrap:anywhere;font-family:var(--f-mono)}
+.transfer-review>div{display:flex;gap:8px;justify-content:flex-end}
+.transfer-review>div button{border:1px solid var(--f-hair);border-radius:10px;padding:10px 15px;background:transparent;color:var(--f-bone);cursor:pointer}
+.transfer-review>div button:last-child{border-color:var(--f-amber);background:var(--f-amber);color:var(--f-ink);font-weight:800}
+.transfer-review>div button:disabled{opacity:.4;cursor:not-allowed}
+.transfer-status{overflow-wrap:anywhere;color:var(--f-amberhi);font-family:var(--f-mono);font-size:12.5px;margin-top:14px}
+
+.treasury>footer{display:flex;justify-content:space-between;gap:20px;border-top:1px solid var(--f-hair);margin-top:28px;padding-top:20px;color:var(--f-faint);font-size:12.5px}
+.treasury>footer a{color:var(--f-amberhi);text-decoration:none}
+
+@media(max-width:850px){
+  .treasury{padding:100px 16px}
+  .vault-stats{grid-template-columns:1fr}
+  .transfer-fields{grid-template-columns:1fr}
+  .treasury>footer{flex-direction:column;gap:12px}
+}
+@media(prefers-reduced-motion:reduce){.seal-pulse{animation:none}}
