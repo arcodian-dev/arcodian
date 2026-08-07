@@ -18,6 +18,7 @@ const MARKET_ABI = [
   "function totalSupplyShares() view returns(uint256)", "function supplyCap() view returns(uint256)",
   "function borrowCap() view returns(uint256)", "function paused() view returns(bool)", "function oracle() view returns(address)",
   "function utilization() view returns(uint256)", "function borrowRatePerYear() view returns(uint256)", "function supplyRatePerYear() view returns(uint256)",
+  "function maxOracleAge() view returns(uint256)",
 ];
 const TOKEN_ABI = ["function approve(address,uint256) returns(bool)", "function balanceOf(address) view returns(uint256)"];
 const ORACLE_ABI = ["function price() view returns(uint256,uint64)"];
@@ -39,9 +40,10 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
       // request; disabling ethers batching also keeps CORS responses predictable.
       const provider = activeProvider ? new BrowserProvider(activeProvider) : new JsonRpcProvider(ARC.rpcs[1] || ARC.rpc, undefined, { batchMaxCount: 1 });
       const market = new Contract(ARC_LEND_ADDRESS, MARKET_ABI, provider);
-      const [assets, totalShares, sCap, bCap, paused, oracleAddress, utilizationWad, borrowRateWad, supplyRateWad] = await Promise.all([
+      const [assets, totalShares, sCap, bCap, paused, oracleAddress, utilizationWad, borrowRateWad, supplyRateWad, maxOracleAge] = await Promise.all([
         market.totalAssets(), market.totalSupplyShares(), market.supplyCap(), market.borrowCap(), market.paused(), market.oracle(),
         market.utilization(), market.borrowRatePerYear(), market.supplyRatePerYear(),
+        market.maxOracleAge().catch(() => 3600n),
       ]);
       const totalAssets = BigInt(assets); const shareTotal = BigInt(totalShares);
       let supplied = 0n, userCollateral = 0n, debt = 0n, health = 0n;
@@ -54,7 +56,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
       }
       const [, updatedAt] = await new Contract(oracleAddress, ORACLE_ABI, provider).price();
       const age = Math.floor(Date.now() / 1000) - Number(updatedAt);
-      setPosition({ supplied: formatEther(supplied), collateral: formatUnits(userCollateral, 6), borrowed: formatEther(debt), health: debt === 0n ? "∞" : Number(formatEther(health)).toFixed(2), liquidity: formatEther(await provider.getBalance(ARC_LEND_ADDRESS)), supplyCap: formatEther(sCap), borrowCap: formatEther(bCap), paused, oracleFresh: age >= 0 && age <= 3600, utilization: (Number(formatEther(utilizationWad)) * 100).toFixed(1), borrowApr: (Number(formatEther(borrowRateWad)) * 100).toFixed(2), supplyApr: (Number(formatEther(supplyRateWad)) * 100).toFixed(2) });
+      setPosition({ supplied: formatEther(supplied), collateral: formatUnits(userCollateral, 6), borrowed: formatEther(debt), health: debt === 0n ? "∞" : Number(formatEther(health)).toFixed(2), liquidity: formatEther(await provider.getBalance(ARC_LEND_ADDRESS)), supplyCap: formatEther(sCap), borrowCap: formatEther(bCap), paused, oracleFresh: age >= 0 && age <= Number(maxOracleAge), utilization: (Number(formatEther(utilizationWad)) * 100).toFixed(1), borrowApr: (Number(formatEther(borrowRateWad)) * 100).toFixed(2), supplyApr: (Number(formatEther(supplyRateWad)) * 100).toFixed(2) });
     } catch { if (account) setStatus("Connected, but the Arc RPC could not refresh this position yet. Transactions remain wallet-confirmed."); }
   }, [account, activeProvider]);
 

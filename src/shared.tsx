@@ -272,7 +272,7 @@ export function arcProvider(chain: { rpc: string; rpcs?: readonly string[]; id?:
 }
 
 export const FAQ_ITEMS = [
-  ["Is Arcodian live on mainnet?", "Partially. Bridge (Circle CCTP) and the USDC-only Market/Launchpad are live on Arc Mainnet, chain 5042, moving real USDC — verify any address before signing. Swap (Circle's App Kit SDK doesn't list Arc Mainnet as a supported chain yet), StableCoin FX, Arc Lend, EURC launches, and the agent-economy contracts (Passport, Jobs, Reputation, Agent Pay) remain Arc Testnet only, where test USDC and test tokens have no financial value."],
+  ["Is Arcodian live on mainnet?", "Mostly. Bridge (Circle CCTP), the USDC-only Market/Launchpad, and Swap (Arcodian's own on-chain routing — an Arcodian-deployed AMM plus permissionless external Arc Mainnet pools) are all live on Arc Mainnet, chain 5042, moving real USDC — verify any address before signing. StableCoin FX (no official Arc Mainnet EURC address exists yet), Arc Lend, EURC launches, and the agent-economy contracts (Passport, Jobs, Reputation, Agent Pay) remain Arc Testnet only, where test USDC and test tokens have no financial value."],
   ["Can Arcodian access my wallet or funds?", "No. Arcodian is non-custodial. Your wallet signs each action, and the interface never receives your private key or seed phrase."],
   ["How is the token price determined?", "Before graduation, price comes from the v6 bonding curve using its onchain virtual reserve and real reserve. It is not typed into an admin dashboard."],
   ["What fees apply?", "Bonding-curve buys and sells charge 1%. After graduation, ARC DEX charges a 0.30% total swap fee, including a 0.05% protocol share."],
