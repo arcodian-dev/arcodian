@@ -15,7 +15,9 @@ Keep the previous release directory and webroot target until the new release pas
 
 ## Shared live-data symlinks (required on every new release)
 
-The webroot `data` and `uploads` directories are symlinked to `/www/wwwroot/arcodian.fun/shared/{data,uploads}` so systemd-timer indexers keep serving live data across deploys without a rebuild. `developers/` is copied into each release from `public/developers/` at build time (static docs + seed JSON), but six files under it are continuously rewritten by indexer timers and MUST be re-symlinked into every new release or they freeze at deploy time and silently serve stale data to real users (agent/reputation/job pages read these client-side):
+The webroot `data` and `uploads` directories must be symlinked (whole directory, not copied) to `/www/wwwroot/arcodian.fun/shared/{data,uploads}` so systemd-timer indexers keep serving live data across deploys without a rebuild. **`dist/` ships a real `data/` directory of its own (build-time seed files), so `ln -sfn shared/data "$REL/data"` silently nests the symlink inside it (`$REL/data/data`) instead of replacing it** — always `rm -rf "$REL/data"` first. (Found and fixed live 2026-08-07: a deploy did exactly this, so `mainnet-live-tape.json` — written once into `current/data/` by that service's `ExecStartPost` only at its own startup, not on every tick — never reached the new release, and the trading terminal silently fell back to its "Offline" indicator until the symlink was corrected.)
+
+`developers/` is copied into each release from `public/developers/` at build time (static docs + seed JSON), but six files under it are continuously rewritten by indexer timers and MUST be re-symlinked into every new release or they freeze at deploy time and silently serve stale data to real users (agent/reputation/job pages read these client-side):
 
 ```
 developers/agents.json               -> shared/developers/agents.json
