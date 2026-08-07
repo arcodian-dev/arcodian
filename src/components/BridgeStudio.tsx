@@ -1,5 +1,5 @@
 import { Suspense, lazy } from "react";
-import { ARC_MAINNET, CHAINS, MAINNET_CHAINS } from "../config";
+import { ARC_MAINNET, BRIDGE_FEE_BPS, CHAINS, MAINNET_CHAINS } from "../config";
 import ChainSelect from "./ChainSelect";
 import "./BridgeStudio.css";
 
@@ -97,6 +97,15 @@ export default function BridgeStudio({
           <b>USDC</b>
         </div>
       </label>
+
+      {Number(amount) > 0 && (
+        <div className="bstudio-fee-preview">
+          <span>Protocol fee ({(BRIDGE_FEE_BPS / 100).toFixed(2)}%)</span>
+          <b>{((Number(amount) * BRIDGE_FEE_BPS) / 10000).toFixed(4)} USDC</b>
+          <span>You receive on {nameOf(toChain)}</span>
+          <b className="bstudio-fee-net">{(Number(amount) * (1 - BRIDGE_FEE_BPS / 10000)).toFixed(4)} USDC</b>
+        </div>
+      )}
 
       <ol className="bstudio-pipe" aria-label="Transfer progress">
         {stages.map((s, i) => (

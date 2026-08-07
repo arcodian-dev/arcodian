@@ -114,6 +114,21 @@
 }
 .bstudio-amount b { color: var(--b-dim); font: 700 12px "Space Mono", monospace; }
 
+/* Fee + net-received preview, shown as soon as an amount is entered */
+.bstudio-fee-preview {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  padding: 13px 16px;
+  border: 1px solid var(--b-line);
+  border-radius: 14px;
+  background: var(--b-card);
+  font: 400 12.5px/1.4 "Public Sans", sans-serif;
+}
+.bstudio-fee-preview span { color: var(--b-faint); align-self: center; }
+.bstudio-fee-preview b { color: var(--b-text); font: 700 13px "Space Mono", monospace; text-align: right; }
+.bstudio-fee-preview .bstudio-fee-net { color: var(--b-teal); font-size: 15px; }
+
 /* Signature: the live burn → attest → mint pipeline */
 .bstudio-pipe {
   display: grid;
