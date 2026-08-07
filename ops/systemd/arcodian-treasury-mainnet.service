@@ -1,0 +1,9 @@
+[Unit]
+Description=Arcodian Treasury Lite read-only indexer (Arc Mainnet, real value)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+ExecStart=/usr/bin/node scripts/mainnet-treasury-stats.mjs
+User=root
