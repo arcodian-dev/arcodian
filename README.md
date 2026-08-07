@@ -1,50 +1,60 @@
-# ARC Markets
+# Arcodian
 
-Portable non-custodial discovery, bridge, swap, and staged launchpad interface for official Arc Testnet (`5042002`).
+Stablecoin-native launchpad, wallet, swap/bridge, and agent-economy infrastructure on [Circle's Arc chain](https://arc.network) — a USDC-gas L1 built for real payments, not speculation-first tokenomics.
 
-## Current state
+**Live:** [arcodian.fun](https://arcodian.fun) · **X:** [@Arcodiandotfun](https://x.com/Arcodiandotfun) · **Discord:** [discord.gg/mUvcty8VAB](https://discord.gg/mUvcty8VAB)
 
-- Explore: searchable verified-asset board, ready for factory event indexing.
-- Wallets: EIP-6963 discovery for MetaMask, OKX, Zerion, Bitget, Rabby, Coinbase, and other compliant injected wallets; active chain updates automatically.
-- Bridge and Swap: wallet-signed route previews; testnet availability is fail-closed.
-- Launchpad: Pump v2 candidate uses a fixed 1B supply, native-USDC bonding curve, automatic ARC DEX graduation, and LP minted directly to the burn address.
-- Legacy fixed-sale canary: `0x40147884E6992cee1f7030d1263C692a4Cbae942`; retained for provenance but retired from launch creation.
-- Canonical engine: **ArcPumpSuiteV6** `0x8F4FAF89f3d6f2f4Ad535df7faF3B5787BA35020` (Launch Factory `0x454529204A0B0846Cc0dF37CFdFf3De8541B36e4`, ARC DEX Factory `0xC933eCeb3Ca62f31E7DD1D2538e6cfE879c5bDdA`), deployed 2026-07-16 with accrued protocol fees + treasury-only pull withdrawal (resolves audit finding A-01). V5 suite `0x6601aD6C8a32cB5e1217d1304457e2C9F8778094` stays live for its historical markets. See `PUMP_ARCHITECTURE.md`.
-- No private keys, custody, fee wallet, or production contract addresses are stored in this repository.
+## What's live on Arc Mainnet (chain `5042`)
 
-## Official Arc Testnet metadata
+Everything below is deployed and operating with real USDC — not a testnet demo.
 
-- Chain ID: `5042002` (`0x4cef52`)
-- Native asset: USDC, 6 decimals
-- LI.FI native address: `0x3600000000000000000000000000000000000000`
-- RPC: `https://rpc.testnet.arc.network/`
-- Explorer: `https://testnet.arcscan.app`
-- Faucet: `https://faucet.circle.com`
+| Surface | What it does |
+|---|---|
+| **Launchpad** | Fair-launch bonding-curve tokens, native-USDC priced, automatic DEX graduation on threshold — no presale, no team allocation. |
+| **Swap / DEX** | Uniswap-v3-style AMM (own deployment) + external-pool routing, live order flow in the trading terminal. |
+| **Bridge** | USDC in/out of Arc via Circle CCTP, wired to Ethereum, Arbitrum, Optimism, and Base mainnets. |
+| **Agent Pay** | On-chain payment rails for autonomous agents — invoices, spending policies, relayed/meta-transaction payments, atomic batch settlement (EIP-712, ERC-1271 smart-wallet support). |
+| **Agent Passport, Jobs & Reputation** | ERC-8004 identity, a permissionless escrow job board, and an objective on-chain reputation/validation system for agent-to-agent commerce. |
+| **Lend** | Utilization-curve USDC/EUR lending market on a live Pyth oracle feed. |
+| **MCP server** | [arcodian.fun/mcp](https://arcodian.fun/mcp) — reads on-chain state and returns unsigned transaction builders only. It never holds a key. |
+
+Every contract address, verification status, and readiness gate is published and machine-readable at [arcodian.fun/developers](https://arcodian.fun/developers) — see `contracts.mainnet.json`, `mainnet-readiness.json`, and `verification-status.json`. The [Trust Center](https://arcodian.fun/contracts) explains the wiring in plain language and re-checks it live on every page load.
 
 ## Local development
 
 ```bash
 npm install
-npm run dev
+npm run dev      # Vite dev server
+npm run build    # production build
+npx tsc -b        # typecheck
+npx vitest run    # unit tests
 ```
 
-Production check:
+Solidity contracts live in `contracts/` (Foundry):
 
 ```bash
-npm run build
+cd contracts
+forge test
 ```
 
-## Domain portability
+## Repository layout
 
-No product route is tied to `arc.tensoriumlabs.com`. For a new domain, set `VITE_PUBLIC_ORIGIN`, build, point the webroot to `dist`, and issue TLS. See `DEPLOYMENT.md`.
+```
+src/            React/Vite frontend (pages, wallet integration, config)
+contracts/      Foundry contracts, tests, and deploy scripts
+scripts/        Node.js indexers and keepers that feed the live app
+public/         Static assets, SDKs (agentpay-sdk.mjs, gateway-erc1271-sdk.mjs), developer registry
+mcp/            Arcodian MCP server (read + unsigned-tx-builder tools)
+ops/systemd/    systemd units for every indexer/keeper running in production
+```
 
-## Production gates
+## Safety principles
 
-Before public deployment: independent contract audit, invariant/fork tests, production dependency remediation, official Uniswap v4 Arc address verification, token-risk disclosures, and small-value live tests.
+- The frontend never stores a key or custodies funds — every state-changing action is a wallet-signed transaction the user approves.
+- Arc Mainnet (`5042`) and Arc Testnet (`5042002`) are configured independently in `src/config.ts` and are never conflated.
+- New product surfaces stay gated behind explicit on-chain bytecode checks and, where noted, a signed-off feature flag — see `DEPLOYMENT.md`.
+- Quote and route providers fail closed: no route found means no swap offered, never a best-guess fallback.
 
-## Production ops notes (2026-07-16)
+## Contributing
 
-- **Code splitting**: `src/App.tsx` is decomposed into `src/shared.tsx` + `src/pages/{Market,Profile,Landing,TrustCenter}.tsx`, loaded via `React.lazy`. Circle App Kit, WalletConnect, and the deploy bytecode (`src/generated/arcPumpSuiteBytecode.ts`) are dynamic imports — the initial route ships ~160 KB gzip (index + ethers) instead of the former 574 KB monolith chunk.
-- **WalletConnect**: `VITE_WALLETCONNECT_PROJECT_ID` in `.env.production` is intentionally empty. Register at https://cloud.reown.com (free), paste the Project ID, rebuild, release. UI hides the WalletConnect button until set.
-- **Indexing**: production uses the systemd pair `arcodian-indexer.timer` (market index, ~90s) + `arcodian-live-tape.service` (sub-second tape). Candles are derived client-side from indexed trades. docs.arc.io also lists managed indexers (Envio, Goldsky, The Graph) — adopting one needs an external account and is optional at current volume; revisit if trade volume outgrows the file-based index.
-- **UI v2 foundation**: token layer + 5-item mobile dock + focus-visible/reduced-motion/touch-target pass appended at the end of `src/styles.css` (see `UI_UX_AUDIT_2026-07-16.md` for the staged remainder).
+This repository is under active development. Open an issue or reach out on [Discord](https://discord.gg/mUvcty8VAB) before sending a pull request.
