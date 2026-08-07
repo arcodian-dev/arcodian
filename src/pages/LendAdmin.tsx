@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BrowserProvider, Contract, Interface, JsonRpcProvider, ZeroHash, formatEther, formatUnits, parseUnits, randomBytes } from "ethers";
+import { BrowserProvider, Contract, Interface, JsonRpcProvider, formatEther, formatUnits, parseUnits } from "ethers";
 import { ARC, ARC_LEND_ADDRESS } from "../config";
 import { rpcUrlsFor } from "../shared";
 import { describeTxError } from "../txError";
@@ -7,6 +7,13 @@ import "./LendAdmin.css";
 
 type Props = { account: string; chainId: number | null; activeProvider: EthereumProvider | null; connect: () => void; disconnect: () => void };
 
+// ── Real deployed contracts, read live and confirmed against source (2026-08-07) ──
+// ArcLendV2.admin() -> an ArcTimelock (ArcGovernance.sol), NOT the richer
+// ArcAdminTimelock.sol spike -- no proposer/executor roles, no salt/predecessor.
+// ArcTimelock.admin() -> an ArcMultisig (ArcGovernance.sol), immutable 2-of-2.
+// Chain: multisig.submit/confirm -> multisig.execute (permissionless once at
+// threshold) relays into timelock.queue -> after minDelay, timelock.execute
+// (permissionless) relays into the market call itself.
 const MARKET_ABI = [
   "function admin() view returns(address)", "function guardian() view returns(address)",
   "function paused() view returns(bool)", "function pauseFlags() view returns(uint256)",
@@ -14,41 +21,28 @@ const MARKET_ABI = [
   "function pendingSupplyCap() view returns(uint256)", "function pendingBorrowCap() view returns(uint256)",
   "function capIncreaseEta() view returns(uint64)", "function reserves() view returns(uint256)",
   "function badDebt() view returns(uint256)", "function oracle() view returns(address)",
-  "function maxOracleAge() view returns(uint256)", "function totalAssets() view returns(uint256)",
-  "function totalBorrows() view returns(uint256)",
+  "function maxOracleAge() view returns(uint256)",
   "function setPaused(bool)", "function setPauseFlags(uint256)", "function setCaps(uint256,uint256)",
   "function scheduleCapIncrease(uint256,uint256)", "function cancelCapIncrease()", "function executeCapIncrease()",
   "function setGuardian(address)", "function withdrawReserves()", "function recordBadDebt(address)",
 ];
 const ORACLE_ABI = ["function price() view returns(uint256,uint64)"];
 const TIMELOCK_ABI = [
-  "function admin() view returns(address)", "function minDelay() view returns(uint256)",
-  "function isProposer(address) view returns(bool)", "function isExecutor(address) view returns(bool)",
-  "function hashOperation(address,uint256,bytes,bytes32,bytes32) pure returns(bytes32)",
-  "function state(bytes32) view returns(uint8)",
-  "function schedule(address,uint256,bytes,bytes32,bytes32,uint256)",
-  "function execute(address,uint256,bytes,bytes32,bytes32) payable",
-  "function cancel(bytes32)",
+  "function admin() view returns(address)", "function minDelay() view returns(uint64)",
+  "function queued(bytes32) view returns(bool)",
+  "function operationId(address,uint256,bytes,uint64) pure returns(bytes32)",
+  "function queue(address,uint256,bytes,uint64) returns(bytes32)",
+  "function cancel(address,uint256,bytes,uint64)",
+  "function execute(address,uint256,bytes,uint64) returns(bytes)",
+];
+const MULTISIG_ABI = [
+  "function owners(uint256) view returns(address)", "function threshold() view returns(uint256)", "function nonce() view returns(uint256)",
+  "function transactions(uint256) view returns(address target, uint256 value, bytes data, uint256 confirmations, bool executed)",
+  "function confirmed(uint256,address) view returns(bool)",
+  "function submit(address,uint256,bytes) returns(uint256)", "function confirm(uint256)", "function execute(uint256) returns(bytes)",
 ];
 const MARKET_IFACE = new Interface(MARKET_ABI);
-
-const PAUSE_SUPPLY = 1n, PAUSE_COLLATERAL = 2n, PAUSE_BORROW = 4n;
-const OP_STATE = ["Unscheduled", "Waiting", "Ready", "Done"] as const;
-const short = (value: string) => (value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "—");
-
-type MarketState = {
-  admin: string; guardian: string; paused: boolean; pauseFlags: bigint;
-  supplyCap: bigint; borrowCap: bigint; pendingSupplyCap: bigint; pendingBorrowCap: bigint; capIncreaseEta: number;
-  reserves: bigint; badDebt: bigint; oracle: string; maxOracleAge: number;
-  totalAssets: bigint; totalBorrows: bigint; oracleAgeSeconds: number;
-};
-type TimelockState = { minDelay: number; owner: string; isProposer: boolean; isExecutor: boolean };
-type PendingOp = { id: string; label: string; target: string; value: string; data: string; predecessor: string; salt: string; createdAt: number };
-
-const OPS_KEY = "arcodian-lend-admin-ops-v1";
-function loadOps(): PendingOp[] { try { return JSON.parse(localStorage.getItem(OPS_KEY) || "[]"); } catch { return []; } }
-function saveOp(op: PendingOp) { const all = loadOps(); localStorage.setItem(OPS_KEY, JSON.stringify([op, ...all.filter((o) => o.id !== op.id)].slice(0, 50))); }
-function removeOp(id: string) { localStorage.setItem(OPS_KEY, JSON.stringify(loadOps().filter((o) => o.id !== id))); }
+const TIMELOCK_IFACE = new Interface(TIMELOCK_ABI);
 
 function ring(remainingPct: number, label: string, sub: string) {
   const clamped = Math.max(0, Math.min(100, remainingPct));
@@ -64,11 +58,44 @@ function ring(remainingPct: number, label: string, sub: string) {
   );
 }
 
+const PAUSE_SUPPLY = 1n, PAUSE_COLLATERAL = 2n, PAUSE_BORROW = 4n;
+const short = (value: string) => (value ? `${value.slice(0, 6)}…${value.slice(-4)}` : "—");
+
+/** Best-effort human label for a multisig transaction's calldata: unwrap a
+ * timelock queue() call and, one layer deeper, the market call it carries. */
+function describeCalldata(target: string, data: string, timelockAddr: string): string {
+  try {
+    if (target.toLowerCase() === timelockAddr.toLowerCase()) {
+      const outer = TIMELOCK_IFACE.parseTransaction({ data });
+      if (outer?.name === "queue") {
+        const [innerTarget, , innerData, eta] = outer.args as unknown as [string, bigint, string, bigint];
+        try {
+          const inner = MARKET_IFACE.parseTransaction({ data: innerData });
+          const args = inner?.args.map((a) => (typeof a === "bigint" ? a.toString() : String(a))).join(", ");
+          return `Queue → ${inner?.name}(${args}) on ${short(innerTarget)}, ready ${new Date(Number(eta) * 1000).toLocaleString()}`;
+        } catch { return `Queue → call on ${short(innerTarget)}, ready ${new Date(Number(eta) * 1000).toLocaleString()}`; }
+      }
+      if (outer?.name === "cancel") return "Cancel a queued operation";
+    }
+    const direct = MARKET_IFACE.parseTransaction({ data });
+    const args = direct?.args.map((a) => (typeof a === "bigint" ? a.toString() : String(a))).join(", ");
+    return `${direct?.name}(${args})`;
+  } catch { return "Unrecognized calldata"; }
+}
+
+type MarketState = {
+  timelock: string; guardian: string; paused: boolean; pauseFlags: bigint;
+  supplyCap: bigint; borrowCap: bigint; pendingSupplyCap: bigint; pendingBorrowCap: bigint; capIncreaseEta: number;
+  reserves: bigint; badDebt: bigint; oracle: string; maxOracleAge: number; oracleAgeSeconds: number;
+};
+type GovState = { multisig: string; owners: [string, string]; threshold: number; nonce: number; minDelay: number };
+type MultisigTx = { id: number; target: string; value: bigint; data: string; confirmations: number; executed: boolean; ownerConfirmed: [boolean, boolean]; label: string; queuedInfo?: { target: string; value: bigint; data: string; eta: number; opId: string } };
+
 export default function LendAdmin({ account, chainId, activeProvider, connect, disconnect }: Props) {
   const [market, setMarket] = useState<MarketState | null>(null);
-  const [timelock, setTimelock] = useState<TimelockState | null>(null);
-  const [ops, setOps] = useState<PendingOp[]>(loadOps());
-  const [opStates, setOpStates] = useState<Record<string, number>>({});
+  const [gov, setGov] = useState<GovState | null>(null);
+  const [txs, setTxs] = useState<MultisigTx[]>([]);
+  const [queueState, setQueueState] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const onArc = chainId === ARC.id;
@@ -79,39 +106,48 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
   const [raiseBorrowCap, setRaiseBorrowCap] = useState("");
   const [nextGuardian, setNextGuardian] = useState("");
   const [badDebtUser, setBadDebtUser] = useState("");
-  const [lookupTarget, setLookupTarget] = useState("");
-  const [lookupValue, setLookupValue] = useState("0");
-  const [lookupData, setLookupData] = useState("");
-  const [lookupPredecessor, setLookupPredecessor] = useState(ZeroHash);
-  const [lookupSalt, setLookupSalt] = useState("");
-  const [lookupResult, setLookupResult] = useState<{ id: string; state: number } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ARC_LEND_ADDRESS) return;
     try {
       const provider = activeProvider ? new BrowserProvider(activeProvider) : new JsonRpcProvider(ARC.rpcs[1] || ARC.rpc, undefined, { batchMaxCount: 1 });
       const m = new Contract(ARC_LEND_ADDRESS, MARKET_ABI, provider);
-      const [admin, guardian, paused, pauseFlags, supplyCap, borrowCap, pendingSupplyCap, pendingBorrowCap, capIncreaseEta, reserves, badDebt, oracleAddress, maxOracleAge, totalAssets, totalBorrows] = await Promise.all([
-        m.admin(), m.guardian(), m.paused(), m.pauseFlags(), m.supplyCap(), m.borrowCap(), m.pendingSupplyCap(), m.pendingBorrowCap(), m.capIncreaseEta(), m.reserves(), m.badDebt(), m.oracle(), m.maxOracleAge(), m.totalAssets(), m.totalBorrows(),
+      const [timelockAddr, guardian, paused, pauseFlags, supplyCap, borrowCap, pendingSupplyCap, pendingBorrowCap, capIncreaseEta, reserves, badDebt, oracleAddress, maxOracleAge] = await Promise.all([
+        m.admin(), m.guardian(), m.paused(), m.pauseFlags(), m.supplyCap(), m.borrowCap(), m.pendingSupplyCap(), m.pendingBorrowCap(), m.capIncreaseEta(), m.reserves(), m.badDebt(), m.oracle(), m.maxOracleAge(),
       ]);
       const [, updatedAt] = await new Contract(oracleAddress, ORACLE_ABI, provider).price().catch(() => [0n, 0n]);
       const oracleAgeSeconds = Math.max(0, Math.floor(Date.now() / 1000) - Number(updatedAt));
-      setMarket({ admin, guardian, paused, pauseFlags, supplyCap, borrowCap, pendingSupplyCap, pendingBorrowCap, capIncreaseEta: Number(capIncreaseEta), reserves, badDebt, oracle: oracleAddress, maxOracleAge: Number(maxOracleAge), totalAssets, totalBorrows, oracleAgeSeconds });
+      setMarket({ timelock: timelockAddr, guardian, paused, pauseFlags, supplyCap, borrowCap, pendingSupplyCap, pendingBorrowCap, capIncreaseEta: Number(capIncreaseEta), reserves, badDebt, oracle: oracleAddress, maxOracleAge: Number(maxOracleAge), oracleAgeSeconds });
 
-      const tl = new Contract(admin, TIMELOCK_ABI, provider);
-      try {
-        const [minDelay, owner, isProposer, isExecutor] = await Promise.all([
-          tl.minDelay(), tl.admin(),
-          account ? tl.isProposer(account) : false,
-          account ? tl.isExecutor(account) : false,
-        ]);
-        setTimelock({ minDelay: Number(minDelay), owner, isProposer: Boolean(isProposer), isExecutor: Boolean(isExecutor) });
-      } catch { setTimelock(null); }
+      const tl = new Contract(timelockAddr, TIMELOCK_ABI, provider);
+      const multisigAddr: string = await tl.admin();
+      const minDelay: bigint = await tl.minDelay();
+      const ms = new Contract(multisigAddr, MULTISIG_ABI, provider);
+      const [owner0, owner1, threshold, nonce] = await Promise.all([ms.owners(0), ms.owners(1), ms.threshold(), ms.nonce()]);
+      setGov({ multisig: multisigAddr, owners: [owner0, owner1], threshold: Number(threshold), nonce: Number(nonce), minDelay: Number(minDelay) });
 
-      const currentOps = loadOps();
-      const states: Record<string, number> = {};
-      await Promise.all(currentOps.map(async (op) => { try { states[op.id] = Number(await tl.state(op.id)); } catch { states[op.id] = -1; } }));
-      setOpStates(states);
+      const count = Number(nonce);
+      const rows: MultisigTx[] = [];
+      const queuedChecks: Record<string, boolean> = {};
+      for (let i = 0; i < count; i++) {
+        const [txn, conf0, conf1] = await Promise.all([ms.transactions(i), ms.confirmed(i, owner0), ms.confirmed(i, owner1)]);
+        const label = describeCalldata(txn.target, txn.data, timelockAddr);
+        let queuedInfo: MultisigTx["queuedInfo"];
+        if (txn.executed && txn.target.toLowerCase() === timelockAddr.toLowerCase()) {
+          try {
+            const outer = TIMELOCK_IFACE.parseTransaction({ data: txn.data });
+            if (outer?.name === "queue") {
+              const [qTarget, qValue, qData, qEta] = outer.args as unknown as [string, bigint, string, bigint];
+              const opId: string = await tl.operationId(qTarget, qValue, qData, qEta);
+              queuedInfo = { target: qTarget, value: qValue, data: qData, eta: Number(qEta), opId };
+              queuedChecks[opId] = await tl.queued(opId);
+            }
+          } catch { /* not a queue call */ }
+        }
+        rows.push({ id: i, target: txn.target, value: txn.value, data: txn.data, confirmations: Number(txn.confirmations), executed: txn.executed, ownerConfirmed: [conf0, conf1], label, queuedInfo });
+      }
+      setTxs(rows.reverse());
+      setQueueState(queuedChecks);
     } catch { if (account) setStatus("Connected, but the Arc RPC could not refresh admin state yet."); }
   }, [account, activeProvider]);
 
@@ -128,16 +164,18 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
     }
   }
 
+  const ownerIndex = useMemo(() => {
+    if (!account || !gov) return -1;
+    return gov.owners.findIndex((o) => o.toLowerCase() === account.toLowerCase());
+  }, [account, gov]);
+
   const role = useMemo(() => {
     if (!account || !market) return null;
-    const lower = account.toLowerCase();
     const tags: string[] = [];
-    if (lower === market.guardian.toLowerCase()) tags.push("Guardian");
-    if (timelock?.isProposer) tags.push("Timelock proposer");
-    if (timelock?.isExecutor) tags.push("Timelock executor");
-    if (timelock && lower === timelock.owner.toLowerCase()) tags.push("Governance owner");
+    if (account.toLowerCase() === market.guardian.toLowerCase()) tags.push("Guardian");
+    if (ownerIndex >= 0) tags.push(`Multisig signer (${ownerIndex + 1} of 2)`);
     return tags;
-  }, [account, market, timelock]);
+  }, [account, market, ownerIndex]);
 
   const isGuardian = Boolean(account && market && account.toLowerCase() === market.guardian.toLowerCase());
 
@@ -153,68 +191,55 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
     finally { setBusy(false); }
   }
 
-  async function proposeOperation(label: string, data: string) {
-    if (!account || !activeProvider || !market || !timelock) return connect();
-    if (!onArc) return switchArc();
-    setBusy(true); setStatus("");
-    try {
-      const signer = await new BrowserProvider(activeProvider).getSigner();
-      const tl = new Contract(market.admin, TIMELOCK_ABI, signer);
-      const salt = "0x" + Buffer.from(randomBytes(32)).toString("hex");
-      const id = await tl.hashOperation(ARC_LEND_ADDRESS, 0n, data, ZeroHash, salt);
-      const tx = await tl.schedule(ARC_LEND_ADDRESS, 0n, data, ZeroHash, salt, timelock.minDelay);
-      setStatus(`Proposal submitted ${short(tx.hash)}…`); await tx.wait();
-      saveOp({ id, label, target: ARC_LEND_ADDRESS, value: "0", data, predecessor: ZeroHash, salt, createdAt: Date.now() });
-      setOps(loadOps());
-      setStatus(`Proposed — ready to execute in ${(timelock.minDelay / 3600).toFixed(0)}h.`);
-      await refresh();
-    } catch (error) { setStatus(describeTxError(error)); }
-    finally { setBusy(false); }
-  }
-
-  async function executeOperation(op: PendingOp) {
-    if (!account || !activeProvider || !market) return connect();
-    if (!onArc) return switchArc();
-    setBusy(true); setStatus("");
-    try {
-      const signer = await new BrowserProvider(activeProvider).getSigner();
-      const tl = new Contract(market.admin, TIMELOCK_ABI, signer);
-      const tx = await tl.execute(op.target, BigInt(op.value), op.data, op.predecessor, op.salt);
-      setStatus(`Execute submitted ${short(tx.hash)}…`); await tx.wait(); setStatus("Executed on Arc.");
-      removeOp(op.id); setOps(loadOps()); await refresh();
-    } catch (error) { setStatus(describeTxError(error)); }
-    finally { setBusy(false); }
-  }
-
-  async function permissionlessCall(label: string, fn: (c: Contract) => Promise<{ hash: string; wait: () => Promise<unknown> }>) {
+  async function permissionlessCall(label: string, target: string, abi: string[], fn: (c: Contract) => Promise<{ hash: string; wait: () => Promise<unknown> }>) {
     if (!account || !activeProvider) return connect();
     if (!onArc) return switchArc();
     setBusy(true); setStatus("");
     try {
       const signer = await new BrowserProvider(activeProvider).getSigner();
-      const tx = await fn(new Contract(ARC_LEND_ADDRESS, MARKET_ABI, signer));
+      const tx = await fn(new Contract(target, abi, signer));
       setStatus(`${label} submitted ${short(tx.hash)}…`); await tx.wait(); setStatus(`${label} confirmed on Arc.`); await refresh();
     } catch (error) { setStatus(describeTxError(error)); }
     finally { setBusy(false); }
   }
 
-  async function lookupOperation() {
-    if (!market) return;
+  /** Step 1: a multisig owner submits a new proposal — the market call, wrapped
+   * in a timelock queue() targeting it, with an eta at least minDelay away. */
+  async function submitProposal(label: string, marketData: string) {
+    if (!account || !activeProvider || !market || !gov) return connect();
+    if (ownerIndex < 0) { setStatus("Connect one of the two multisig signer wallets to submit a proposal."); return; }
+    if (!onArc) return switchArc();
     setBusy(true); setStatus("");
     try {
-      const provider = activeProvider ? new BrowserProvider(activeProvider) : new JsonRpcProvider(ARC.rpcs[1] || ARC.rpc, undefined, { batchMaxCount: 1 });
-      const tl = new Contract(market.admin, TIMELOCK_ABI, provider);
-      const id = await tl.hashOperation(lookupTarget, BigInt(lookupValue || "0"), lookupData || "0x", lookupPredecessor || ZeroHash, lookupSalt || ZeroHash);
-      const state = Number(await tl.state(id));
-      setLookupResult({ id, state });
+      const signer = await new BrowserProvider(activeProvider).getSigner();
+      const eta = Math.floor(Date.now() / 1000) + gov.minDelay + 300;
+      const queueData = TIMELOCK_IFACE.encodeFunctionData("queue", [ARC_LEND_ADDRESS, 0n, marketData, eta]);
+      const ms = new Contract(gov.multisig, MULTISIG_ABI, signer);
+      const tx = await ms.submit(market.timelock, 0n, queueData);
+      setStatus(`${label}: submitted to multisig ${short(tx.hash)}…`); await tx.wait();
+      setStatus(`${label}: submitted — needs 1 more confirmation from the other signer.`);
+      await refresh();
     } catch (error) { setStatus(describeTxError(error)); }
     finally { setBusy(false); }
+  }
+
+  async function confirmTx(id: number) {
+    if (!gov) return;
+    await permissionlessCall("Confirm", gov.multisig, MULTISIG_ABI, (c) => c.confirm(id));
+  }
+  async function executeMultisigTx(id: number) {
+    if (!gov) return;
+    await permissionlessCall("Relay to Timelock", gov.multisig, MULTISIG_ABI, (c) => c.execute(id));
+  }
+  async function executeQueuedOp(target: string, value: bigint, data: string, eta: number) {
+    if (!market) return;
+    await permissionlessCall("Execute on market", market.timelock, TIMELOCK_ABI, (c) => c.execute(target, value, data, eta));
   }
 
   const pendingIncreaseActive = Boolean(market && market.capIncreaseEta > 0);
   const pendingIncreaseReady = Boolean(market && pendingIncreaseActive && Date.now() / 1000 >= market.capIncreaseEta);
   const pendingIncreasePct = market && pendingIncreaseActive
-    ? Math.min(100, 100 - ((market.capIncreaseEta - Date.now() / 1000) / (timelock?.minDelay || 172800)) * 100)
+    ? Math.min(100, 100 - ((market.capIncreaseEta - Date.now() / 1000) / (gov?.minDelay || 172800)) * 100)
     : 0;
 
   return <main className="lend-admin-site">
@@ -225,20 +250,21 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
     </nav>
 
     <header className="admin-hero">
-      <p className="admin-eyebrow">GOVERNED ADMINISTRATION · TWO-TIER ACCESS</p>
+      <p className="admin-eyebrow">GOVERNED ADMINISTRATION · THREE REAL CONTRACTS</p>
       <h1>Nothing moves<br />without a witness.</h1>
       <p className="admin-sub">
-        Every risk-reducing action (pause, lower a cap) is a single signature from the <b>Guardian</b> key —
-        fast, because incidents don't wait. Every risk-increasing action (raise a cap, replace the Guardian,
-        withdraw reserves) must pass through the <b>Timelock</b>: proposed on-chain, held for a fixed delay
-        anyone can watch, then executed — never both steps by the same signer, never hidden.
+        Risk-reducing actions (pause, lower a cap) are one signature from the <b>Guardian</b> key — fast, because
+        incidents don't wait. Risk-increasing actions (raise a cap, replace the Guardian, withdraw reserves) need
+        <b> both</b> signers of a 2-of-2 multisig to submit and confirm, then anyone can relay that into the
+        Timelock, wait out the fixed delay in the open, then anyone can execute it. No single key — not even the
+        deployer's — can move risk upward alone.
       </p>
       {role && role.length > 0 && <div className="admin-role-badge">{role.map((tag) => <span key={tag}>{tag}</span>)}</div>}
       {account && role && role.length === 0 && <div className="admin-role-badge muted"><span>Connected — read-only (no admin role on this wallet)</span></div>}
     </header>
 
     {!account ? (
-      <div className="lend-gate"><h2>Connect an EVM wallet</h2><p>Read access is open to everyone. Signing an action requires the matching Guardian or Timelock role — enforced on-chain, not by this page.</p><button onClick={connect}>Connect wallet</button></div>
+      <div className="lend-gate"><h2>Connect an EVM wallet</h2><p>Read access is open to everyone. Signing an action requires the matching Guardian or multisig-signer role — enforced on-chain, not by this page.</p><button onClick={connect}>Connect wallet</button></div>
     ) : !onArc ? (
       <button className="lend-network" onClick={switchArc}>Switch to Arc Testnet</button>
     ) : null}
@@ -254,8 +280,8 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
       <article><small>BAD DEBT</small><strong className={market && market.badDebt > 0n ? "danger" : "ok"}>{market ? Number(formatEther(market.badDebt)).toFixed(4) : "—"} USDC</strong></article>
       <article><small>ORACLE AGE</small><strong className={market && market.oracleAgeSeconds > market.maxOracleAge ? "danger" : "ok"}>{market ? `${Math.floor(market.oracleAgeSeconds / 60)}m` : "—"}</strong><small>of {market ? `${(market.maxOracleAge / 3600).toFixed(0)}h` : "—"} tolerance</small></article>
       <article><small>GUARDIAN</small><strong className="mono">{market ? short(market.guardian) : "—"}</strong></article>
-      <article><small>TIMELOCK</small><strong className="mono">{market ? short(market.admin) : "—"}</strong><small>{timelock ? `${(timelock.minDelay / 3600).toFixed(0)}h delay` : "—"}</small></article>
-      <article><small>GOVERNANCE OWNER</small><strong className="mono">{timelock ? short(timelock.owner) : "—"}</strong><small>can add/remove signers</small></article>
+      <article><small>TIMELOCK</small><strong className="mono">{market ? short(market.timelock) : "—"}</strong><small>{gov ? `${(gov.minDelay / 3600).toFixed(0)}h delay` : "—"}</small></article>
+      <article><small>MULTISIG</small><strong className="mono">{gov ? short(gov.multisig) : "—"}</strong><small>{gov ? `${gov.threshold}-of-${gov.owners.length}` : "—"}</small></article>
     </section>
 
     <section className="admin-zone guardian-zone">
@@ -263,46 +289,45 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
       <div className="zone-grid">
         <article>
           <h3>Circuit breaker</h3>
-          <p>{market?.paused ? "The whole market is paused. Only supply/borrow/repay/withdraw actions using the live modifier are blocked." : "Market is live."}</p>
+          <p>{market?.paused ? "The whole market is paused. Supply, borrow, repay, and withdraw are blocked." : "Market is live."}</p>
           <button className={market?.paused ? "" : "danger"} disabled={busy || !isGuardian} onClick={() => guardianCall("Pause toggle", (c) => c.setPaused(!market?.paused))}>{market?.paused ? "Unpause market" : "Pause market"}</button>
         </article>
         <article>
           <h3>Granular pause</h3>
           <p>Stop one action without freezing the whole market.</p>
           <div className="flag-row">
-            {[["Supply", PAUSE_SUPPLY], ["Collateral", PAUSE_COLLATERAL], ["Borrow", PAUSE_BORROW]].map(([label, bit]) => {
-              const flagBit = bit as bigint;
+            {([["Supply", PAUSE_SUPPLY], ["Collateral", PAUSE_COLLATERAL], ["Borrow", PAUSE_BORROW]] as const).map(([label, flagBit]) => {
               const active = Boolean(market && (market.pauseFlags & flagBit));
-              return <button key={label as string} className={active ? "danger" : ""} disabled={busy || !isGuardian} onClick={() => guardianCall(`${label} ${active ? "unpause" : "pause"}`, (c) => c.setPauseFlags((market ? market.pauseFlags ^ flagBit : flagBit)))}>{label as string}: {active ? "Paused" : "Open"}</button>;
+              return <button key={label} className={active ? "danger" : ""} disabled={busy || !isGuardian} onClick={() => guardianCall(`${label} ${active ? "unpause" : "pause"}`, (c) => c.setPauseFlags(market ? market.pauseFlags ^ flagBit : flagBit))}>{label}: {active ? "Paused" : "Open"}</button>;
             })}
           </div>
         </article>
         <article>
           <h3>Lower caps</h3>
-          <p>Can only move down. Raising a cap requires the Timelock.</p>
+          <p>Can only move down. Raising a cap requires the multisig + Timelock.</p>
           <label>Supply cap<input inputMode="decimal" value={lowerSupplyCap} onChange={(e) => setLowerSupplyCap(e.target.value)} placeholder={market ? formatEther(market.supplyCap) : "0"} /></label>
           <label>Borrow cap<input inputMode="decimal" value={lowerBorrowCap} onChange={(e) => setLowerBorrowCap(e.target.value)} placeholder={market ? formatEther(market.borrowCap) : "0"} /></label>
           <button disabled={busy || !isGuardian || !lowerSupplyCap || !lowerBorrowCap} onClick={() => guardianCall("Lower caps", (c) => c.setCaps(parseUnits(lowerSupplyCap, 18), parseUnits(lowerBorrowCap, 18)))}>Apply lower caps</button>
         </article>
         <article>
           <h3>Cancel pending increase</h3>
-          <p>{pendingIncreaseActive ? "A cap increase is currently proposed or waiting." : "No cap increase is pending right now."}</p>
+          <p>{pendingIncreaseActive ? "A cap increase is currently waiting on the market's own delay." : "No cap increase is pending right now."}</p>
           <button disabled={busy || !isGuardian || !pendingIncreaseActive} onClick={() => guardianCall("Cancel pending increase", (c) => c.cancelCapIncrease())}>Cancel</button>
         </article>
       </div>
     </section>
 
     <section className="admin-zone timelock-zone">
-      <div className="zone-head"><span className="zone-tag timelock-tag">DELAYED · TIMELOCK</span><h2>Governed actions</h2><p>Anything that increases risk or moves funds. Propose here, wait out the delay in the open, then execute — cancellable by the Guardian at any point before it fires.</p></div>
+      <div className="zone-head"><span className="zone-tag timelock-tag">DELAYED · MULTISIG + TIMELOCK</span><h2>Governed actions</h2><p>Four steps, each independently checkable on-chain: submit, confirm, relay, execute. Steps 3 and 4 are permissionless once their condition is met — anyone can push a ready action through, not just the signers.</p></div>
 
       {pendingIncreaseActive && market && (
         <div className="pending-increase">
-          {ring(pendingIncreasePct, pendingIncreaseReady ? "Ready" : `${Math.max(0, Math.ceil((market.capIncreaseEta - Date.now() / 1000) / 3600))}h left`, "cap increase")}
+          {ring(pendingIncreasePct, pendingIncreaseReady ? "Ready" : `${Math.max(0, Math.ceil((market.capIncreaseEta - Date.now() / 1000) / 3600))}h`, "market-level delay")}
           <div>
-            <b>Cap increase in flight</b>
+            <b>Cap increase in flight (market's own scheduleCapIncrease)</b>
             <span>Supply → {Number(formatEther(market.pendingSupplyCap)).toLocaleString()} USDC · Borrow → {Number(formatEther(market.pendingBorrowCap)).toLocaleString()} USDC</span>
             <small>Eta {new Date(market.capIncreaseEta * 1000).toLocaleString()}</small>
-            <button disabled={busy || !pendingIncreaseReady} onClick={() => permissionlessCall("Execute cap increase", (c) => c.executeCapIncrease())}>{pendingIncreaseReady ? "Execute now (open to anyone)" : "Waiting for delay to pass"}</button>
+            <button disabled={busy || !pendingIncreaseReady} onClick={() => permissionlessCall("Execute cap increase", ARC_LEND_ADDRESS, MARKET_ABI, (c) => c.executeCapIncrease())}>{pendingIncreaseReady ? "Execute now (open to anyone)" : "Waiting for delay to pass"}</button>
           </div>
         </div>
       )}
@@ -310,45 +335,52 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
       <div className="zone-grid">
         <article>
           <h3>Raise caps</h3>
-          <p>Proposer schedules; executor fires after {timelock ? (timelock.minDelay / 3600).toFixed(0) : "—"}h. This calls the market's own <code>scheduleCapIncrease</code>, which layers its own delay on top.</p>
+          <p>Wraps <code>scheduleCapIncrease</code> — the market layers its own further delay on top of the {gov ? (gov.minDelay / 3600).toFixed(0) : "—"}h Timelock delay.</p>
           <label>New supply cap<input inputMode="decimal" value={raiseSupplyCap} onChange={(e) => setRaiseSupplyCap(e.target.value)} placeholder={market ? formatEther(market.supplyCap) : "0"} /></label>
           <label>New borrow cap<input inputMode="decimal" value={raiseBorrowCap} onChange={(e) => setRaiseBorrowCap(e.target.value)} placeholder={market ? formatEther(market.borrowCap) : "0"} /></label>
-          <button disabled={busy || !timelock?.isProposer || !raiseSupplyCap || !raiseBorrowCap} onClick={() => proposeOperation("Raise caps", MARKET_IFACE.encodeFunctionData("scheduleCapIncrease", [parseUnits(raiseSupplyCap, 18), parseUnits(raiseBorrowCap, 18)]))}>Propose raise</button>
+          <button disabled={busy || ownerIndex < 0 || !raiseSupplyCap || !raiseBorrowCap} onClick={() => submitProposal("Raise caps", MARKET_IFACE.encodeFunctionData("scheduleCapIncrease", [parseUnits(raiseSupplyCap, 18), parseUnits(raiseBorrowCap, 18)]))}>Submit to multisig</button>
         </article>
         <article>
           <h3>Replace Guardian</h3>
-          <p>Rotates the fast-response key. Takes the full Timelock delay — a compromised Guardian can be paused immediately by itself, but only replaced with witness.</p>
+          <p>Rotates the fast-response key. A compromised Guardian can still be paused immediately by itself — only replacing it needs both signers and the delay.</p>
           <label>New Guardian address<input value={nextGuardian} onChange={(e) => setNextGuardian(e.target.value)} placeholder="0x…" /></label>
-          <button disabled={busy || !timelock?.isProposer || !nextGuardian} onClick={() => proposeOperation("Replace Guardian", MARKET_IFACE.encodeFunctionData("setGuardian", [nextGuardian]))}>Propose replacement</button>
+          <button disabled={busy || ownerIndex < 0 || !nextGuardian} onClick={() => submitProposal("Replace Guardian", MARKET_IFACE.encodeFunctionData("setGuardian", [nextGuardian]))}>Submit to multisig</button>
         </article>
         <article>
           <h3>Withdraw reserves</h3>
-          <p>Sends the entire accrued reserve ({market ? Number(formatEther(market.reserves)).toFixed(4) : "—"} USDC) to the Timelock contract itself — a second, separate action is needed to move it onward.</p>
-          <button disabled={busy || !timelock?.isProposer || !market || market.reserves === 0n} onClick={() => proposeOperation("Withdraw reserves", MARKET_IFACE.encodeFunctionData("withdrawReserves", []))}>Propose withdrawal</button>
+          <p>Sends the entire accrued reserve ({market ? Number(formatEther(market.reserves)).toFixed(4) : "—"} USDC) to the Timelock contract itself.</p>
+          <button disabled={busy || ownerIndex < 0 || !market || market.reserves === 0n} onClick={() => submitProposal("Withdraw reserves", MARKET_IFACE.encodeFunctionData("withdrawReserves", []))}>Submit to multisig</button>
         </article>
         <article>
           <h3>Record bad debt</h3>
           <p>Permissionless maintenance — writes off a fully-liquidated, still-negative position. Anyone can call this once a user has zero collateral and outstanding debt.</p>
           <label>Borrower address<input value={badDebtUser} onChange={(e) => setBadDebtUser(e.target.value)} placeholder="0x…" /></label>
-          <button disabled={busy || !badDebtUser} onClick={() => permissionlessCall("Record bad debt", (c) => c.recordBadDebt(badDebtUser))}>Record</button>
+          <button disabled={busy || !badDebtUser} onClick={() => permissionlessCall("Record bad debt", ARC_LEND_ADDRESS, MARKET_ABI, (c) => c.recordBadDebt(badDebtUser))}>Record</button>
         </article>
       </div>
 
       <div className="ops-tracker">
-        <h3>Proposals tracked from this browser</h3>
-        <p className="ops-note">Anyone can verify these independently — the id is a pure hash of the target, calldata, and salt. This list is a convenience, not the source of truth.</p>
-        {ops.length === 0 ? <p className="ops-empty">No proposals raised from this browser yet.</p> : (
+        <h3>Multisig transactions — read directly, not tracked by this browser</h3>
+        <p className="ops-note">{gov ? `${gov.owners.length}-signer multisig, nonce ${gov.nonce}. Every row below is read from the multisig's own transactions() mapping — open this page from any browser and see the same list.` : "Loading…"}</p>
+        {txs.length === 0 ? <p className="ops-empty">No transactions submitted to the multisig yet.</p> : (
           <div className="ops-list">
-            {ops.map((op) => {
-              const state = opStates[op.id];
-              const label = state === undefined ? "Checking…" : OP_STATE[state] ?? "Unknown";
+            {txs.map((tx) => {
+              const mine = ownerIndex >= 0 && !tx.ownerConfirmed[ownerIndex];
+              const ready = tx.confirmations >= (gov?.threshold ?? 2) && !tx.executed;
+              const stillQueued = tx.queuedInfo ? queueState[tx.queuedInfo.opId] : false;
               return (
-                <div className="ops-row" key={op.id}>
-                  <div><b>{op.label}</b><small className="mono">{short(op.id)}</small></div>
-                  <span className={`op-state op-state-${state ?? -1}`}>{label}</span>
+                <div className="ops-row" key={tx.id}>
+                  <div><b>#{tx.id} · {tx.label}</b><small className="mono">to {short(tx.target)}</small></div>
+                  <span className={`op-state ${tx.executed ? "op-state-3" : ready ? "op-state-2" : "op-state-1"}`}>{tx.executed ? "Relayed" : `${tx.confirmations}/${gov?.threshold ?? 2} confirmed`}</span>
                   <div className="ops-actions">
-                    {state === 2 && <button disabled={busy || !timelock?.isExecutor} onClick={() => executeOperation(op)}>Execute</button>}
-                    <button className="ghost" onClick={() => { removeOp(op.id); setOps(loadOps()); }}>Forget</button>
+                    {!tx.executed && mine && <button disabled={busy} onClick={() => confirmTx(tx.id)}>Confirm</button>}
+                    {!tx.executed && ready && <button disabled={busy} onClick={() => executeMultisigTx(tx.id)}>Relay to Timelock</button>}
+                    {tx.executed && tx.queuedInfo && stillQueued && (
+                      <button disabled={busy || Date.now() / 1000 < tx.queuedInfo.eta} onClick={() => executeQueuedOp(tx.queuedInfo!.target, tx.queuedInfo!.value, tx.queuedInfo!.data, tx.queuedInfo!.eta)}>
+                        {Date.now() / 1000 < tx.queuedInfo.eta ? `Ready ${new Date(tx.queuedInfo.eta * 1000).toLocaleDateString()}` : "Execute on market"}
+                      </button>
+                    )}
+                    {tx.executed && tx.queuedInfo && !stillQueued && <span className="op-state op-state-3">Executed on market</span>}
                   </div>
                 </div>
               );
@@ -356,20 +388,6 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
           </div>
         )}
       </div>
-
-      <details className="lookup-tool">
-        <summary>Look up any operation by its parameters</summary>
-        <p>Reconstruct the id the same way the Timelock does — useful to verify a proposal someone else raised, or one raised from a different browser.</p>
-        <div className="lookup-grid">
-          <label>Target<input value={lookupTarget} onChange={(e) => setLookupTarget(e.target.value)} placeholder={ARC_LEND_ADDRESS} /></label>
-          <label>Value (wei)<input value={lookupValue} onChange={(e) => setLookupValue(e.target.value)} placeholder="0" /></label>
-          <label>Calldata<input value={lookupData} onChange={(e) => setLookupData(e.target.value)} placeholder="0x…" /></label>
-          <label>Predecessor<input value={lookupPredecessor} onChange={(e) => setLookupPredecessor(e.target.value)} placeholder={ZeroHash} /></label>
-          <label>Salt<input value={lookupSalt} onChange={(e) => setLookupSalt(e.target.value)} placeholder="0x…" /></label>
-        </div>
-        <button disabled={busy || !lookupTarget || !lookupData} onClick={() => void lookupOperation()}>Check state</button>
-        {lookupResult && <p className="lookup-result">id <code className="mono">{lookupResult.id}</code> — <b>{OP_STATE[lookupResult.state] ?? "Unknown"}</b></p>}
-      </details>
     </section>
 
     {status && <p className="lend-status">{status}</p>}
