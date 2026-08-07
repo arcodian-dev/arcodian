@@ -395,10 +395,14 @@ export const ARC_MAINNET = {
   // baracat (arc-mainnet-rpc.baracat.meme) dropped 2026-08-02 — caught ~65
   // blocks behind the other two while still answering with a stale-but-
   // HTTP-200 result, same reason it was dropped from rpc-mainnet.php.
+  // radar-api-rpc.up.railway.app removed 2026-08-07 — the Railway app behind
+  // it no longer exists ("Application not found", 404 with no CORS headers,
+  // confirmed via curl), so every FallbackProvider construction was wasting a
+  // request+timeout on a dead host and logging a CORS error in every user's
+  // console.
   rpcs: [
     ARC_MAINNET_RPC,
     "https://warp-arc-production.up.railway.app/rpc",
-    "https://radar-api-rpc.up.railway.app",
   ],
   explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc.exploreme.pro",
   nativeToken: "0x3600000000000000000000000000000000000000",
