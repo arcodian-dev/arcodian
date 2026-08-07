@@ -6,5 +6,6 @@ After=network-online.target
 Type=oneshot
 WorkingDirectory=/root/.openclaw/workspace/arc
 Environment=ARC_RPC_URLS=https://arcodian.fun/api/rpc.php,https://rpc.testnet.arc.network/,https://rpc.drpc.testnet.arc.io
+Environment=ARC_LEND_ADDRESS=0x571493d389862c2AF13985357b11916E5E54365d
 ExecStart=/usr/bin/node scripts/unified-analytics.mjs
 User=root

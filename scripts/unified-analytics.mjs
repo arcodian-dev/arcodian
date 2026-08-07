@@ -6,7 +6,11 @@ import { healthyProvider } from "./rpc-failover.mjs";
 
 const DATA = process.env.ARC_DATA_DIR || "/www/wwwroot/arcodian.fun/shared/data";
 const OUT = process.env.UNIFIED_ANALYTICS_OUTPUT || `${DATA}/analytics.json`;
-const LEND = process.env.ARC_LEND_ADDRESS || "0x2f2cC1a11C75B493ea7c8f44e34a88FB5C121637";
+// 0x2f2cC1a1... was the first ArcLendV2 deploy, retired 2026-07-27 (see
+// config.ts RETIRED_DEPLOYMENTS.arcLendManualOracleV1) -- its lastGoodPriceAt
+// is frozen forever, so falling back to it here silently fired a permanent
+// false "oracle stale" critical alert on the public analytics/monitor pages.
+const LEND = process.env.ARC_LEND_ADDRESS || "0x571493d389862c2AF13985357b11916E5E54365d";
 const MESSENGER = "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA";
 const DEST = { 0:[11155111,"https://ethereum-sepolia-rpc.publicnode.com"],1:[43113,"https://api.avax-test.network/ext/bc/C/rpc"],2:[11155420,"https://sepolia.optimism.io"],3:[421614,"https://sepolia-rollup.arbitrum.io/rpc"],6:[84532,"https://sepolia.base.org"],7:[80002,"https://rpc-amoy.polygon.technology"] };
 const TRANSMITTER = "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275";
