@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Arcodian AgentRail service indexer every 2 minutes
+
+[Timer]
+OnBootSec=200
+OnUnitActiveSec=120
+RandomizedDelaySec=15
+
+[Install]
+WantedBy=timers.target

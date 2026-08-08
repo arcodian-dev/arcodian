@@ -1,0 +1,16 @@
+[Unit]
+Description=Arcodian AgentRail service indexer
+After=network-online.target arcodian-reputation-index.service
+Wants=arcodian-reputation-index.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.drpc.testnet.arc.io
+Environment=SERVICE_REGISTRY_ADDRESS=0x26aBc806Ab5feae90DE708F56922f6f19F20F8Db
+Environment=PAY_VAULT_ADDRESS=0xD6bC439615D6fc2EA8cD6eC6CAC413E8F7e85dD1
+Environment=SERVICE_DEPLOY_BLOCK=55975600
+Environment=SERVICE_INDEX_OUT=/www/wwwroot/arcodian.fun/shared/developers/services.json
+Environment=REPUTATION_OUT=/www/wwwroot/arcodian.fun/shared/developers/reputation.json
+ExecStart=/usr/bin/node scripts/service-index.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/developers/services.json
