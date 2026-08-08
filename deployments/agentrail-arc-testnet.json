@@ -1,0 +1,17 @@
+{
+  "chainId": 5042002,
+  "network": "arc-testnet",
+  "deployedAt": "2026-08-08",
+  "deployer": "0x7D9b5ab14b24Dede3b78b7e1715C1E01032F40C2",
+  "deployBlock": 55975638,
+  "contracts": {
+    "ArcServiceRegistry": "0x26aBc806Ab5feae90DE708F56922f6f19F20F8Db",
+    "ArcPayVault": "0xD6bC439615D6fc2EA8cD6eC6CAC413E8F7e85dD1"
+  },
+  "reuses": {
+    "ArcAgentPassport": "0xDaCEF31ca7C5B1cebB5516f541cfF05E17eC2cCf",
+    "ReputationRegistry": "0x8004B663056A597Dffe9eCcC1965A193B7388713",
+    "feeTreasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF"
+  },
+  "feeBps": 50
+}
