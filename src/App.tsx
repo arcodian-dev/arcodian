@@ -89,6 +89,8 @@ const BridgeClaim = lazy(() => import("./components/BridgeClaim"));
 const BridgeStudio = lazy(() => import("./components/BridgeStudio"));
 const AgentProfile = lazy(() => import("./pages/AgentProfile"));
 const AgentsIndex = lazy(() => import("./pages/AgentsIndex"));
+const Services = lazy(() => import("./pages/Services"));
+const ServiceDetail = lazy(() => import("./pages/ServiceDetail"));
 const TradingTerminal = lazy(() => import("./pages/TradingTerminal"));
 const AUSD = lazy(() => import("./pages/AUSD"));
 
@@ -882,6 +884,27 @@ export default function App() {
     );
   }
 
+  if (window.location.pathname === "/services") {
+    return (
+      <Suspense fallback={<div className="loading-board route-fallback">Loading services…</div>}>
+        <Services account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+        {walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect} />}
+      </Suspense>
+    );
+  }
+
+  const serviceMatch = window.location.pathname.match(/^\/service\/(0x[0-9a-fA-F]+)/);
+  if (serviceMatch) {
+    return (
+      <main className="agent-profile-app">
+        <Suspense fallback={<div className="loading-board route-fallback">Loading service…</div>}>
+          <ServiceDetail serviceId={serviceMatch[1]} account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} />
+          {walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect} />}
+        </Suspense>
+      </main>
+    );
+  }
+
   if (productHost) {
     return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
       {productName === "lend" ? <>{window.location.pathname.replace(/\/$/, "") === "/admin" ? <LendAdmin account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/> : <LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>}{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
@@ -1371,7 +1394,7 @@ export default function App() {
         <p className="mm-group">Market</p>
         <a href="/screener">Markets</a><a href="https://lend.arcodian.fun/">Lend</a>
         <p className="mm-group">Agent</p>
-        <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/agents">Agents</a>
+        <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/services">Services</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>
         <a href="/developers">Developers</a><a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
         <button className="mm-create" onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
