@@ -31,5 +31,5 @@ const iface = new Interface(REG_ABI);
 const serviceId = rc.logs.map((l) => { try { return iface.parseLog(l); } catch { return null; } }).find((e) => e?.name === "ServiceRegistered").args.serviceId;
 console.log("registered serviceId", serviceId, "provider", wallet.address);
 
-const app = createServer({ rpc, vault: process.env.PAY_VAULT_ADDRESS, provider: wallet.address, chainId, priceWei: parseEther(price), handler: infer });
+const app = createServer({ rpc, vault: process.env.PAY_VAULT_ADDRESS, provider: wallet.address, chainId, priceWei: parseEther(price), handler: infer, store: process.env.VOUCHER_STORE || "/var/lib/arcodian/agentrail-vouchers.json" });
 app.listen(8795, () => console.log("provider serving on", endpointURI));

@@ -1,0 +1,16 @@
+[Unit]
+Description=Arcodian AgentRail provider redeemer (settles signed vouchers on-chain)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.drpc.testnet.arc.io
+Environment=PAY_VAULT_ADDRESS=0xD6bC439615D6fc2EA8cD6eC6CAC413E8F7e85dD1
+Environment=VOUCHER_STORE=/var/lib/arcodian/agentrail-vouchers.json
+Environment=MIN_REDEEM_USDC=0.05
+Environment=DEALLOC_SAFETY_SEC=21600
+# PROVIDER_PK is kept out of the unit; supply it via this root-only (chmod 600) file.
+EnvironmentFile=/etc/arcodian/agentrail-redeem.env
+ExecStart=/usr/bin/node scripts/agentrail-redeem.mjs

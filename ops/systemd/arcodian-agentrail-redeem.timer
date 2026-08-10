@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the Arcodian AgentRail redeemer every 10 minutes
+
+[Timer]
+OnBootSec=240
+OnUnitActiveSec=600
+RandomizedDelaySec=30
+
+[Install]
+WantedBy=timers.target
