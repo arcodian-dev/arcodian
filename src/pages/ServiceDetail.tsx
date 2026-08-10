@@ -1,14 +1,13 @@
 import {useCallback,useEffect,useState} from "react";
 import {BrowserProvider,Contract,parseEther,formatEther} from "ethers";
 import {PAY_VAULT_ADDRESS,ARC,REPUTATION_REGISTRY_ADDRESS,REPUTATION_REGISTRY_ABI} from "../config";
-import {fetchServicesFeed,allocate,readSub,callService,type FeedService} from "../lib/agentServices";
+import {fetchServicesFeed,allocate,readSub,callService,serviceMeta,type FeedService} from "../lib/agentServices";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
 import "./Services.css";
 
 type Props={serviceId:string;account:string;chainId:number|null;activeProvider:EthereumProvider|null;connect:()=>void};
 const short=(x:string)=>x?`${x.slice(0,6)}…${x.slice(-4)}`:"—";
-function meta(m:string){try{const o=JSON.parse(m);return {name:o.name||"Service",model:o.model||"—",description:o.description||""};}catch{return {name:"Service",model:"—",description:""};}}
 // Vouchers are cumulative and strictly monotonic per (payer,provider); the vault rejects a
 // cumulative <= redeemed and the provider rejects one that isn't exactly `price` above what it
 // last saw. The client is the source of truth for its last-signed cumulative, so persist it —
@@ -76,7 +75,7 @@ export default function ServiceDetail({serviceId,account,chainId,activeProvider,
 
   if(err)return <section className="agent-profile"><p>AGENTRAIL</p><h1>Service</h1><p className="err">{err}</p><p><a href="/services">← Back to services</a></p></section>;
   if(!svc)return <section className="agent-profile"><p>AGENTRAIL</p><h1>Service</h1><p>Loading…</p></section>;
-  const m=meta(svc.metadataURI);
+  const m=serviceMeta(svc);
 
   return <section className="agent-profile service-detail">
     <p>AGENTRAIL · PAY-PER-CALL</p><h1>{m.name}</h1>

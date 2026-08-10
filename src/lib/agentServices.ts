@@ -2,7 +2,16 @@ import { Contract, JsonRpcProvider, keccak256, toUtf8Bytes, parseEther, verifyTy
 import { SERVICE_REGISTRY_ADDRESS, SERVICE_REGISTRY_ABI, PAY_VAULT_ADDRESS, PAY_VAULT_ABI, SERVICE_METADATA_ENDPOINT, ARC } from "../config";
 
 export type ServiceMetadata = { name: string; description?: string; model?: string; inputSpec?: string; outputSpec?: string; priceUSDC?: string };
-export type FeedService = { serviceId: string; provider: string; agentId: string; price: string; endpointURI: string; metadataURI: string; active: boolean; volume: string; reputation: number };
+export type ServiceMeta = { name: string; model: string; description: string };
+export type FeedService = { serviceId: string; provider: string; agentId: string; price: string; endpointURI: string; metadataURI: string; active: boolean; volume: string; reputation: number; metadata?: ServiceMeta | null };
+
+// Prefer the indexer-resolved metadata (handles ipfs:// pins the UI register form produces);
+// fall back to parsing an inline-JSON metadataURI, then to safe defaults.
+export function serviceMeta(s: FeedService): ServiceMeta {
+  if (s.metadata && s.metadata.name) return { name: s.metadata.name, model: s.metadata.model || "—", description: s.metadata.description || "" };
+  try { const o = JSON.parse(s.metadataURI); return { name: o.name || "Service", model: o.model || "—", description: o.description || "" }; }
+  catch { return { name: "Service", model: "—", description: "" }; }
+}
 export type Voucher = { payer: string; provider: string; cumulative: bigint };
 
 export const voucherTypes = { Voucher: [

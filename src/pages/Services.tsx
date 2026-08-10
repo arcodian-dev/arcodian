@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useState} from "react";
 import {BrowserProvider,Contract,JsonRpcProvider,formatEther} from "ethers";
 import {PAY_VAULT_ADDRESS,PAY_VAULT_ABI,ARC} from "../config";
-import {fetchServicesFeed,pinServiceMetadata,registerService,deposit,type FeedService} from "../lib/agentServices";
+import {fetchServicesFeed,pinServiceMetadata,registerService,deposit,serviceMeta,type FeedService} from "../lib/agentServices";
 import {describeTxError} from "../txError";
 import "./AgentPay.css";
 import "./Services.css";
@@ -9,9 +9,6 @@ import "./Services.css";
 type Props={account:string;chainId:number|null;activeProvider:EthereumProvider|null;connect:()=>void};
 type View="board"|"register";
 const short=(x:string)=>x?`${x.slice(0,6)}…${x.slice(-4)}`:"—";
-function metaName(m:string):{name:string;model:string}{
-  try{const o=JSON.parse(m);return {name:o.name||"Service",model:o.model||"—"};}catch{return {name:"Service",model:"—"};}
-}
 
 export default function Services({account,chainId,activeProvider,connect}:Props){
   const [view,setView]=useState<View>("board");
@@ -77,7 +74,7 @@ export default function Services({account,chainId,activeProvider,connect}:Props)
       {feedLoading?<p className="services-empty">Loading services…</p>:feed.length===0?<p className="services-empty">No services registered yet. Register the first one.</p>:
         <div className="services-table" role="table">
           <div className="services-row services-head" role="row"><span>Service</span><span>Model</span><span>Price/call</span><span>Provider</span><span>Volume</span><span>Rep</span></div>
-          {feed.map(s=>{const m=metaName(s.metadataURI);return <a key={s.serviceId} className="services-row" role="row" href={`/service/${s.serviceId}`}>
+          {feed.map(s=>{const m=serviceMeta(s);return <a key={s.serviceId} className="services-row" role="row" href={`/service/${s.serviceId}`}>
             <span>{m.name}{!s.active&&<i className="services-chip st-rejected"> inactive</i>}</span>
             <span>{m.model}</span>
             <span>{s.price} USDC</span>

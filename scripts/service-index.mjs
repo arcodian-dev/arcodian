@@ -10,7 +10,35 @@ const STATE = `${OUT}.state.json`;
 const DEPLOY_BLOCK = Number(process.env.SERVICE_DEPLOY_BLOCK || 0);
 const CHUNK = 9_500;
 const MAX_CATCHUP = Number(process.env.SERVICE_MAX_CATCHUP || 30_000);
+const META_GATEWAY = process.env.IPFS_GATEWAY || "https://gateway.pinata.cloud/ipfs/";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// The on-chain metadataURI may be inline JSON (demo/canonical services) or a pinned ipfs://
+// (or http) pointer (the UI register form pins to IPFS). Resolve both to a small {name,model,
+// description} object here so the frontend can render it directly — it can't fetch ipfs
+// synchronously during render. Fields are clamped so a service can't abuse the directory layout.
+const clamp = (x, n) => (typeof x === "string" ? x.slice(0, n) : undefined);
+function pickMeta(obj) {
+  if (!obj || typeof obj !== "object") return null;
+  const name = clamp(obj.name, 120);
+  if (!name) return null;
+  return { name, model: clamp(obj.model, 60) || "—", description: clamp(obj.description, 400) || "" };
+}
+async function resolveMetadata(uri) {
+  if (!uri || typeof uri !== "string") return null;
+  const s = uri.trim();
+  if (s.startsWith("{")) { try { return pickMeta(JSON.parse(s)); } catch { return null; } }
+  let url = null;
+  if (s.startsWith("ipfs://")) url = META_GATEWAY + s.slice(7).replace(/^ipfs\//, "");
+  else if (/^https?:\/\//.test(s)) url = s;
+  if (!url) return null;
+  try {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 6000);
+    const r = await fetch(url, { signal: ctrl.signal }); clearTimeout(t);
+    if (!r.ok) return null;
+    return pickMeta(JSON.parse((await r.text()).slice(0, 32768)));
+  } catch { return null; }
+}
 
 const iface = new Interface([
   "event ServiceRegistered(bytes32 indexed serviceId,address indexed provider,uint256 indexed agentId,uint256 price,string endpointURI,string metadataURI)",
@@ -78,9 +106,17 @@ async function main() {
     }
   }
   const withVol = Object.values(services).map((s) => ({ ...s, volume: formatEther(BigInt(volumeByProvider[String(s.provider).toLowerCase()] || "0")) }));
-  const list = joinReputation(withVol, loadReputation());
+  // Resolve + cache metadata (successes are cached; failures retry next run).
+  const metaCache = prev?.metaCache || {};
+  const feed = [];
+  for (const s of withVol) {
+    const uri = s.metadataURI || "";
+    if (uri && metaCache[uri] === undefined) { const m = await resolveMetadata(uri); if (m) metaCache[uri] = m; }
+    feed.push({ ...s, metadata: metaCache[uri] || null });
+  }
+  const list = joinReputation(feed, loadReputation());
   writeFileSync(OUT, JSON.stringify({ indexedBlock: tip, count: list.length, services: list }, null, 0));
-  writeFileSync(STATE, JSON.stringify({ indexedBlock: tip, services, volumeByProvider }));
+  writeFileSync(STATE, JSON.stringify({ indexedBlock: tip, services, volumeByProvider, metaCache }));
   console.log(`indexed ${list.length} services through block ${tip}`);
   await provider.destroy?.();
 }
