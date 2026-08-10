@@ -9,6 +9,12 @@ import "./Services.css";
 type Props={serviceId:string;account:string;chainId:number|null;activeProvider:EthereumProvider|null;connect:()=>void};
 const short=(x:string)=>x?`${x.slice(0,6)}…${x.slice(-4)}`:"—";
 function meta(m:string){try{const o=JSON.parse(m);return {name:o.name||"Service",model:o.model||"—",description:o.description||""};}catch{return {name:"Service",model:"—",description:""};}}
+// Vouchers are cumulative and strictly monotonic per (payer,provider); the vault rejects a
+// cumulative <= redeemed and the provider rejects one that isn't exactly `price` above what it
+// last saw. The client is the source of truth for its last-signed cumulative, so persist it —
+// otherwise a returning payer (who already spent against this provider) would restart at `price`
+// and get stuck on both the provider ("bad delta") and on-chain (`NotIncreasing`).
+const cumKey=(payer:string,provider:string)=>`arcodian-agentrail-cum:${payer.toLowerCase()}:${provider.toLowerCase()}`;
 
 export default function ServiceDetail({serviceId,account,chainId,activeProvider,connect}:Props){
   const [svc,setSvc]=useState<FeedService|null>(null);
@@ -22,6 +28,21 @@ export default function ServiceDetail({serviceId,account,chainId,activeProvider,
     catch(e){setErr(describeTxError(e));}
   },[serviceId]);
   useEffect(()=>{void load();},[load]);
+
+  // Recover the last-signed cumulative for this (payer,provider): prefer the client's own record
+  // (localStorage — the true last voucher, which may exceed on-chain redeemed if the provider
+  // hasn't settled yet), else floor at on-chain `redeemed` so a fresh device stays consistent.
+  useEffect(()=>{
+    if(!svc||!account){setPrevCumulative(0n);return;}
+    let live=true;
+    (async()=>{
+      let start=0n;
+      try{const sub=await readSub(account,svc.provider);start=sub.redeemed;}catch{/* ignore */}
+      try{const stored=localStorage.getItem(cumKey(account,svc.provider));if(stored){const v=BigInt(stored);if(v>start)start=v;}}catch{/* ignore */}
+      if(live){setPrevCumulative(start);setSpent(start);}
+    })();
+    return()=>{live=false;};
+  },[svc,account]);
 
   async function signer(){if(!activeProvider){connect();throw new Error("Connect wallet first");}if(chainId!==ARC.id){await activeProvider.request({method:"wallet_switchEthereumChain",params:[{chainId:ARC.hexId}]});throw new Error("Network switched. Review and submit again.");}return new BrowserProvider(activeProvider).getSigner();}
 
@@ -40,6 +61,7 @@ export default function ServiceDetail({serviceId,account,chainId,activeProvider,
       setStatus("Signing voucher & calling…");
       const r=await callService(s,{provider:svc.provider,vault:PAY_VAULT_ADDRESS,chainId:ARC.id,priceUSDC:svc.price,endpointURI:svc.endpointURI,prompt,prevCumulative});
       setPrevCumulative(r.cumulative);setSpent(r.cumulative);setResult(r.completion);
+      try{localStorage.setItem(cumKey(account,svc.provider),r.cumulative.toString());}catch{/* ignore */}
       setStatus(`Call served · voucher cumulative ${formatEther(r.cumulative)} USDC (off-chain)`);
     }catch(e){setStatus(describeTxError(e));}finally{setBusy(false);}
   }
@@ -74,7 +96,7 @@ export default function ServiceDetail({serviceId,account,chainId,activeProvider,
       {!account?<button className="agent-connect" onClick={connect}>Connect wallet to call</button>:<>
         <label>Prompt<input value={prompt} onChange={e=>setPrompt(e.target.value)} placeholder="Ask the agent…"/></label>
         <button disabled={busy||!prompt} onClick={()=>void runCall()}>Send call ({svc.price} USDC)</button>
-        {result&&<div className="service-result"><b>Response</b><p>{result}</p><small>Spent this session (off-chain vouchers): {formatEther(spent)} USDC</small></div>}
+        {result&&<div className="service-result"><b>Response</b><p>{result}</p><small>Total signed to this provider (off-chain vouchers): {formatEther(spent)} USDC</small></div>}
       </>}
     </section>
 

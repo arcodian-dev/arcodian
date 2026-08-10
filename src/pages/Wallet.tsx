@@ -1093,7 +1093,7 @@ export default function Wallet({
           <img src="/arcodian-mark.svg" alt="" />
           <span>
             <b>ARCODIAN</b>
-            <small>WALLET · TESTNET</small>
+            <small>WALLET · {isArcMainnetChain ? "MAINNET" : "TESTNET"}</small>
           </span>
         </div>
         {walletAccount ? (
@@ -1408,7 +1408,7 @@ export default function Wallet({
                   </div>
                 </label>
                 <small>
-                  Only send supported Arc Testnet assets to this address.
+                  Only send supported Arc {isArcMainnetChain ? "Mainnet" : "Testnet"} assets to this address.
                 </small>
               </section>
             )}
@@ -1462,7 +1462,7 @@ export default function Wallet({
                 <p>Review the exact request before your wallet signs it.</p>
                 <article>
                   <span>Network</span>
-                  <b>Arc Testnet</b>
+                  <b>{activeArc.name}</b>
                   <small>
                     Settlement contract verified in app configuration.
                   </small>
@@ -1540,7 +1540,7 @@ export default function Wallet({
                 <button className="wallet-back" onClick={() => setView("markets")}>← Markets</button>
                 <div className="wallet-coin-head">
                   {selectedMarket.image ? <img src={selectedMarket.image} alt=""/> : <i>{selectedMarket.symbol.slice(0,2)}</i>}
-                  <span><b>{selectedMarket.name}</b><small>${selectedMarket.symbol} · Arc Testnet</small></span>
+                  <span><b>{selectedMarket.name}</b><small>${selectedMarket.symbol} · {isArcMainnetChain ? "Arc Mainnet" : "Arc Testnet"}</small></span>
                   <button onClick={() => copy(selectedMarket.address, "Token address")}>⧉</button>
                 </div>
                 <div className="wallet-coin-price"><h2>{metrics.price ? `$${metrics.price.toPrecision(5)}` : "Price pending"}</h2><b className={selectedMarket.priceChange24h >= 0 ? "up" : "down"}>{selectedMarket.priceChange24h >= 0 ? "+" : ""}{selectedMarket.priceChange24h.toFixed(2)}% 24h</b></div>
