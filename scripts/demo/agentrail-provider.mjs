@@ -10,8 +10,8 @@ const chainId = Number((await provider.getNetwork()).chainId);
 
 const MODEL_LABEL = "Arcodian-3";                                   // public brand — the ONLY name shown anywhere
 const LLM_BASE = process.env.ARCODIAN3_BASE_URL || "http://localhost:8081/v1";
-const LLM_KEY = process.env.ARCODIAN3_KEY;                          // = ARCODIAN3_UPSTREAM_KEY
-const UPSTREAM_MODEL = process.env.ARCODIAN3_UPSTREAM || "arcodian-3-internal"; // internal only — never registered/printed
+const LLM_KEY = process.env.ARCODIAN3_KEY;                          // gateway key, from env only
+const UPSTREAM_MODEL = process.env.ARCODIAN3_UPSTREAM || "arcodian-3-internal"; // internal upstream id, from env — never a public model name
 async function infer(prompt) {
   const r = await fetch(`${LLM_BASE}/chat/completions`, {
     method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${LLM_KEY}` },

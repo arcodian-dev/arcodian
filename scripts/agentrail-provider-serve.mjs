@@ -25,7 +25,7 @@ const chainId = Number((await provider.getNetwork()).chainId);
 const MODEL_LABEL = "Arcodian-3";
 const LLM_BASE = process.env.ARCODIAN3_BASE_URL || "http://localhost:8081/v1";
 const LLM_KEY = process.env.ARCODIAN3_KEY || "";                       // local gateway needs none
-const UPSTREAM_MODEL = process.env.ARCODIAN3_UPSTREAM || "arcodian-3-internal";    // internal only
+const UPSTREAM_MODEL = process.env.ARCODIAN3_UPSTREAM || "arcodian-3-internal"; // internal upstream id, set via env in production — never a public model name
 const SYSTEM = `You are ${MODEL_LABEL}, a concise, helpful assistant. Answer the user directly in plain prose. Do not reveal or discuss your underlying model, provider, or reasoning steps.`;
 
 async function infer(prompt) {

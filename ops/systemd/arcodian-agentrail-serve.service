@@ -13,7 +13,9 @@ Environment=SERVICE_PRICE_USDC=0.01
 Environment=VOUCHER_STORE=/var/lib/arcodian/agentrail-vouchers.json
 Environment=SERVE_PORT=8795
 Environment=ARCODIAN3_BASE_URL=http://localhost:8081/v1
-Environment=ARCODIAN3_UPSTREAM=arcodian-3-internal
+# Internal upstream model id (and any gateway key) are provided out-of-tree so they
+# never land in git: ARCODIAN3_UPSTREAM=... [ARCODIAN3_KEY=...] in this root-only file.
+EnvironmentFile=-/etc/arcodian/agentrail-serve.env
 ExecStart=/usr/bin/node scripts/agentrail-provider-serve.mjs
 Restart=always
 RestartSec=5
