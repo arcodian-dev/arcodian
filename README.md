@@ -6,7 +6,7 @@ Stablecoin-native launchpad, wallet, swap/bridge, and agent-economy infrastructu
 
 ## What's live on Arc Mainnet (chain `5042`)
 
-Everything below is deployed and operating with real USDC — not a testnet demo.
+Launchpad, Swap/DEX, Bridge, Agent Pay, and the MCP server are deployed and operating with real USDC on mainnet — not a testnet demo. Agent Passport/Jobs/Reputation and Lend are noted per-row below where they're still Arc Testnet only.
 
 | Surface | What it does |
 |---|---|
@@ -14,8 +14,8 @@ Everything below is deployed and operating with real USDC — not a testnet demo
 | **Swap / DEX** | Uniswap-v3-style AMM (own deployment) + external-pool routing, live order flow in the trading terminal. |
 | **Bridge** | USDC in/out of Arc via Circle CCTP, wired to Ethereum, Arbitrum, Optimism, and Base mainnets. |
 | **Agent Pay** | On-chain payment rails for autonomous agents — invoices, spending policies, relayed/meta-transaction payments, atomic batch settlement (EIP-712, ERC-1271 smart-wallet support). |
-| **Agent Passport, Jobs & Reputation** | ERC-8004 identity, a permissionless escrow job board, and an objective on-chain reputation/validation system for agent-to-agent commerce. |
-| **Lend** | Utilization-curve USDC/EUR lending market on a live Pyth oracle feed. |
+| **Agent Passport, Jobs & Reputation** | ERC-8004 identity, a permissionless escrow job board, and an objective on-chain reputation/validation system for agent-to-agent commerce — **live and fully functional on Arc Testnet only.** The official ERC-8004 vanity proxies exist on Arc Mainnet (`identityRegistry`/`reputationRegistry`/`validationRegistry` in `ARC_MAINNET_CONTRACTS`) but still point at a `MinimalUUPS` placeholder pending the project owner's real-implementation upgrade — identity registration does not work through them yet. |
+| **Lend** | Utilization-curve USDC/EUR lending market on a live Pyth oracle feed — **Arc Testnet only**; no official Arc Mainnet EURC or Pyth contract address is published yet, so ArcLendV2 can't deploy to mainnet. |
 | **MCP server** | [arcodian.fun/mcp](https://arcodian.fun/mcp) — reads on-chain state and returns unsigned transaction builders only. It never holds a key. |
 
 Every contract address, verification status, and readiness gate is published and machine-readable at [arcodian.fun/developers](https://arcodian.fun/developers) — see `contracts.mainnet.json`, `mainnet-readiness.json`, and `verification-status.json`. The [Trust Center](https://arcodian.fun/contracts) explains the wiring in plain language and re-checks it live on every page load.

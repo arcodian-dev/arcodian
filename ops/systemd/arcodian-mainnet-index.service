@@ -1,0 +1,24 @@
+[Unit]
+Description=Arc Mainnet launch/market index (holders, volume, trade tape)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Safety net added 2026-08-30: this unit ran unbounded and hung on an
+# eth_getLogs call the community RPC pool couldn't serve (pruned/incomplete
+# history on every current Arc Mainnet endpoint for old block ranges) —
+# Type=oneshot + no timeout meant the timer's next 30s tick was blocked
+# forever, and the index silently went stale for 19 days (2026-08-11 to
+# 2026-08-30) with no error surfaced anywhere. A bounded timeout means a
+# future hang self-recovers on the next timer tick instead of freezing the
+# index indefinitely; the script resumes from its own on-disk per-factory
+# checkpoint (previousByFactory in mainnet-market-index.mjs), so a killed
+# run loses only its own in-progress catch-up, not prior progress.
+TimeoutStartSec=20min
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=MAINNET_INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
+Environment=ARC_MAINNET_RPC_URL=https://wirex-arc-mainnet-01.zeeve.net/qKO3H65PQ/rpc
+ExecStart=/usr/bin/node scripts/mainnet-market-index.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
+ExecStartPost=/bin/sh -c 'cmp -s /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json || cp -f /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json'

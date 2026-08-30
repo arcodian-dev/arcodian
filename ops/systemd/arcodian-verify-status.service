@@ -1,0 +1,13 @@
+[Unit]
+Description=Arcodian canonical contract verification-status refresh (Phase F5)
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=ARC_RPC_URL=https://rpc.testnet.arc.network/
+Environment=ARC_BLOCKSCOUT=https://testnet.arcscan.app
+Environment=CONTRACTS_JSON=/root/.openclaw/workspace/arc/public/developers/contracts.json
+Environment=VERIFICATION_STATUS=/www/wwwroot/arcodian.fun/shared/developers/verification-status.json
+ExecStart=/usr/bin/node scripts/verify-canonical-contracts.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/developers/verification-status.json

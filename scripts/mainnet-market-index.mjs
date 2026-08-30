@@ -191,6 +191,17 @@ async function addressLogs(address, fromBlock, topics) {
         await delay(500 * (attempt + 1));
       }
     }
+    // A non-transient failure (e.g. the RPC simply cannot serve logs for this
+    // address at all — confirmed 2026-08-30: one venue's every single chunk
+    // across its whole ~5M-block history failed identically, "could not
+    // coalesce error") used to fall through and retry every remaining chunk
+    // anyway, one non-transient failure at a time, burning the run's entire
+    // time budget on an address that was never going to succeed. Bail out of
+    // the whole address once that happens; `complete=false` already makes the
+    // caller keep the cursor at fromBlock-1 so nothing is skipped — the next
+    // run just retries this address (possibly against a healthier RPC) from
+    // the same place instead of grinding through it again this run too.
+    if (!complete) break;
   }
   return { logs, complete };
 }

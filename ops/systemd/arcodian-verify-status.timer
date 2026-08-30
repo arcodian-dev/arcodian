@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh Arcodian verification-status.json every 6 hours
+[Timer]
+OnBootSec=300
+OnUnitActiveSec=6h
+RandomizedDelaySec=120
+[Install]
+WantedBy=timers.target
