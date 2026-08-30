@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from "ethers";
+import { Contract, JsonRpcProvider } from "ethers";
 import { ARC, CCTP_MAINNET_DOMAIN, CCTP_MAINNET_MESSAGE_TRANSMITTER_V2, CCTP_MAINNET_TOKEN_MESSENGER_V2 } from "./config";
 
 /**
@@ -111,6 +111,39 @@ export async function fetchCctpFee(sourceChainId: number, destChainId: number): 
     if (fast) return { threshold: 1000, feeBps: Number(fast.minimumFee) || 0 };
     const standard = rows.find((row) => row.finalityThreshold >= 2000) || rows[0];
     return { threshold: standard.finalityThreshold, feeBps: Number(standard.minimumFee) || 0 };
+  } catch {
+    return null;
+  }
+}
+
+// Circle's TokenMinter enforces a per-message burn ceiling per token
+// (`burnLimitsPerMessage`) that it can raise over time as a chain matures —
+// confirmed live 2026-08-30 that Arc Mainnet's had already gone from
+// 1,000,000 (1 USDC, true on 2026-07-31 when this cap was first hardcoded)
+// to 100,000,000,000 (100,000 USDC) with no code change on our side to
+// notice it. Reading it live instead of hardcoding a number means the next
+// increase (or an unrelated chain's different limit) is picked up
+// automatically instead of silently under-capping users again.
+const burnLimitCache = new Map<string, { value: bigint; at: number }>();
+const BURN_LIMIT_TTL_MS = 5 * 60 * 1000;
+
+/** Live per-message burn ceiling (raw token units) for `token` on `tokenMessenger`, or null if unreadable. */
+export async function fetchBurnLimitPerMessage(rpc: string, tokenMessenger: string, token: string): Promise<bigint | null> {
+  const cacheKey = `${rpc}:${tokenMessenger}:${token}`;
+  const cached = burnLimitCache.get(cacheKey);
+  if (cached && Date.now() - cached.at < BURN_LIMIT_TTL_MS) return cached.value;
+  try {
+    const provider = new JsonRpcProvider(rpc, undefined, { staticNetwork: true, batchMaxCount: 1 });
+    try {
+      const messenger = new Contract(tokenMessenger, ["function localMinter() view returns (address)"], provider);
+      const minter = await messenger.localMinter();
+      const minterContract = new Contract(minter, ["function burnLimitsPerMessage(address) view returns (uint256)"], provider);
+      const value = BigInt(await minterContract.burnLimitsPerMessage(token));
+      burnLimitCache.set(cacheKey, { value, at: Date.now() });
+      return value;
+    } finally {
+      provider.destroy();
+    }
   } catch {
     return null;
   }

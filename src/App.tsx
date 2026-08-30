@@ -30,7 +30,7 @@ import { ARC_PUMP_SUITE_ABI } from "./generated/arcPumpSuite";
 import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
-import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchCctpFee, savePendingClaim, tokenMessengerFor } from "./bridgeRecovery";
+import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchBurnLimitPerMessage, fetchCctpFee, savePendingClaim, tokenMessengerFor } from "./bridgeRecovery";
 import { canonicalRedirect, isWalletAppRoute } from "./routeIntegrity";
 
 // Every chain the bridge can move USDC between, testnet and real mainnet
@@ -651,16 +651,22 @@ export default function App() {
     const spender = feeRouter || tokenMessenger;
     const value = parseUnits(amount || "0", 6); // CCTP USDC is 6-decimal
     if (value <= 0n) { setStatus("Enter an amount to bridge."); return; }
-    // Circle's own TokenMinter.burnLimitsPerMessage for USDC out of Arc is
-    // capped at 1,000,000 (1 USDC) right now — confirmed live on-chain
-    // 2026-07-31, not something we control. Burns above that revert with
-    // "Burn amount exceeds per tx limit" deep in TokenMessenger, which reads
-    // as a broken app rather than a network-side rollout limit. Cap here so
-    // the message is clear instead of a raw revert; remove once Circle
-    // raises the limit for Arc.
-    if (from.id === ARC_MAINNET.id && value > 1_000_000n) {
-      setStatus("Arc Mainnet's CCTP burn limit is capped at 1 USDC per transaction right now (Circle's own network-side limit, not ours) — bridge in 1 USDC steps until Circle raises it.");
-      return;
+    // Circle's own TokenMinter.burnLimitsPerMessage for USDC out of Arc is a
+    // network-side rollout cap, not something we control, and Circle raises
+    // it over time without notice (it went from 1,000,000 raw / 1 USDC on
+    // 2026-07-31 to 100,000,000,000 raw / 100,000 USDC by 2026-08-30 with no
+    // announcement). Read it live instead of hardcoding a number so users
+    // are never under-capped by a stale constant; a burn above the real
+    // limit reverts with "Burn amount exceeds per tx limit" deep in
+    // TokenMessenger, which reads as a broken app rather than a network
+    // limit, so we still pre-check and surface a clear message.
+    if (from.id === ARC_MAINNET.id) {
+      const limit = await fetchBurnLimitPerMessage(from.rpc, tokenMessenger, from.token);
+      if (limit !== null && value > limit) {
+        const limitUsdc = Number(limit) / 1e6;
+        setStatus(`Arc Mainnet's CCTP burn limit is capped at ${limitUsdc.toLocaleString()} USDC per transaction right now (Circle's own network-side limit, not ours) — bridge in ${limitUsdc.toLocaleString()} USDC steps until Circle raises it.`);
+        return;
+      }
     }
 
     setBusy(true);
