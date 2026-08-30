@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
 import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, AGENT_PAY_V6_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
+import { fetchBurnLimitPerMessage, tokenMessengerFor } from "../bridgeRecovery";
 
 function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
   return <nav className="trust-nav" aria-label="Trust Center sections">
@@ -142,7 +143,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
         ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
         ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
-        ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than one hour fails closed."] as const] : []),
+        ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than 90 hours fails closed."] as const] : []),
         ...(ARC_LEND_COLLATERAL_ADDRESS ? [["Arc Lend collateral · EURC", ARC_LEND_COLLATERAL_ADDRESS, "The canonical Circle EURC token accepted as collateral in the isolated Arc Lend market (6 decimals)."] as const] : []),
       ],
     },
@@ -227,6 +228,18 @@ const DOCS_SECTIONS = [
 ] as const;
 
 export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: { enterMarket: () => void; openContracts: () => void; openFaq: () => void; openCanary: () => void }) {
+  // Circle's own TokenMinter.burnLimitsPerMessage for outbound Arc Mainnet
+  // burns, read live — it was 1 USDC when first confirmed 2026-07-31,
+  // already 100,000 USDC by 2026-08-30, and Circle raises it over time
+  // without notice, so a hardcoded number in this page's copy goes stale
+  // exactly like the frontend's bridge gate itself used to.
+  const [bridgeOutLimit, setBridgeOutLimit] = useState<bigint | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetchBurnLimitPerMessage(ARC_MAINNET.rpc, tokenMessengerFor(ARC_MAINNET.id), ARC_MAINNET.nativeToken)
+      .then((limit) => { if (!cancelled) setBridgeOutLimit(limit); });
+    return () => { cancelled = true; };
+  }, []);
   return <section className="docs-page">
     <TrustNav active="how" openContracts={openContracts} openFaq={openFaq} openCanary={openCanary} />
     <header className="docs-hero">
@@ -279,18 +292,18 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div className="economics-ledger">
         <div><small>Max LTV</small><strong>70%</strong><p>Borrow up to 70% of collateral value. Liquidation opens at an 80% threshold with a 5% liquidator bonus.</p></div>
         <div><small>Interest reserve</small><strong>10%</strong><p>A tenth of accrued interest is retained as a protocol reserve; the rest compounds to suppliers via a borrow index.</p></div>
-        <div><small>Oracle freshness</small><strong>≤ 3,600s</strong><p>Prices older than one hour fail closed—new borrows and risk-increasing actions revert until the oracle is refreshed.</p></div>
+        <div><small>Oracle freshness</small><strong>≤ 90h</strong><p>Prices older than 90 hours fail closed—new borrows and risk-increasing actions revert until the oracle is refreshed. Widened from a 1-hour bound (2026-07-27): EUR/USD is a traditional-FX Pyth feed that goes fully quiet over the weekend, so the tighter window falsely reverted every Friday close through Sunday reopen regardless of oracle health.</p></div>
       </div>
       <aside className="docs-notice"><strong>Pyth canary</strong><p>The live market uses conservative 100 / 50 USDC caps and the official Pyth EUR/USD feed through an Arc adapter. A dedicated permissionless keeper updates Pyth and syncs the market; stale prices fail closed.</p></aside>
     </article>
 
     <article id="docs-bridge" className="docs-section">
       <div className="docs-section-head"><span>05</span><h2>Bridge</h2></div>
-      <p>Move USDC between Arc and other chains over official <b>Circle CCTP</b> rails—burn-and-mint, not a third-party bridge. It runs standalone and inside the wallet, which switches networks for you on both the burn and the mint. <b>Bridge is live on Arc Mainnet with real USDC</b> (Ethereum, Optimism, Arbitrum, Base ⇄ Arc), proven with real transactions including independent third-party wallets bridging unaided. A dedicated testnet version (plus Avalanche and Polygon Amoy) is also available for testing without real value — check which network you're connected to before signing.</p>
+      <p>Move USDC between Arc and other chains over official <b>Circle CCTP</b> rails—burn-and-mint, not a third-party bridge. It runs standalone and inside the wallet, which switches networks for you on both the burn and the mint. <b>Outbound (Arc → Ethereum, Optimism, Arbitrum, Base) is live on Arc Mainnet with real USDC</b>, proven with real transactions including independent third-party wallets bridging unaided. <b>Inbound (another chain → Arc) is not currently completing</b>: burns land fine on the source chain, but Circle's attestation service isn't yet attesting messages where Arc is the destination — confirmed 2026-08-30 against real burns that never progressed past "pending" regardless of age. This should resolve once Arc's public mainnet launches; nothing in Arcodian's own contracts blocks it. A dedicated testnet version (plus Avalanche and Polygon Amoy) is also available for testing without real value — check which network you're connected to before signing.</p>
       <div className="docs-cards">
         <div><b>Burn → attest → mint</b><p>Circle burns on the source chain, issues an attestation, then mints the same USDC on the destination. Arcodian only orchestrates the two wallet signatures.</p></div>
         <div><b>Five mainnet routes, five testnet routes</b><p>Arc, Ethereum, Arbitrum, Base, and Optimism on mainnet (plus Avalanche and Polygon Amoy on testnet). Each CCTP domain is wired to the deterministic v2 messenger address, identical across every chain.</p></div>
-        <div><b>Circle's mainnet burn limit</b><p>Circle currently caps a single burn out of Arc Mainnet at 1 USDC per transaction — a network-side rollout limit on their side, not Arcodian's. The interface surfaces this clearly and caps the amount; bridge in 1 USDC steps until Circle raises it.</p></div>
+        <div><b>Circle's mainnet burn limit</b><p>Circle caps a single burn out of Arc Mainnet at {bridgeOutLimit !== null ? `${(Number(bridgeOutLimit) / 1e6).toLocaleString()} USDC` : "a per-transaction amount"} right now — a network-side rollout limit on their side, not Arcodian's, that rises over time. Read live rather than hardcoded so this figure can't go stale; the interface surfaces it clearly and caps the amount to match.</p></div>
         <div><b>Recoverable</b><p>If a refresh interrupts a flow, the burn is recorded once and only the pending mint resumes—no double bridge. The destination mint needs a little gas on the destination chain.</p></div>
       </div>
     </article>

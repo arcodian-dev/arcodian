@@ -234,6 +234,7 @@ export default function App() {
     const timer = window.setInterval(check, 30_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, []);
+  const [bridgeOutLimit, setBridgeOutLimit] = useState<bigint | null>(null);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [wallets, setWallets] = useState<WalletOption[]>([]);
@@ -428,6 +429,21 @@ export default function App() {
   const bridgePeers = (arcNetworkMode === "mainnet" ? MAINNET_CHAINS : CHAINS).filter((chain) => chain.id !== activeArcId);
   const bridgeFromArc = fromChain === activeArcId;
   const canQuote = Boolean(account && Number(amount) > 0 && (!isSwap || fromToken.toLowerCase() !== toToken.toLowerCase()));
+  // Circle's own TokenMinter.burnLimitsPerMessage for outbound Arc Mainnet
+  // burns — read live (see fetchBurnLimitPerMessage) rather than hardcoded,
+  // since Circle raises it over time without notice: it was 1 USDC when
+  // first confirmed 2026-07-31, already 100,000 USDC by 2026-08-30. This
+  // drives the informational note below the bridge form; the actual
+  // pre-submit gate in bridgeWithCircle re-fetches at submit time (5-minute
+  // cache) rather than trusting this display value, since it can go stale
+  // while the form sits open.
+  useEffect(() => {
+    if (arcNetworkMode !== "mainnet" || !bridgeFromArc) { setBridgeOutLimit(null); return; }
+    let cancelled = false;
+    fetchBurnLimitPerMessage(ARC_MAINNET.rpc, tokenMessengerFor(ARC_MAINNET.id), ARC_MAINNET.nativeToken)
+      .then((limit) => { if (!cancelled) setBridgeOutLimit(limit); });
+    return () => { cancelled = true; };
+  }, [arcNetworkMode, bridgeFromArc]);
 
   async function connect(option?: WalletOption) {
     if (!option) {
@@ -1335,8 +1351,8 @@ export default function App() {
                   <details className="bridge-technical-details"><summary>Fee details</summary><small>{bridgeEstimate.fees.length ? bridgeEstimate.fees.map((fee) => `${fee.type}: ${fee.amount ?? "included"} ${sdkTokenLabel(fee.token, "USDC")}`).join(" · ") : "Circle fee included"}</small></details>
                 </div>
               )}
-              {tab === "bridge" && arcNetworkMode === "mainnet" && bridgeFromArc && (
-                <p className="bridge-limit-note"><b>Circle's own network-side limit:</b> bridging out of Arc Mainnet is capped at 1 USDC per transaction right now. This is on Circle's side, not ours — bridge in 1 USDC steps until they raise it.</p>
+              {tab === "bridge" && arcNetworkMode === "mainnet" && bridgeFromArc && bridgeOutLimit !== null && (
+                <p className="bridge-limit-note"><b>Circle's own network-side limit:</b> bridging out of Arc Mainnet is capped at {(Number(bridgeOutLimit) / 1e6).toLocaleString()} USDC per transaction right now. This is on Circle's side, not ours — it rises over time as Arc matures, and this figure is read live rather than hardcoded.</p>
               )}
               {bridgeRetryResult && <div className="bridge-recovery-state"><b>Bridge recovery</b>{((bridgeRetryResult as { steps?: Array<{ name?: string; state?: string; txHash?: string }> }).steps || []).map((step, index) => <span key={`${step.name}-${index}`} className={step.state || "pending"}><i>{step.state === "success" ? "✓" : step.state === "error" ? "!" : "…"}</i><small>{step.name || `Step ${index + 1}`}</small><em>{step.state || "pending"}</em>{step.txHash && <a href={`${ARC.explorer}/tx/${step.txHash}`} target="_blank" rel="noreferrer">{short(step.txHash)} ↗</a>}</span>)}</div>}
               {status && <p className="status">{status}</p>}
