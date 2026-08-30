@@ -50,6 +50,8 @@ contract ArcPumpCurveV10 is PullFeeVault {
     uint256 public constant CURVE_SUPPLY = 800_000_000 ether;
     uint256 public constant LP_RESERVE = 200_000_000 ether;
     uint256 public constant VIRTUAL_NATIVE = 4_500 ether;
+    // Graduation mint slippage tolerance (2%) — see _graduate().
+    uint256 public constant MINT_SLIPPAGE_BPS = 200;
 
     PumpToken public immutable token;
     IUniswapV3FactoryV10 public immutable v3Factory;
@@ -145,11 +147,36 @@ contract ArcPumpCurveV10 is PullFeeVault {
         (address token0, address token1, uint256 amount0, uint256 amount1) = address(token) < USDC_ERC20
             ? (address(token), USDC_ERC20, tokenLiquidity, usdcLiquidity)
             : (USDC_ERC20, address(token), usdcLiquidity, tokenLiquidity);
+        // The pool is created and initialized right here, in the same
+        // atomic call that graduates the curve — createLaunch() no longer
+        // pre-creates it (see ArcPumpFactoryV10.createLaunch below). That
+        // closes the window ArcPumpV9 left open: a pre-created-but-
+        // uninitialized pool had no access control on initialize(), so
+        // anyone could set an arbitrary starting price before graduation,
+        // and _graduate() would silently accept it (amount0Min/amount1Min
+        // were 0), stranding most of the LP reserve permanently.
         address poolAddress = v3Factory.getPool(token0, token1, GRADUATION_FEE);
         if (poolAddress == address(0)) poolAddress = v3Factory.createPool(token0, token1, GRADUATION_FEE);
         pool = poolAddress;
+        uint160 expectedPrice = _sqrtPriceX96(amount0, amount1);
         (uint160 existingPrice,,,,,,) = IUniswapV3PoolV10(poolAddress).slot0();
-        if (existingPrice == 0) IUniswapV3PoolV10(poolAddress).initialize(_sqrtPriceX96(amount0, amount1));
+        uint256 amount0Min = amount0 - amount0 * MINT_SLIPPAGE_BPS / 10_000;
+        uint256 amount1Min = amount1 - amount1 * MINT_SLIPPAGE_BPS / 10_000;
+        if (existingPrice == 0) {
+            IUniswapV3PoolV10(poolAddress).initialize(expectedPrice);
+        } else {
+            // Defense in depth, not the primary guard: this branch should be
+            // unreachable in normal operation now that the pool is created
+            // here rather than at launch time. It only fires if someone
+            // predicted this launch's deterministic token address and
+            // front-ran both createPool() and initialize() before this
+            // graduation transaction lands. Require the price they set to
+            // be within MINT_SLIPPAGE_BPS of the fair price our own curve
+            // accounting expects; a wildly-off price reverts the mint
+            // (protecting the LP reserve) instead of silently stranding it.
+            uint256 diff = existingPrice > expectedPrice ? existingPrice - expectedPrice : expectedPrice - existingPrice;
+            require(diff * 10_000 <= uint256(expectedPrice) * MINT_SLIPPAGE_BPS, "POOL_PRICE_MANIPULATED");
+        }
         require(token.approve(address(positionManager), tokenLiquidity), "APPROVE_TOKEN");
         require(IERC20(USDC_ERC20).approve(address(positionManager), usdcLiquidity), "APPROVE_USDC");
         (uint256 tokenId,,,) = positionManager.mint(
@@ -161,8 +188,8 @@ contract ArcPumpCurveV10 is PullFeeVault {
                 tickUpper: TICK_UPPER,
                 amount0Desired: amount0,
                 amount1Desired: amount1,
-                amount0Min: 0,
-                amount1Min: 0,
+                amount0Min: amount0Min,
+                amount1Min: amount1Min,
                 recipient: BURN,
                 deadline: block.timestamp
             })
@@ -190,8 +217,6 @@ contract ArcPumpCurveV10 is PullFeeVault {
 
 contract ArcPumpFactoryV10 {
     uint8 public constant ENGINE_VERSION = 10;
-    address private constant USDC_ERC20_CONST = 0x3600000000000000000000000000000000000000;
-    uint24 private constant GRADUATION_FEE_CONST = 3000;
     IUniswapV3FactoryV10 public immutable v3Factory;
     INonfungiblePositionManagerV10 public immutable positionManager;
     uint256 public immutable graduationThreshold;
@@ -222,8 +247,13 @@ contract ArcPumpFactoryV10 {
         ArcPumpCurveV10 curve = new ArcPumpCurveV10(token, v3Factory, positionManager, msg.sender, treasury, graduationThreshold);
         require(token.transfer(address(curve), token.totalSupply()), "CURVE_ALLOCATION");
         address tokenAddr = address(token);
-        (address token0, address token1) = tokenAddr < USDC_ERC20_CONST ? (tokenAddr, USDC_ERC20_CONST) : (USDC_ERC20_CONST, tokenAddr);
-        try v3Factory.createPool(token0, token1, GRADUATION_FEE_CONST) {} catch {}
+        // Deliberately NOT pre-creating the Uniswap V3 pool here (V9 did,
+        // for early bot visibility). A pre-created-but-uninitialized pool
+        // has no access control on initialize(), so anyone could set an
+        // arbitrary starting price before this token ever graduates — see
+        // ArcPumpCurveV10._graduate(), which now creates and initializes
+        // the pool atomically instead. LaunchCreated below is the
+        // discoverable event for bots/indexers.
         uint256 id = ++launchCount;
         tokenByLaunch[id] = tokenAddr;
         curveByLaunch[id] = address(curve);
