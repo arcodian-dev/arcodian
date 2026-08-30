@@ -1,8 +1,8 @@
 {
-  "version": 3,
+  "version": 4,
   "phase": "mainnet-phase-1-usdc-only",
   "deployedAt": "2026-07-30T00:00:00Z",
-  "updatedAt": "2026-08-05T00:53:40Z",
+  "updatedAt": "2026-08-30T03:00:00Z",
   "network": { "name": "Arc Mainnet", "chainId": 5042, "rpc": "https://arc-rpc.stakeme.pro", "explorer": "https://arc.exploreme.pro" },
   "note": "Phase 1 covers only contracts with no external Circle/Pyth/ERC-8004 mainnet dependency. Confirmed by direct on-chain probe 2026-07-30: the native USDC ERC-20 view precompile at 0x3600...0000 IS live on mainnet at the same fixed address as testnet, but the testnet EURC token, Pyth oracle, and ERC-8004 Identity/Reputation/Validation Registry addresses all return no code on mainnet — nobody has deployed/published those there yet. Every contract below needed no address but our own and USDC. 2026-07-31: rpc.blockdaemon.mainnet.arc.io (used for the phase-1 deploy above) started returning 401 with no warning and stayed down — no official Circle RPC/explorer for Arc Mainnet is public yet. arc-rpc.stakeme.pro / arc.exploreme.pro is third-party, unofficial infrastructure, independently verified (chainId, real transaction/balance/bytecode cross-checks against our own known state) but not Circle's own; swap it out the moment an official endpoint exists.",
   "contracts": {
@@ -18,16 +18,20 @@
     "marketPairFactoryLegacyWrongTreasury": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
     "marketUsdcFactory": "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
     "marketUsdcFactoryV9": "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
-    "marketUsdcFactoryV10": "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
+    "marketUsdcFactoryV10": "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3",
+    "marketUsdcFactoryV10LegacyPoolGriefing": "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
     "marketUsdcFactoryV9LegacyWrongTreasury": "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
     "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
+  },
+  "graduationPoolGriefingFix2026_08_30": {
+    "note": "marketUsdcFactoryV10 redeployed: 0xCEc317Ca...19cED (now marketUsdcFactoryV10LegacyPoolGriefing) pre-created each launch's Uniswap V3 pool at launch time, left uninitialized — anyone could call initialize() with an arbitrary starting price before graduation, and the graduation mint used amount0Min/amount1Min of 0, so a front-run price was accepted silently and most of the LP reserve could be stranded permanently. Fixed factory (0xCf93231d...b6feD3) creates and initializes the pool atomically inside _graduate() instead, with a real slippage floor on the mint and a revert if a pool is somehow already mispriced. Same v3Factory/positionManager/treasury/graduationThreshold (12,000 ether) as before — only the graduation mechanics changed. The old factory's existing launches (including \"Architects\") are not migratable and stay indexed/tradeable there; every new launch now goes through the fixed factory. See contracts/test/ArcPumpV10Graduation.t.sol for the regression tests."
   },
   "feeRoutingFix2026_08_02": {
     "note": "Auditing 'does swap fee reach treasury' surfaced two contracts whose immutable `treasury` was set to the deployer EOA (0x7D9b5ab1...40C2) instead of the real treasury (0xF1CBe360...05CaF): marketPairFactory (0 pairs ever created there — clean swap, nothing to migrate) and marketUsdcFactoryV9 (the live 1% bonding-curve fee path — ~0.04 USDC had accrued, withdrawable only by the deployer EOA, and every future launch would have inherited the same bug since treasury is set once per factory and inherited by every curve it spawns). Both replaced with freshly deployed, correctly-configured factories, verified with treasury() reads against both before cutover. The old V9 factory's one live launch (\"Architects\") is not migratable (treasury is immutable per already-deployed curve) and stays indexed as a legacy factory; the old pair factory is simply abandoned (never used). Uninvolved and unaffected: externalV3FeeRouter (0.30% external-pool swap fee) already correctly pointed at the real treasury. Also worth knowing: post-graduation trading fees on Arcodian's OWN V9 pools are NOT collected by treasury at all — the LP position is minted straight to a burn address at graduation (by design, so liquidity can never be pulled/rugged), so that 0.30% accrues to the burned LP forever, not to anyone. The only per-swap fee treasury actually earns today is the external-V3-venue 0.30% and the pre-graduation 1% curve fee."
   },
   "bridge": {
     "addedAt": "2026-07-31T00:00:00Z",
-    "note": "ArcBridgeRouter (1.5% fee on top of Circle's canonical CCTP v2 TokenMessengerV2/MessageTransmitterV2, same deterministic addresses across every chain listed here). Deployed once arc-rpc.stakeme.pro proved Arc Mainnet was actually reachable; a prior deployment had a Solidity interface bug (declared a uint64 nonce return that CCTP v2's real depositForBurn doesn't have) that reverted every single bridge call on every chain since its original deployment — fixed, redeployed, and proven with real transactions on all 5 chains, including a full Arc-to-Base-to-Arc-equivalent round trip and independent third-party wallets bridging on their own. Circle's own TokenMinter.burnLimitsPerMessage caps a single burn OUT of Arc at 1 USDC right now — a network-side rollout limit, not ours.",
+    "note": "ArcBridgeRouter (1.5% fee on top of Circle's canonical CCTP v2 TokenMessengerV2/MessageTransmitterV2, same deterministic addresses across every chain listed here). Deployed once arc-rpc.stakeme.pro proved Arc Mainnet was actually reachable; a prior deployment had a Solidity interface bug (declared a uint64 nonce return that CCTP v2's real depositForBurn doesn't have) that reverted every single bridge call on every chain since its original deployment — fixed, redeployed, and proven with real transactions on all 5 chains, including a full Arc-to-Base-to-Arc-equivalent round trip and independent third-party wallets bridging on their own. Circle's own TokenMinter.burnLimitsPerMessage caps a single burn OUT of Arc — a network-side rollout limit, not ours, that Circle raises over time: 1 USDC when first confirmed 2026-07-31, already 100,000 USDC by 2026-08-30. The frontend reads this limit live instead of hardcoding it (fetchBurnLimitPerMessage in src/bridgeRecovery.ts).",
     "routers": {
       "1": "0x9fc12b77ae41181c98563e5ae5645ae8a0f6eddd",
       "10": "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",

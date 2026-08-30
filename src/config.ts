@@ -452,8 +452,18 @@ export const ARC_MAINNET_CONTRACTS = {
   // goes through this corrected factory.
   // V10: new launches use the fairer 800M curve / 200M LP reserve model.
   // V9 remains readable through MAINNET_LEGACY_FACTORIES for existing users.
+  // 2026-08-30: redeployed (0xCEc317Ca...19cED -> 0xCf93231d...b6feD3) —
+  // the original pre-created each launch's Uniswap V3 pool at launch time,
+  // left uninitialized, so anyone could set an arbitrary starting price
+  // before graduation and strand most of the LP reserve (see
+  // graduation-pool-griefing in mainnet-readiness.json). Fixed version
+  // creates+initializes the pool atomically inside _graduate() instead —
+  // no pre-create window. Same v3Factory/positionManager/treasury,
+  // graduationThreshold still 12,000 ether. Old factory's existing
+  // launches can't be migrated and stay readable via the mainnet indexer's
+  // ARC_MAINNET_FACTORY_V10_LEGACY entry.
   marketUsdcFactoryV9: "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
-  marketUsdcFactoryV10: "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
+  marketUsdcFactoryV10: "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3",
   v3Factory: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
   v3SwapRouter: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
   v3Quoter: "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",
