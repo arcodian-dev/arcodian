@@ -9,7 +9,11 @@ import { Contract, JsonRpcProvider, isAddress } from "ethers";
 
 const ARC = {
   chainId: 5042,
-  rpc: process.env.WIREX_ARC_RPC || "https://wirex-arc-mainnet-01.zeeve.net/qKO3H65PQ/rpc",
+  // No hardcoded fallback: the previous default was a real, access-gated
+  // Zeeve RPC key (confirmed 2026-08-30 — any other path 403s) sitting in
+  // this public repo since 2026-08-04. Falls back to Arcodian's own public
+  // mainnet proxy, which needs no key.
+  rpc: process.env.WIREX_ARC_RPC || "https://arcodian.fun/api/rpc-mainnet.php",
   registry: "0xC067b4cd7d902f0AD64731a7Fa7821C42efBF0A6",
   fundsManagement: "0xc1DB5B459BBaF9aEDB52E71937566856FeE67C4A",
   fundsBuffer: "0xC92531aAc48692F1E2fC8c1Ada8997433B952215",

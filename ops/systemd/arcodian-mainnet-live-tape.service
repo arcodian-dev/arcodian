@@ -8,7 +8,10 @@ Type=simple
 WorkingDirectory=/root/.openclaw/workspace/arc
 Environment=MAINNET_INDEX_PATH=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
 Environment=MAINNET_TAPE_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json
-Environment=ARC_MAINNET_RPC_URL=https://wirex-arc-mainnet-01.zeeve.net/qKO3H65PQ/rpc
+# ARC_MAINNET_RPC_URL lives in /root/.config/arcodian/mainnet-rpc.env, not
+# here — its path segment is an access-gated key, confirmed 2026-08-30 (any
+# other path 403s), and this file is committed to a public repo.
+EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-live-tape.mjs
 ExecStartPost=/bin/cp -f /www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json /www/wwwroot/arcodian.fun/current/data/mainnet-live-tape.json
 Restart=always

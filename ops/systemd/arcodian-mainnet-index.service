@@ -18,7 +18,10 @@ Type=oneshot
 TimeoutStartSec=20min
 WorkingDirectory=/root/.openclaw/workspace/arc
 Environment=MAINNET_INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
-Environment=ARC_MAINNET_RPC_URL=https://wirex-arc-mainnet-01.zeeve.net/qKO3H65PQ/rpc
+# ARC_MAINNET_RPC_URL lives in /root/.config/arcodian/mainnet-rpc.env, not
+# here — its path segment is an access-gated key, confirmed 2026-08-30 (any
+# other path 403s), and this file is committed to a public repo.
+EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-market-index.mjs
 ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
 ExecStartPost=/bin/sh -c 'cmp -s /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json || cp -f /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json'
