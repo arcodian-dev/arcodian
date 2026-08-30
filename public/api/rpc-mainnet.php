@@ -1,17 +1,15 @@
 <?php
-// Same-origin Arc Mainnet JSON-RPC proxy.
-// arc-rpc.stakeme.pro (the only working Arc Mainnet RPC we've found — no
-// official Circle endpoint is public yet, see contracts.mainnet.json) sends
-// back Access-Control-Allow-Origin: https://www.alchemy.com on every
-// response — a leftover/misconfigured header from whatever infra they proxy
-// through. That fails CORS preflight for every browser-side fetch to it
-// directly, silently breaking every direct-RPC read in the frontend (Market
-// live-launch reads, the Landing mainnet radar, Wallet balance checks,
-// AgentPay/ArcPay live reads) while server-side script/cast calls (which
-// don't enforce CORS) looked completely fine — found 2026-07-31 after a
-// freshly-launched mainnet coin didn't show up anywhere in the UI. Routing
-// through this same-origin proxy sidesteps it entirely, same pattern as the
-// existing Arc Testnet proxy (rpc.php).
+// Same-origin Arc Mainnet JSON-RPC proxy. No official Circle endpoint is
+// public yet (see contracts.mainnet.json) — every candidate below is a
+// third-party community node, independently verified live (eth_chainId ==
+// 0x13b2) 2026-08-30. arc-rpc.stakeme.pro, previously the primary, now
+// answers "ARC_MAINNET is not enabled for this app" (an Alchemy-side app
+// config issue on their end, not ours) and is dropped entirely rather than
+// wasting a retry on a deterministic failure. Originally routed through
+// this proxy (rather than called directly from the browser) because
+// stakeme sent back Access-Control-Allow-Origin: https://www.alchemy.com
+// on every response, failing CORS preflight for direct browser fetches —
+// same pattern as the existing Arc Testnet proxy (rpc.php).
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -43,8 +41,8 @@ $endpoints = [
     'headers' => ['Content-Type: application/json'],
   ],
   [
-    'name' => 'radar-railway',
-    'url' => 'https://radar-api-rpc.up.railway.app',
+    'name' => 'thirdweb-anon',
+    'url' => 'https://5042.rpc.thirdweb.com/',
     'headers' => ['Content-Type: application/json'],
   ],
 ];
@@ -52,9 +50,18 @@ $endpoints = [
 // blocks behind the other two endpoints while still answering every eth_call
 // with a stale-but-HTTP-200 result, which (combined with a fixed try-order
 // that always hit it first) permanently masked fresher data no matter how
-// many times a read was retried. Shuffling spreads load across the
-// remaining two instead of pinning to whichever is listed first, same
-// pattern as the testnet proxy (rpc.php) already uses.
+// many times a read was retried. radar-railway (radar-api-rpc.up.railway.app)
+// removed 2026-08-30 — that Railway app no longer exists ("Application not
+// found", a deterministic 404 on every single request), so it had been
+// silently burning a full connect-timeout on every proxied call whenever
+// shuffle() picked it first, for however long it's been dead. thirdweb's
+// public anonymous endpoint added as a second, independently-hosted
+// candidate (works without a client ID, unlike VITE_THIRDWEB_CLIENT_ID
+// elsewhere in this codebase) — occasionally rate-limited/errors on its own,
+// which is fine, it just falls through to railway-warp same as any other
+// failed candidate. Shuffling spreads load across both instead of pinning
+// to whichever is listed first, same pattern as the testnet proxy (rpc.php)
+// already uses.
 shuffle($endpoints);
 
 $attempts = 4;
