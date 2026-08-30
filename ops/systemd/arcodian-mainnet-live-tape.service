@@ -1,6 +1,12 @@
 [Unit]
 Description=Arc Mainnet one-second live trade tape
-After=network-online.target arcodian-mainnet-index.service
+# Deliberately NOT After=arcodian-mainnet-index.service (removed 2026-08-30):
+# that unit now runs every 30s and, once healthy, is rarely fully idle, so a
+# strict ordering dependency queued this unit's start job behind it
+# indefinitely — a restart never actually happened. The tape script already
+# tolerates a missing/stale index file (reads it in a try/catch), so the
+# ordering was never load-bearing.
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -13,7 +19,13 @@ Environment=MAINNET_TAPE_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-li
 # other path 403s), and this file is committed to a public repo.
 EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-live-tape.mjs
-ExecStartPost=/bin/cp -f /www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json /www/wwwroot/arcodian.fun/current/data/mainnet-live-tape.json
+# ExecStartPost cp removed 2026-08-30: current/data is a symlink straight to
+# shared/data (see DEPLOYMENT.md), so this had become a same-file copy —
+# `cp` refuses that with "are the same file" (exit 1), which failed the
+# whole unit's start and crash-looped it every 2s (RestartSec) from the
+# moment current/data became that symlink until this fix, unnoticed because
+# the previous long-lived process (started before the symlink existed) kept
+# running throughout and never needed to restart.
 Restart=always
 RestartSec=2s
 User=root

@@ -15,7 +15,17 @@ Keep the previous release directory and webroot target until the new release pas
 
 ## Shared live-data symlinks (required on every new release)
 
-The webroot `data` and `uploads` directories must be symlinked (whole directory, not copied) to `/www/wwwroot/arcodian.fun/shared/{data,uploads}` so systemd-timer indexers keep serving live data across deploys without a rebuild. **`dist/` ships a real `data/` directory of its own (build-time seed files), so `ln -sfn shared/data "$REL/data"` silently nests the symlink inside it (`$REL/data/data`) instead of replacing it** — always `rm -rf "$REL/data"` first. (Found and fixed live 2026-08-07: a deploy did exactly this, so `mainnet-live-tape.json` — written once into `current/data/` by that service's `ExecStartPost` only at its own startup, not on every tick — never reached the new release, and the trading terminal silently fell back to its "Offline" indicator until the symlink was corrected.)
+The webroot `data` and `uploads` directories must be symlinked (whole directory, not copied) to `/www/wwwroot/arcodian.fun/shared/{data,uploads}` so systemd-timer indexers keep serving live data across deploys without a rebuild. **`dist/` ships a real `data/` directory of its own (build-time seed files), so `ln -sfn shared/data "$REL/data"` silently nests the symlink inside it (`$REL/data/data`) instead of replacing it** — always `rm -rf "$REL/data"` first. (Found and fixed live 2026-08-07: a deploy did exactly this, so `mainnet-live-tape.json` — written once into `current/data/` by that service's `ExecStartPost` only at its own startup, not on every tick — never reached the new release, and the trading terminal silently fell back to its "Offline" indicator until the symlink was corrected. That same fix later made `arcodian-mainnet-live-tape.service`'s `ExecStartPost=cp -f shared/data/... current/data/...` a same-file copy once `current/data` really was the `shared/data` symlink — `cp` refuses that and crash-looped the whole unit every restart; the ExecStartPost was removed 2026-08-30 since the symlink alone already keeps them in sync.)
+
+## Secrets outside the repo
+
+`/root/.config/arcodian/mainnet-rpc.env` (mode 600, not in git) must exist on the server before `arcodian-mainnet-index.service` / `arcodian-mainnet-live-tape.service` can start — it supplies `ARC_MAINNET_RPC_URL`, a Zeeve endpoint whose path segment is an access-gated key (confirmed 2026-08-30: any other path 403s). A version of this key was committed to the repo from 2026-08-04 until 2026-08-30 — rotate it from the Zeeve dashboard if that hasn't happened yet, since anyone who cloned the repo in that window still has it. Format:
+
+```
+ARC_MAINNET_RPC_URL=https://<zeeve-host>/<key>/rpc
+```
+
+Same pattern as the existing `/root/.config/arcodian/lend-keeper.json` (`PRIVATE_KEY` for `arcodian-lend-pyth-keeper.service`) — real secrets live outside the repo, units load them via `EnvironmentFile=` or a `jq` read, never a literal `Environment=` line.
 
 `developers/` is copied into each release from `public/developers/` at build time (static docs + seed JSON), but six files under it are continuously rewritten by indexer timers and MUST be re-symlinked into every new release or they freeze at deploy time and silently serve stale data to real users (agent/reputation/job pages read these client-side):
 
