@@ -135,6 +135,14 @@ broadcasting, same pattern as the testnet section above):
 | ArcPumpFactoryV8 (USDC) | `0x508FDa9F366E734a45fE7bc3a98F2909754633B7` |
 | ArcRouter | `0x4A5eF82818F674452690539D75517b4604981Bed` |
 
+This table is the original 2026-07-30 deploy record — several of these
+addresses have since been superseded by a redeploy (ArcPairFactoryV2 and
+ArcPumpFactoryV8 for a treasury-wiring bug fixed 2026-08-02; ArcPay for the
+same bug class, caught and fixed 2026-09-05). `public/developers/
+contracts.mainnet.json` is the source of truth for what's actually live
+today; its `*LegacyWrongTreasury` keys and `feeRoutingFix*` notes point back
+at this history.
+
 Verified on chain, not from script output: `ArcPay.treasury()` and
 `ArcAgentPayFactory.arcPay()` wired correctly; `ArcPairFactoryV2.graduationAuthority()`
 == the hub, hub `sealed_()` == true with exactly 1 member (USDC only — the

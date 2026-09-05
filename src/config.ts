@@ -427,7 +427,19 @@ export const ARC_MAINNET = {
 
 export const ARC_MAINNET_CONTRACTS = {
   usdc: ARC_MAINNET.nativeToken,
-  arcPay: "0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",
+  // Redeployed 2026-09-05 — the original (0x1dE9822D...dB7C, now
+  // arcPayLegacyWrongTreasury) had its immutable treasury set to the
+  // deployer EOA (0x7D9b5ab1...40C2) instead of the real treasury
+  // (0xF1CBe360...05CaF), the same class of bug fixed 2026-08-02 for
+  // marketPairFactory/marketUsdcFactoryV9. Caught before real usage: only
+  // 0.00003 USDC had accrued. Verified live: treasury() reads the real
+  // multisig on the new deployment. This is the standalone Arc Pay product
+  // (Wallet.tsx/ArcPayLanding.tsx) — the two mainnet Agent Pay factories
+  // below still call the OLD ArcPay internally (immutable per-factory
+  // reference, can't be repointed without redeploying them too), but both
+  // have vaultCount() 0 on mainnet, so no real invoice has ever gone
+  // through that path either.
+  arcPay: "0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2",
   agentPayFactory: "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
   adminTimelock: "0xba953bc1282d0bffe22b4f769822d20900625594",
   sessionKeyAccount: "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",

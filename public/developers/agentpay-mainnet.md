@@ -8,7 +8,13 @@ or create a V6 vault.
 ## Mainnet contracts
 
 - Network: Arc Mainnet, chain `5042`
-- ArcPay settlement: `0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C`
+- ArcPay settlement: `0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C` (both factories' immutable
+  reference — this is NOT the current standalone Arc Pay contract, which was
+  redeployed 2026-09-05 to `0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2` after
+  this one's treasury was found pointing at the deployer EOA instead of the
+  multisig. Repointing a factory here would need redeploying it too; moot for
+  now since both factories report `vaultCount() == 0` on mainnet — no vault,
+  and so no payment, has ever gone through either one.)
 - Agent Pay V2 factory: `0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69`
 - Additive V6 factory: `0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB`
 
