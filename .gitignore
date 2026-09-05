@@ -18,6 +18,11 @@ contracts/cache/
 *.log
 public/developers/agents.json.state.json
 public/developers/jobs.json.state.json
+public/developers/services.json.state.json
+
+# third-party agent-framework noise dropped into the tree by local tooling —
+# never part of this project, never meant to ship
+.claude-flow/
 
 # scratch / generated — not source
 tmp/
