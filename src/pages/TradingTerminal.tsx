@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { ARC_MAINNET } from "../config";
@@ -117,9 +117,9 @@ function PoolInfo({ market }: { market: MarketRecord }) {
     <div className="poolinfo-rows">
       <div><span>Venue</span><b>{market.dex || (market.graduated === false ? "Bonding curve" : "—")}</b></div>
       <div><span>Fee tier</span><b>{feePct ? `${feePct}%` : market.graduated === false ? "1.00% curve" : "—"}</b></div>
-      <div><span>Liquidity</span><b>{money(usdc(market.liquidity))}</b></div>
-      <div><span>24h volume</span><b>{money(usdc(market.volume24h))}</b></div>
-      <div><span>Market cap</span><b>{money(usdc(market.marketCap))}</b></div>
+      <div><span>Liquidity</span><b>{money(usdc(market.liquidity, market.globalPool ? 6 : 18))}</b></div>
+      <div><span>24h volume</span><b>{money(usdc(market.volume24h, market.globalPool ? 6 : 18))}</b></div>
+      <div><span>Market cap</span><b>{money(usdc(market.marketCap, market.globalPool ? 6 : 18))}</b></div>
     </div>
     <div className="poolinfo-links">
       <a href={`${ARC_MAINNET.explorer}/address/${market.address}`} target="_blank" rel="noreferrer">Token contract ↗</a>
@@ -127,6 +127,22 @@ function PoolInfo({ market }: { market: MarketRecord }) {
     </div>
     <p className="poolinfo-note">Onchain pool state — Arc markets are AMM-priced, so there's no order book to show.</p>
   </aside>;
+}
+
+// Shown for the ~1-2s the index snapshot takes to resolve. A shimmer in the
+// exact shape of the real layout reads as "already loading your terminal"
+// instead of the blank-then-pop a plain loading string gives — the terminal
+// feeling instant is as much about what's on screen in that first second as
+// it is about the actual data latency.
+function TerminalSkeleton() {
+  return <div className="terminal-skeleton">
+    <div className="skel-header"><div className="skel s-brand" /><div className="skel s-price" /><div className="skel s-metrics" /></div>
+    <div className="skel-layout">
+      <div className="skel-main"><div className="skel s-chart" /><div className="skel s-trades" /></div>
+      <div className="skel s-pool" />
+      <div className="skel s-execution" />
+    </div>
+  </div>;
 }
 
 export default function TradingTerminal({ account, activeProvider, chainId, connect }: {
@@ -142,6 +158,8 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
   const [tapeHealth, setTapeHealth] = useState<"live" | "delayed" | "offline">("delayed");
   const [timeframe, setTimeframe] = useState("5m");
   const [activeSide, setActiveSide] = useState<"buy" | "sell">("buy");
+  const [priceFlash, setPriceFlash] = useState<"up" | "down" | null>(null);
+  const lastPriceRef = useRef(0);
   const mobileChain = chainId === 5042;
 
   // Metadata (price, mcap, liquidity, dex/fee, and an initial trade history
@@ -220,12 +238,26 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
 
   const price = market?.price || tradePrice(tapeTrades.at(-1), Boolean(market?.globalPool)) || 0;
   const feedLabel = tapeHealth === "live" ? "Live" : tapeHealth === "delayed" ? "Delayed" : "Offline";
-  if (marketLoading) return <main className="trading-terminal-page"><div className="terminal-data-empty">Loading selected Arc Mainnet market…</div></main>;
+  // A ticking number is the one signal a trader trusts more than a "Live"
+  // badge — flashing the exact digits that moved (briefly, then settling
+  // back) reads as "this terminal is actually watching the chain" in a way
+  // a static price never does, with no extra polling cost since it's driven
+  // by the price this component already recomputes every tick.
+  useEffect(() => {
+    if (price > 0 && lastPriceRef.current > 0 && price !== lastPriceRef.current) {
+      setPriceFlash(price > lastPriceRef.current ? "up" : "down");
+      const timer = window.setTimeout(() => setPriceFlash(null), 620);
+      lastPriceRef.current = price;
+      return () => window.clearTimeout(timer);
+    }
+    if (price > 0) lastPriceRef.current = price;
+  }, [price]);
+  if (marketLoading) return <main className="trading-terminal-page"><TerminalSkeleton /></main>;
   if (!market) return <main className="trading-terminal-page"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></main>;
   return <main className="trading-terminal-page">
     <header className="terminal-header">
       <a className="terminal-brand" href="/market"><span>{market.image ? <img src={imageUrl(market.image)} alt="" /> : market.symbol.slice(0, 2)}</span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
-      <div className="terminal-price"><strong>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
+      <div className="terminal-price"><strong className={priceFlash ? `flash-${priceFlash}` : ""}>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em className={market.priceChange24h == null ? "" : market.priceChange24h >= 0 ? "up" : "down"}>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
       <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap, market.globalPool ? 6 : 18))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h, market.globalPool ? 6 : 18))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity, market.globalPool ? 6 : 18))}</b></span></div>
       <div className="terminal-actions"><span className={wrongNetwork ? "terminal-network wrong" : mobileChain ? "terminal-network online" : "terminal-network"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>
     </header>

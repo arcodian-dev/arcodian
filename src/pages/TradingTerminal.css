@@ -7,3 +7,84 @@
 @media(max-width:1180px){.terminal-layout{grid-template-columns:minmax(0,1fr) 270px}.terminal-execution{grid-column:1/-1;max-height:none}.terminal-execution .swap-pro{max-width:620px;margin:auto}.terminal-main-column{grid-template-rows:minmax(0,1fr) 190px}.terminal-poolinfo{height:auto}.terminal-layout{height:auto;min-height:calc(100dvh - 62px);overflow:auto}.trading-terminal-page{height:auto;min-height:100dvh;overflow:auto}}
 @media(max-width:760px){.trading-terminal-page{min-height:100dvh}.terminal-header{gap:9px;padding:8px 10px}.terminal-price{order:3;width:100%;padding-top:3px}.terminal-metrics{display:none}.terminal-actions{margin-left:auto}.terminal-actions a{display:none}.terminal-network{display:none}.terminal-layout{display:flex;flex-direction:column;padding:6px;gap:6px}.terminal-main-column{display:contents}.terminal-chart-card{height:380px;min-height:380px;order:1}.terminal-poolinfo{height:360px;min-height:360px;order:2}.terminal-execution{order:3}.terminal-trades{order:4;height:420px;min-height:420px}.trades-head,.trade-row{grid-template-columns:54px 1fr 1fr 1fr 60px;padding-inline:8px;font-size:9px}.terminal-chart-footer span:last-child{display:none}.terminal-brand small{display:none}}
 @media(max-width:420px){.terminal-brand b{font-size:13px}.terminal-wallet{font-size:9px}.terminal-chart-card{height:320px;min-height:320px}.terminal-poolinfo{height:320px;min-height:320px}.terminal-toolbar{padding-inline:5px}.terminal-toolbar button{padding-inline:6px}}
+
+/* ---------------------------------------------------------------------- */
+/* Premium pass, 2026-09-05 — same layout/data, more depth + live-feel.   */
+/* A trading terminal earns "premium" by looking like it is actually      */
+/* watching the chain, not by decoration: the signature here is the price */
+/* flashing the instant a tick lands, not a new color scheme.             */
+/* ---------------------------------------------------------------------- */
+
+.trading-terminal-page{
+  background:
+    radial-gradient(1100px 520px at 14% -10%, rgba(38,217,138,.07), transparent 60%),
+    radial-gradient(900px 460px at 100% 0%, rgba(38,217,138,.04), transparent 55%),
+    #05070a;
+}
+.terminal-header{
+  position:relative;
+  background:linear-gradient(180deg,#0c1119,#080b11);
+  backdrop-filter:blur(6px);
+}
+.terminal-header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(38,217,138,.35),transparent)}
+
+.terminal-price strong{font-variant-numeric:tabular-nums;padding:2px 6px;margin:-2px -6px;border-radius:6px;transition:background-color .55s ease,color .55s ease}
+.terminal-price strong.flash-up{background:rgba(38,217,138,.22);color:#7cf0bb}
+.terminal-price strong.flash-down{background:rgba(255,79,106,.22);color:#ff9caa}
+.terminal-price em{color:#6f7b8c}
+.terminal-price em.up{color:#26d98a}
+.terminal-price em.down{color:#ff4f6a}
+
+.terminal-card,.terminal-poolinfo{
+  background:linear-gradient(180deg,#0a0f16,#070a0f);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.03),0 10px 24px -18px rgba(0,0,0,.7);
+  transition:border-color .2s ease;
+}
+.terminal-chart-card{position:relative}
+.terminal-chart-card::before{content:"";position:absolute;left:0;right:0;top:0;height:1px;background:linear-gradient(90deg,transparent,rgba(38,217,138,.28),transparent);pointer-events:none}
+
+.terminal-toolbar button{transition:background-color .15s ease,color .15s ease}
+.terminal-toolbar button.active{box-shadow:0 0 0 1px rgba(38,217,138,.25) inset}
+
+.streaming{position:relative}
+.streaming i{position:relative}
+.streaming.live i::after{
+  content:"";position:absolute;inset:-3px;border-radius:50%;border:1px solid #26d98a;
+  animation:terminalPing 1.8s cubic-bezier(.2,.7,.3,1) infinite;
+}
+@keyframes terminalPing{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(2.6)}}
+
+.trade-row{border-left:2px solid transparent;transition:background-color .15s ease,border-color .15s ease}
+.trade-row:hover{background:rgba(255,255,255,.02)}
+.trade-row:has(b.buy){border-left-color:rgba(38,217,138,.35)}
+.trade-row:has(b.sell){border-left-color:rgba(255,79,106,.35)}
+
+.execution-tabs button{transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease}
+.execution-tabs button.active.buy{box-shadow:0 0 0 1px rgba(38,217,138,.3) inset,0 0 18px -8px rgba(38,217,138,.55)}
+.execution-tabs button.active.sell{box-shadow:0 0 0 1px rgba(255,79,106,.3) inset,0 0 18px -8px rgba(255,79,106,.55)}
+.terminal-execution .swap-primary{transition:filter .15s ease,transform .1s ease}
+.terminal-execution .swap-primary:not(:disabled):hover{filter:brightness(1.08)}
+.terminal-execution .swap-primary:not(:disabled):active{transform:translateY(1px)}
+
+.poolinfo-rows div{transition:background-color .15s ease}
+.poolinfo-rows div:hover{background:rgba(255,255,255,.02)}
+
+/* Loading skeleton — mirrors the real grid so the terminal never shows a
+   blank canvas while the first index snapshot resolves. */
+.terminal-skeleton{height:100dvh;display:flex;flex-direction:column;padding:8px;gap:8px}
+.skel{position:relative;overflow:hidden;border-radius:10px;background:#0b0f16;border:1px solid #161d29}
+.skel::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.045) 50%,transparent 70%);animation:skelShimmer 1.6s ease-in-out infinite}
+@keyframes skelShimmer{0%{transform:translateX(-60%)}100%{transform:translateX(60%)}}
+.skel-header{display:flex;align-items:center;gap:16px;min-height:46px;padding:8px 6px}
+.s-brand{width:120px;height:22px}.s-price{width:140px;height:22px}.s-metrics{flex:1;height:26px;max-width:260px;margin-left:auto}
+.skel-layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 260px 310px;gap:8px}
+.skel-main{display:grid;grid-template-rows:minmax(0,1fr) 225px;gap:8px;min-width:0}
+.s-chart{min-height:0}.s-trades{height:225px}.s-pool{height:100%}.s-execution{height:100%}
+@media(max-width:1180px){.skel-layout{grid-template-columns:minmax(0,1fr) 270px}.s-execution{display:none}}
+@media(max-width:760px){.skel-layout{display:flex;flex-direction:column}.s-chart{height:380px}.s-trades{height:160px}.s-pool{height:160px}.s-execution{display:none}}
+
+@media(prefers-reduced-motion:reduce){
+  .streaming.live i::after{animation:none;opacity:0}
+  .skel::after{animation:none}
+  .terminal-price strong{transition:none}
+}
