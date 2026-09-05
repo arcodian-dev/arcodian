@@ -25,12 +25,18 @@ const ARC_PAY_ABI = [
   "function payments(bytes32) view returns(address payer,address merchant,uint128 amount,uint128 fee,uint64 paidAt,bool refunded)",
   "function refund(bytes32) payable",
 ];
-// ArcPay's mainnet deploy block (2026-07-30) — there's no mainnet arcpay-stats
-// indexer yet (arcpay-stats.mjs only covers Arc Testnet), so mainnet reads
+// ArcPay's mainnet deploy block — there's no mainnet arcpay-stats indexer yet
+// (arcpay-stats.mjs only covers Arc Testnet), so mainnet reads
 // InvoicePaid/PaymentRefunded events straight from chain instead. Cheap for
 // now since the mainnet contract is fresh with very few invoices; revisit
-// with a real indexer once that stops being true.
-const ARC_PAY_MAINNET_FROM_BLOCK = 12943234;
+// with a real indexer once that stops being true. Updated 2026-09-05 to the
+// redeployed contract's block (19318328) — left at the original 2026-07-30
+// contract's block (12943234) this would rescan ~6.4M empty blocks (159
+// chunks of 40k) against the NEW contract on every page load before ever
+// reaching real data, since a fresh CREATE doesn't inherit the old one's
+// history. The ~0.00003 USDC of test activity on the old contract no longer
+// shows here; nothing beyond that was ever settled through it.
+const ARC_PAY_MAINNET_FROM_BLOCK = 19318328;
 
 export default function ArcPayLanding({ account, chainId, activeProvider, connect }: Props) {
   // Bridge and the USDC-only Market/Launchpad proved Arc Mainnet works

@@ -32,11 +32,11 @@ export const ARC_AGENT_PAY={chainId:5042002,factory:"0x27c722F643ea787f7425449AF
 // Arc Mainnet base Agent Pay is live for the non-identity V2 vault flow.
 // Passport, Jobs, Reputation, V5 relayed invoices, and V6 batch vaults remain
 // testnet-only until their own mainnet dependencies and release gates clear.
-// arcPay below is this factory's own immutable dependency, not the current
-// standalone Arc Pay contract (redeployed 2026-09-05 to fix a treasury bug —
-// see contracts.mainnet.json's arcPay field) — moot in practice since this
-// factory's vaultCount() is 0 on mainnet, so nothing has settled through it.
-export const ARC_AGENT_PAY_MAINNET={chainId:5042,factory:"0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",arcPay:"0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",network:"Arc Mainnet",status:"v2-live"};
+// factory/arcPay redeployed 2026-09-05: the original factory's immutable
+// arcPay reference was stuck on an ArcPay whose treasury was the deployer
+// EOA, not the multisig — vaultCount() was 0 on the old factory, so nothing
+// needed migrating.
+export const ARC_AGENT_PAY_MAINNET={chainId:5042,factory:"0xbFb5b17daE316f1d73f8A7ED456122d132BC5DB6",arcPay:"0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2",network:"Arc Mainnet",status:"v2-live"};
 const ABI=["function policies(address) view returns(uint128 perPayment,uint128 dailyLimit,uint128 spentToday,uint64 validUntil,uint32 spendDay,bool enabled)","function merchantAllowed(address,address) view returns(bool)","function payInvoice(bytes32,address,uint256,uint64,bytes32)"];
 export async function inspectPolicy(provider,vault,agent,merchant){const c=new Contract(vault,ABI,provider);const [p,allowed,balance]=await Promise.all([c.policies(agent),c.merchantAllowed(agent,merchant),provider.getBalance(vault)]);return {enabled:p.enabled,allowed,balance,perPayment:p.perPayment,dailyLimit:p.dailyLimit,spentToday:p.spentToday,validUntil:Number(p.validUntil)};}
 export async function payBoundedInvoice(signer,{vault,merchant,amount,invoiceId,memo="",expiresIn=3600}){const c=new Contract(vault,ABI,signer);const key=/^0x[0-9a-fA-F]{64}$/.test(invoiceId)?invoiceId:id(invoiceId);return c.payInvoice(key,merchant,parseEther(String(amount)),Math.floor(Date.now()/1000)+expiresIn,id(memo||invoiceId));}

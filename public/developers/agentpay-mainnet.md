@@ -8,15 +8,17 @@ or create a V6 vault.
 ## Mainnet contracts
 
 - Network: Arc Mainnet, chain `5042`
-- ArcPay settlement: `0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C` (both factories' immutable
-  reference — this is NOT the current standalone Arc Pay contract, which was
-  redeployed 2026-09-05 to `0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2` after
-  this one's treasury was found pointing at the deployer EOA instead of the
-  multisig. Repointing a factory here would need redeploying it too; moot for
-  now since both factories report `vaultCount() == 0` on mainnet — no vault,
-  and so no payment, has ever gone through either one.)
-- Agent Pay V2 factory: `0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69`
-- Additive V6 factory: `0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB`
+- ArcPay settlement: `0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2`
+- Agent Pay V2 factory: `0xbFb5b17daE316f1d73f8A7ED456122d132BC5DB6`
+- Additive V6 factory: `0x304f7ACFDB096358d89Da8762721207e0B5B1433`
+
+All three redeployed 2026-09-05: the original ArcPay
+(`0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C`) had its immutable treasury set
+to the deployer EOA instead of the multisig, and both factories held an
+immutable reference to that same contract — fixing the factories meant
+redeploying them too. Both original factories reported `vaultCount() == 0`
+on mainnet, so no vault (and therefore no payment) had ever gone through
+either one; nothing needed migrating.
 
 ## User flow
 

@@ -1,16 +1,18 @@
 {
-  "version": 5,
+  "version": 6,
   "phase": "mainnet-phase-1-usdc-only",
   "deployedAt": "2026-07-30T00:00:00Z",
-  "updatedAt": "2026-09-05T16:40:00Z",
+  "updatedAt": "2026-09-05T17:00:00Z",
   "network": { "name": "Arc Mainnet", "chainId": 5042, "rpc": "https://arc-rpc.stakeme.pro", "explorer": "https://arc.exploreme.pro" },
   "note": "Phase 1 covers only contracts with no external Circle/Pyth/ERC-8004 mainnet dependency. Confirmed by direct on-chain probe 2026-07-30: the native USDC ERC-20 view precompile at 0x3600...0000 IS live on mainnet at the same fixed address as testnet, but the testnet EURC token, Pyth oracle, and ERC-8004 Identity/Reputation/Validation Registry addresses all return no code on mainnet — nobody has deployed/published those there yet. Every contract below needed no address but our own and USDC. 2026-07-31: rpc.blockdaemon.mainnet.arc.io (used for the phase-1 deploy above) started returning 401 with no warning and stayed down — no official Circle RPC/explorer for Arc Mainnet is public yet. arc-rpc.stakeme.pro / arc.exploreme.pro is third-party, unofficial infrastructure, independently verified (chainId, real transaction/balance/bytecode cross-checks against our own known state) but not Circle's own; swap it out the moment an official endpoint exists.",
   "contracts": {
     "usdc": "0x3600000000000000000000000000000000000000",
     "arcPay": "0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2",
     "arcPayLegacyWrongTreasury": "0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",
-    "agentPayFactory": "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
-    "agentPayFactoryV6": "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB",
+    "agentPayFactory": "0xbFb5b17daE316f1d73f8A7ED456122d132BC5DB6",
+    "agentPayFactoryLegacyWrongArcPay": "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
+    "agentPayFactoryV6": "0x304f7ACFDB096358d89Da8762721207e0B5B1433",
+    "agentPayFactoryV6LegacyWrongArcPay": "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB",
     "adminTimelock": "0xba953bc1282d0bffe22b4f769822d20900625594",
     "governanceMultisig": "0xC67C731E16C4D45809EE5f50511FE5bB75008FA0",
     "sessionKeyAccount": "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
@@ -25,7 +27,7 @@
     "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
   },
   "feeRoutingFix2026_09_05": {
-    "note": "A full fee-routing sweep (does every fee-charging contract's treasury actually reach 0xF1CBe360...05CaF?) found ArcPay mainnet's immutable treasury still set to the deployer EOA (0x7D9b5ab1...40C2) — the same bug class as the 2026-08-02 fix below, just not caught in that sweep since ArcPay wasn't audited then. Only 0.00003 USDC had accrued (no real invoice volume yet). Redeployed to 0x69af28c7...3A9A2 with treasury correctly set to the multisig, verified live via treasury()/FEE_BPS() reads against the new contract, not the deploy script's log. arcPay above now points at the fixed contract; the old one is arcPayLegacyWrongTreasury. Everything else checked in the same sweep was already correct: marketUsdcFactoryV10, marketPairFactory, externalV3FeeRouter, and all 5 ArcBridgeRouter deployments (Arc/Ethereum/Optimism/Arbitrum/Base) all read back the real treasury. Known, unfixed, zero-impact: agentPayFactory and agentPayFactoryV6 both have an immutable internal reference to the OLD ArcPay (set at their own construction, can't be repointed without redeploying those factories too) — but both report vaultCount() 0 on Arc Mainnet, so no real Agent Pay invoice has ever settled through either path."
+    "note": "A full fee-routing sweep (does every fee-charging contract's treasury actually reach 0xF1CBe360...05CaF?) found ArcPay mainnet's immutable treasury still set to the deployer EOA (0x7D9b5ab1...40C2) — the same bug class as the 2026-08-02 fix below, just not caught in that sweep since ArcPay wasn't audited then. Only 0.00003 USDC had accrued (no real invoice volume yet). Redeployed to 0x69af28c7...3A9A2 with treasury correctly set to the multisig, verified live via treasury()/FEE_BPS() reads against the new contract, not the deploy script's log. arcPay above now points at the fixed contract; the old one is arcPayLegacyWrongTreasury. Everything else checked in the same sweep was already correct: marketUsdcFactoryV10, marketPairFactory, externalV3FeeRouter, and all 5 ArcBridgeRouter deployments (Arc/Ethereum/Optimism/Arbitrum/Base) all read back the real treasury. Same day, follow-up: agentPayFactory and agentPayFactoryV6 both held an immutable internal reference to the OLD ArcPay (set at their own construction) — redeployed both against the new ArcPay too (0xbFb5b17d...C5DB6 and 0x304f7ACF...B1433), verified via arcPay()/passport() reads. Both old factories had vaultCount() 0 on Arc Mainnet, so nothing needed migrating; they're now agentPayFactoryLegacyWrongArcPay / agentPayFactoryV6LegacyWrongArcPay. Source verification on all of today's redeployed contracts (ArcPay, both Agent Pay factories) is pending — Arc's own third-party explorer's verify endpoint has been erroring server-side since before this session; retry once it's fixed, alongside the other still-unverified contracts tracked in verification-status.json."
   },
   "graduationPoolGriefingFix2026_08_30": {
     "note": "marketUsdcFactoryV10 redeployed: 0xCEc317Ca...19cED (now marketUsdcFactoryV10LegacyPoolGriefing) pre-created each launch's Uniswap V3 pool at launch time, left uninitialized — anyone could call initialize() with an arbitrary starting price before graduation, and the graduation mint used amount0Min/amount1Min of 0, so a front-run price was accepted silently and most of the LP reserve could be stranded permanently. Fixed factory (0xCf93231d...b6feD3) creates and initializes the pool atomically inside _graduate() instead, with a real slippage floor on the mint and a revert if a pool is somehow already mispriced. Same v3Factory/positionManager/treasury/graduationThreshold (12,000 ether) as before — only the graduation mechanics changed. The old factory's existing launches (including \"Architects\") are not migratable and stay indexed/tradeable there; every new launch now goes through the fixed factory. See contracts/test/ArcPumpV10Graduation.t.sol for the regression tests."

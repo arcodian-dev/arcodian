@@ -433,14 +433,16 @@ export const ARC_MAINNET_CONTRACTS = {
   // (0xF1CBe360...05CaF), the same class of bug fixed 2026-08-02 for
   // marketPairFactory/marketUsdcFactoryV9. Caught before real usage: only
   // 0.00003 USDC had accrued. Verified live: treasury() reads the real
-  // multisig on the new deployment. This is the standalone Arc Pay product
-  // (Wallet.tsx/ArcPayLanding.tsx) — the two mainnet Agent Pay factories
-  // below still call the OLD ArcPay internally (immutable per-factory
-  // reference, can't be repointed without redeploying them too), but both
-  // have vaultCount() 0 on mainnet, so no real invoice has ever gone
-  // through that path either.
+  // multisig on the new deployment. agentPayFactory/agentPayFactoryV6 below
+  // were also redeployed the same day to point at this contract instead of
+  // the old one — both had vaultCount() 0 on mainnet, so nothing needed
+  // migrating.
   arcPay: "0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2",
-  agentPayFactory: "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
+  // Redeployed 2026-09-05 alongside arcPay above — this factory's own
+  // immutable arcPay reference pointed at the old, wrong-treasury ArcPay.
+  // Old factory (now agentPayFactoryLegacyWrongArcPay) had vaultCount() 0,
+  // so no vault ever existed there to migrate.
+  agentPayFactory: "0xbFb5b17daE316f1d73f8A7ED456122d132BC5DB6",
   adminTimelock: "0xba953bc1282d0bffe22b4f769822d20900625594",
   sessionKeyAccount: "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
   marketGraduationHub: "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
@@ -507,7 +509,9 @@ export const ARC_MAINNET_CONTRACTS = {
   agentPassport: "0x1709E8986B0b30B7FBaAd05971e6f8530742070A",
   agentJobs: "0xc1e7c3B9ADc079628A231636CB9c0d51478B0e87",
   agentPayFactoryV3: "0xfB23899361D6FcC44cc75f9b07C9f66AE8A6F0Ae",
-  agentPayFactoryV6: "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB",
+  // Redeployed 2026-09-05, same reason as agentPayFactory above. Old
+  // factory (now agentPayFactoryV6LegacyWrongArcPay) had vaultCount() 0.
+  agentPayFactoryV6: "0x304f7ACFDB096358d89Da8762721207e0B5B1433",
 } as const;
 
 export const BRIDGE_TESTNETS = [
