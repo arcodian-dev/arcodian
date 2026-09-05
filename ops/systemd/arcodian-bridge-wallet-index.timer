@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Arcodian per-wallet bridge history index every 5 minutes
+
+[Timer]
+OnBootSec=120
+OnUnitActiveSec=300
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ARC_MAINNET_CONTRACTS } from "../config";
 import "./Developers.css";
 
 const REGISTRY="/developers/contracts.json";
@@ -40,10 +41,21 @@ const entries=[
 // testnet-only (hero badge, chain id, registry below) with mainnet only one
 // link inside a collapsed drawer — easy to mistake for "still testnet" at a
 // glance, which is exactly the confusion this section exists to prevent.
+//
+// Addresses below that also live in config.ts's ARC_MAINNET_CONTRACTS are
+// read from there instead of duplicated as literals — this page had drifted
+// out of sync with it (found 2026-09-05): "USDC-only Market Factory" was
+// still showing 0x508FDa9F... (the original pre-V9 factory, two migrations
+// behind current) and "Market Pair Factory" was showing 0xadb7d3d2...c7722
+// (the abandoned deployer-EOA-treasury build that was redeployed 2026-08-02
+// with zero pairs ever created on it) instead of the addresses the app
+// actually runs on — exactly the kind of self-defeating staleness this
+// "verify before integrating" page exists to prevent.
 const mainnetEntries=[
- ["USDC-only Market Factory","0x508FDa9F366E734a45fE7bc3a98F2909754633B7","Launch/bonding-curve factory. Live with real launches from independent wallets — see ARCD, the first."],
- ["Market Graduation Hub","0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F","Seals graduation authority into the mainnet pair factory below."],
- ["Market Pair Factory (Arcodian DEX)","0xadb7d3d229F78198c4dE827607c89F95E9cE7722","Permissionless AMM registry — the same pool a graduated Market coin trades on, and the pool Swap/Pools/Create pool now read directly."],
+ ["USDC-only Market Factory (V10, current)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10,"Fair-launch bonding-curve factory — every new coin launches here. Graduates atomically into its own Uniswap V3 pool with no pre-create price-manipulation window (fixed 2026-08-30, redeployed from 0xCEc317Ca...19cED)."],
+ ["USDC-only Market Factory (V9, legacy)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,"Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
+ ["Market Graduation Hub",ARC_MAINNET_CONTRACTS.marketGraduationHub,"Seals graduation authority into the pair factory below."],
+ ["Market Pair Factory (Arcodian DEX)",ARC_MAINNET_CONTRACTS.marketPairFactory,"Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead (see the V3 factory below)."],
  ["Arcodian DEX Router","0x4A5eF82818F674452690539D75517b4604981Bed","Stateless multi-hop swap router over the pair factory above. Holds no funds between transactions."],
  ["Arc Pay (mainnet)","0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C","Exact-value invoice settlement, deployed to Arc Mainnet."],
  ["Agent Pay Factory (mainnet)","0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69","Non-identity vault template, mainnet deployment."],

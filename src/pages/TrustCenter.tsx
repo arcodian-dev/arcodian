@@ -171,9 +171,10 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Arc Mainnet — live, real value",
       note: `Deployed on Arc Mainnet, chain ${ARC_MAINNET.id}, not Arc Testnet. Governance on these is still deployer-only — no mainnet multisig yet (see Mainnet readiness below). ArcBridgeRouter deployed on 2026-07-31 across 5 chains; verify links below open the relevant chain's own explorer.`,
       cards: [
-        ["USDC-only Market Factory", ARC_MAINNET_CONTRACTS.marketUsdcFactory, "Mainnet launch factory — same bonding-curve/graduation mechanics as testnet, USDC-only. Live with real launches from real, independent wallets."],
-        ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the mainnet pair factory below."],
-        ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry for graduated mainnet coins."],
+        ["USDC-only Market Factory (V10, current)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Mainnet launch factory — every new coin launches here. Graduates atomically into its own Uniswap V3 pool with no pre-create price-manipulation window (fixed 2026-08-30)."],
+        ["USDC-only Market Factory (V9, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, "Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
+        ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the pair factory below."],
+        ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead."],
         ["Arc Pay (mainnet)", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement, deployed to Arc Mainnet."],
         ["Agent Pay Factory v6 · mainnet", ARC_MAINNET_CONTRACTS.agentPayFactoryV6, "Additive ERC-1271-aware batch-payment factory. No automatic vault creation; production UI remains on the existing factory until Gateway and migration gates pass."],
         ["ArcBridgeRouter · Arc", CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id], "1.5% fee router over Circle's official CCTP v2 rails. Proven live: real transactions on all 5 chains, plus independent third-party wallets bridging unaided."],

@@ -1,0 +1,14 @@
+[Unit]
+Description=Arcodian per-wallet bridge history index (Arc Mainnet routers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=20min
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=BRIDGE_WALLET_INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/bridge-wallet-index.json
+Environment=BRIDGE_WALLET_INDEX_STATE=/www/wwwroot/arcodian.fun/shared/data/bridge-wallet-index-state.json
+ExecStart=/usr/bin/node scripts/bridge-wallet-index.mjs
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/data/bridge-wallet-index.json
+ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/data/bridge-wallet-index-state.json

@@ -27,7 +27,7 @@ ARC_MAINNET_RPC_URL=https://<zeeve-host>/<key>/rpc
 
 Same pattern as the existing `/root/.config/arcodian/lend-keeper.json` (`PRIVATE_KEY` for `arcodian-lend-pyth-keeper.service`) — real secrets live outside the repo, units load them via `EnvironmentFile=` or a `jq` read, never a literal `Environment=` line.
 
-`developers/` is copied into each release from `public/developers/` at build time (static docs + seed JSON), but six files under it are continuously rewritten by indexer timers and MUST be re-symlinked into every new release or they freeze at deploy time and silently serve stale data to real users (agent/reputation/job pages read these client-side):
+`developers/` is copied into each release from `public/developers/` at build time (static docs + seed JSON), but the files below are continuously rewritten by indexer timers and MUST be re-symlinked into every new release or they freeze at deploy time and silently serve stale data to real users (agent/reputation/job/service pages read these client-side):
 
 ```
 developers/agents.json               -> shared/developers/agents.json
@@ -36,6 +36,8 @@ developers/jobs.json                 -> shared/developers/jobs.json
 developers/jobs.json.state.json      -> shared/developers/jobs.json.state.json
 developers/reputation.json           -> shared/developers/reputation.json
 developers/verification-status.json  -> shared/developers/verification-status.json
+developers/services.json             -> shared/developers/services.json
+developers/services.json.state.json  -> shared/developers/services.json.state.json
 ```
 
 Run `node scripts/indexer-dr-drill.mjs` after any deploy — it fails closed if a served file diverges from its shared source. (Found and fixed 2026-08-07: these six files were never symlinked, so `/developers/agents.json` had been serving a 1-record snapshot from the last deploy while the live indexer had reached 12,700+ records.)
