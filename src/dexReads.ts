@@ -51,33 +51,43 @@ export async function quoteAllTiers(
   factoryAddress: string = ARC_PAIR_FACTORY_ADDRESS,
 ): Promise<PairQuote[]> {
   const factory = new Contract(factoryAddress, FACTORY_ABI, runner);
-  const results: PairQuote[] = [];
-
-  for (const tier of TIERS) {
-    let pairAddress: string;
-    try {
-      pairAddress = (await factory.getPair(tokenIn, tokenOut, tier)) as string;
-    } catch {
-      continue;
-    }
-    if (!pairAddress || /^0x0+$/.test(pairAddress)) continue;
-
+  // This used to await each tier's getPair() one at a time, then within a
+  // found pair await token0()/reserve0()/reserve1() before a final quote()
+  // call that needed zeroForOne from that first batch — up to 6 sequential
+  // round trips for 2 tiers. Real cost on Arc's current public RPCs is
+  // ~0.3-0.8s per call (measured live 2026-09-10), so that alone could be
+  // several seconds before a swap quote appeared. Every getPair() is
+  // independent of the others, so resolve them together first.
+  const pairAddresses = await Promise.all(
+    TIERS.map((tier) => (factory.getPair(tokenIn, tokenOut, tier) as Promise<string>).catch(() => null)),
+  );
+  const results = await Promise.all(TIERS.map(async (tier, index): Promise<PairQuote | null> => {
+    const pairAddress = pairAddresses[index];
+    if (!pairAddress || /^0x0+$/.test(pairAddress)) return null;
     try {
       const pair = new Contract(pairAddress, PAIR_ABI, runner);
-      const [token0, reserve0, reserve1] = await Promise.all([
+      // quote() needs zeroForOne, which needs token0() first — rather than
+      // wait for that before quoting, fire both possible quote() directions
+      // alongside it (quote() is pure reserve math, safe to call either way,
+      // see ArcPair.sol's _outFor) and pick the right one once token0()
+      // resolves. One extra read-only call trades for one fewer sequential
+      // round trip.
+      const [token0, reserve0, reserve1, outIfZeroForOne, outIfOneForZero] = await Promise.all([
         pair.token0(), pair.reserve0(), pair.reserve1(),
+        pair.quote(true, amountIn), pair.quote(false, amountIn),
       ]);
       const zeroForOne = (token0 as string).toLowerCase() === tokenIn.toLowerCase();
-      const out = (await pair.quote(zeroForOne, amountIn)) as bigint;
+      const out = (zeroForOne ? outIfZeroForOne : outIfOneForZero) as bigint;
       const [reserveIn, reserveOut] = zeroForOne
         ? [reserve0 as bigint, reserve1 as bigint]
         : [reserve1 as bigint, reserve0 as bigint];
-      results.push({ pair: pairAddress, tier: tier as Tier, out, reserveIn, reserveOut });
+      return { pair: pairAddress, tier: tier as Tier, out, reserveIn, reserveOut };
     } catch {
       // A pair that cannot be read is simply not offered as a route.
+      return null;
     }
-  }
-  return results;
+  }));
+  return results.filter((result): result is PairQuote => result !== null);
 }
 
 /** Whether tokenIn is token0 of the given pair — needed for the swap direction flag. */

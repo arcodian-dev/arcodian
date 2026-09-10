@@ -51,9 +51,17 @@ async function quoteHop(
     const pairAddress = (await factory.getPair(tokenIn, tokenOut, ROUTE_TIER)) as string;
     if (!pairAddress || ZERO.test(pairAddress)) return null;
 
+    // quote() needs to know which side is tokenIn, which needs token0() —
+    // fire both possible quote() directions alongside it (pure reserve
+    // math, safe to call either way) instead of waiting for token0() to
+    // resolve first. Trades one extra read-only call for one fewer
+    // sequential round trip — real cost on Arc's current public RPCs is
+    // ~0.3-0.8s per call (measured live 2026-09-10).
     const pair = new Contract(pairAddress, PAIR_ABI, runner);
-    const token0 = (await pair.token0()) as string;
-    const out = (await pair.quote(token0.toLowerCase() === tokenIn.toLowerCase(), amountIn)) as bigint;
+    const [token0, outIfTrue, outIfFalse] = await Promise.all([
+      pair.token0(), pair.quote(true, amountIn), pair.quote(false, amountIn),
+    ]);
+    const out = ((token0 as string).toLowerCase() === tokenIn.toLowerCase() ? outIfTrue : outIfFalse) as bigint;
     return out > 0n ? { pair: pairAddress, out } : null;
   } catch {
     // An unreadable pair is simply not offered as a route.
@@ -81,26 +89,25 @@ export async function findBestRoute(
     return { chosen: null, direct: null };
   }
 
-  const directQuote = bestQuote(await quoteAllTiers(runner, tokenIn, tokenOut, amountIn, factoryAddress));
-  const direct = directQuote ? directRouteFrom(directQuote, tokenIn, tokenOut) : null;
-
   const ends = [tokenIn.toLowerCase(), tokenOut.toLowerCase()];
   const hubs = routeHubs.filter((hub) => !ends.includes(hub.toLowerCase()));
 
-  const multi: MultiRoute[] = [];
-  for (const hub of hubs) {
-    const first = await quoteHop(runner, tokenIn, hub, amountIn, factoryAddress);
-    if (!first) continue;
-    const second = await quoteHop(runner, hub, tokenOut, first.out, factoryAddress);
-    if (!second) continue;
-    multi.push({
-      kind: "multi",
-      out: second.out,
-      path: [tokenIn, hub, tokenOut],
-      pairs: [first.pair, second.pair],
-      tier: ROUTE_TIER,
-    });
-  }
+  // The direct quote and every hub's multi-hop search are independent of
+  // each other (and, across hubs, of one another) — only a hub's own second
+  // hop genuinely has to wait for that hub's first hop's output amount.
+  const [tiers, multiResults] = await Promise.all([
+    quoteAllTiers(runner, tokenIn, tokenOut, amountIn, factoryAddress),
+    Promise.all(hubs.map(async (hub): Promise<MultiRoute | null> => {
+      const first = await quoteHop(runner, tokenIn, hub, amountIn, factoryAddress);
+      if (!first) return null;
+      const second = await quoteHop(runner, hub, tokenOut, first.out, factoryAddress);
+      if (!second) return null;
+      return { kind: "multi", out: second.out, path: [tokenIn, hub, tokenOut], pairs: [first.pair, second.pair], tier: ROUTE_TIER };
+    })),
+  ]);
+  const directQuote = bestQuote(tiers);
+  const direct = directQuote ? directRouteFrom(directQuote, tokenIn, tokenOut) : null;
+  const multi = multiResults.filter((route): route is MultiRoute => route !== null);
 
   return { chosen: bestRoute(direct, multi), direct };
 }
@@ -121,20 +128,24 @@ export async function findBestV3Route(
   if (amountIn <= 0n || tokenIn.toLowerCase() === tokenOut.toLowerCase()) return null;
   const factory = new Contract(factoryAddress, V3_FACTORY_ABI, runner);
   const quoter = new Contract(quoterAddress, V3_QUOTER_ABI, runner);
-  let best: V3Route | null = null;
-  for (const fee of V3_FEE_TIERS) {
+  // 4 fee tiers used to mean up to 8 sequential round trips (getPool then
+  // quote, one tier at a time) before a quote appeared. Every tier's
+  // getPool() is independent of the others.
+  const pools = await Promise.all(
+    V3_FEE_TIERS.map((fee) => (factory.getPool(tokenIn, tokenOut, fee) as Promise<string>).catch(() => null)),
+  );
+  const candidates = await Promise.all(V3_FEE_TIERS.map(async (fee, index): Promise<V3Route | null> => {
+    const pool = pools[index];
+    if (!pool || ZERO.test(pool)) return null;
     try {
-      const pool = await factory.getPool(tokenIn, tokenOut, fee) as string;
-      if (!pool || ZERO.test(pool)) continue;
       const out = await quoter.quoteExactInputSingle.staticCall(tokenIn, tokenOut, fee, amountIn, 0) as bigint;
-      if (out > 0n && (!best || out > best.out)) {
-        best = { kind: "v3", out, path: [tokenIn, tokenOut], pool, fee, venue: "Arcodian V3" };
-      }
+      return out > 0n ? { kind: "v3", out, path: [tokenIn, tokenOut], pool, fee, venue: "Arcodian V3" } : null;
     } catch {
-      // Unsupported fee tier, empty pool, or a quoter revert is not a route.
+      // Empty pool or a quoter revert is not a route.
+      return null;
     }
-  }
-  return best;
+  }));
+  return candidates.reduce<V3Route | null>((best, candidate) => (candidate && (!best || candidate.out > best.out) ? candidate : best), null);
 }
 
 const Q96 = 1n << 96n;
@@ -184,21 +195,23 @@ export async function findBestExternalV3Route(
 ): Promise<V3Route | null> {
   if (amountIn <= 0n || tokenIn.toLowerCase() === tokenOut.toLowerCase()) return null;
   const factory = new Contract(factoryAddress, V3_FACTORY_ABI, runner);
-  let best: V3Route | null = null;
-  for (const fee of V3_FEE_TIERS) {
+  const protocolFee = (amountIn * 30n + 9_999n) / 10_000n;
+  const netAmount = amountIn - protocolFee;
+  if (netAmount <= 0n) return null;
+  // Same fix as findBestV3Route above: every tier's getPool() is independent.
+  const pools = await Promise.all(
+    V3_FEE_TIERS.map((fee) => (factory.getPool(tokenIn, tokenOut, fee) as Promise<string>).catch(() => null)),
+  );
+  const candidates = await Promise.all(V3_FEE_TIERS.map(async (fee, index): Promise<V3Route | null> => {
+    const pool = pools[index];
+    if (!pool || ZERO.test(pool)) return null;
     try {
-      const pool = await factory.getPool(tokenIn, tokenOut, fee) as string;
-      if (!pool || ZERO.test(pool)) continue;
-      const protocolFee = (amountIn * 30n + 9_999n) / 10_000n;
-      const netAmount = amountIn - protocolFee;
-      if (netAmount <= 0n) continue;
       const out = await quoteV3Pool(runner, pool, tokenIn, netAmount, fee);
-      if (out > 0n && (!best || out > best.out)) {
-        best = { kind: "v3", out, path: [tokenIn, tokenOut], pool, fee, router: routerAddress, feeRouter: feeRouterAddress, venue: "External Uniswap V3" };
-      }
+      return out > 0n ? { kind: "v3", out, path: [tokenIn, tokenOut], pool, fee, router: routerAddress, feeRouter: feeRouterAddress, venue: "External Uniswap V3" } : null;
     } catch {
-      // Unsupported tier, empty pool, or a crossed/unreadable pool is skipped.
+      // A crossed/unreadable pool is skipped.
+      return null;
     }
-  }
-  return best;
+  }));
+  return candidates.reduce<V3Route | null>((best, candidate) => (candidate && (!best || candidate.out > best.out) ? candidate : best), null);
 }
