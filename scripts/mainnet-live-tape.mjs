@@ -143,12 +143,41 @@ async function loadVenues() {
   lastMarketLoad = Date.now();
 }
 
+// A many-address getLogs call (1000+ venues as of 2026-09) can only cover a
+// much narrower block range per request than a single-address one — found
+// 2026-09-10 the hard way: this unit ran "active" for 3+ days straight,
+// retrying every second and failing every single time with ethers' generic
+// "could not coalesce error", while shared/data/mainnet-live-tape.json sat
+// frozen at its last successful write. Root cause was a runaway range, not
+// a dead RPC: `lastBlock` only ever advances at the END of a successful
+// tick (see bottom of this function), so the very first failure after a
+// restart freezes it there forever — every later tick computes an ever-
+// WIDER fromBlock..toBlock (the gap only grows, 1s at a time, since
+// `latest` keeps moving and `lastBlock` can't), guaranteeing every future
+// attempt fails too. By the time this was caught the range had grown to
+// ~670,000 blocks with ~1,100 addresses, comfortably past whatever the RPC
+// silently caps that combination at. Two independent fixes: cap how far a
+// single tick will ever try to catch up (a live tape only needs to be
+// live — jumping the gap instead of exhaustively backfilling it loses nothing
+// that mainnet-market-index.mjs's own 30s full rescan doesn't already cover
+// as the source of truth), and chunk whatever range is left the same way
+// mainnet-market-index.mjs's addressLogs() already does for the identical
+// many-address-plus-range shape (ADDRESS_LOG_CHUNK_BLOCKS there = 10,000).
+const MAX_CATCHUP_BLOCKS = 5_000;
+const ADDRESS_LOG_CHUNK_BLOCKS = 10_000;
+
 async function tick() {
   if (Date.now() - lastMarketLoad > 20_000 || !venues.size) await loadVenues();
   const latest = await provider.getBlockNumber();
   if (!lastBlock) lastBlock = Math.max(0, latest - 2_000);
+  if (latest - lastBlock > MAX_CATCHUP_BLOCKS) lastBlock = latest - MAX_CATCHUP_BLOCKS;
   if (latest <= lastBlock || !venues.size) return;
-  const logs = await provider.getLogs({ address: [...venues.keys()], fromBlock: lastBlock + 1, toBlock: latest });
+  const addresses = [...venues.keys()];
+  const logs = [];
+  for (let start = lastBlock + 1; start <= latest; start += ADDRESS_LOG_CHUNK_BLOCKS) {
+    const end = Math.min(latest, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
+    logs.push(...await provider.getLogs({ address: addresses, fromBlock: start, toBlock: end }));
+  }
   const blockNumbers = [...new Set(logs.map((log) => log.blockNumber))];
   const blockTimes = new Map(await Promise.all(blockNumbers.map(async (blockNumber) => {
     const block = await provider.getBlock(blockNumber);
@@ -194,7 +223,10 @@ while (true) {
   const started = Date.now();
   try { await runWithTimeout(tick(), TICK_TIMEOUT_MS); }
   catch (error) {
-    console.error(`Mainnet live tape retry: ${error?.shortMessage || error?.message || error}`);
+    // Include the state that made this tick fail — a bare error string
+    // (what this used to log) gave no way to tell "stuck on a runaway
+    // range" apart from "RPC is actually down" without reading the code.
+    console.error(`Mainnet live tape retry: ${error?.shortMessage || error?.message || error} (lastBlock=${lastBlock ?? "unset"}, venues=${venues.size})`);
     rotateProvider();
   }
   await sleep(Math.max(200, 1_000 - (Date.now() - started)));

@@ -22,7 +22,7 @@ const CHUNK = 40_000;
 // only activity we care about starts here.
 const GENESIS_FLOOR = 13_100_000; // just before the first mainnet Arcodian deploy (DeployArcBridgeRouter, block 13,126,352)
 
-const provider = new JsonRpcProvider(RPC, undefined, { batchMaxCount: 1 });
+const provider = new JsonRpcProvider(RPC, undefined, { batchMaxCount: 1, staticNetwork: true });
 const erc20 = ["function balanceOf(address) view returns(uint256)"];
 const iface = new Interface(["event Transfer(address indexed from, address indexed to, uint256 value)"]);
 const TOPIC = iface.getEvent("Transfer").topicHash;
@@ -33,11 +33,16 @@ const TOPIC = iface.getEvent("Transfer").topicHash;
 // rather than guessed at, matching treasury-stats.mjs's own policy.
 const KNOWN_SOURCES = new Map([
   ["0xc35deb937f5056a0e034f10e21094878485caee7", "Bridge fee router (CCTP)"],
-  ["0x1de9822d79afdd53f9270503d16080f9ecbfdb7c", "Arc Pay"],
+  // Arc Pay redeployed 2026-09-05 (original had the wrong treasury baked in
+  // as immutable — see contracts.mainnet.json's feeRoutingFix2026_09_05).
+  ["0x69af28c7daddcff7f9bc2dcfed244c9696f3a9a2", "Arc Pay"],
+  ["0x1de9822d79afdd53f9270503d16080f9ecbfdb7c", "Arc Pay (legacy, wrong treasury)"],
   ["0x5e3d1b63213b8608539116d1c6248a36819684b5", "Market / DEX (pair factory)"],
   ["0x508fda9f366e734a45fe7bc3a98f2909754633b7", "Market / DEX (USDC factory)"],
   ["0x6e1d1a09b07a4022b535269434c16a3452e195f9", "Launchpad V9"],
-  ["0xcec317ca96b7e55fa0f9f7c243cdb0ee6bc19ced", "Launchpad V10"],
+  // V10 redeployed 2026-08-30 (graduation pool-price griefing fix).
+  ["0xcf93231d55da8df1300619615b453e4eeab6fed3", "Launchpad V10"],
+  ["0xcec317ca96b7e55fa0f9f7c243cdb0ee6bc19ced", "Launchpad V10 (legacy, pool griefing)"],
   ["0xe4664b28cb0624860aaee28e573697473f2bf46e", "External V3 fee router"],
 ]);
 
@@ -56,14 +61,32 @@ async function main() {
   const fromBlock = Math.max(state.lastBlock + 1, GENESIS_FLOOR);
   const entries = state.entries || [];
 
+  const gaps = state.gaps || [];
   if (fromBlock <= tip) {
     const treasuryTopic = "0x" + TREASURY.slice(2).padStart(64, "0");
     for (let start = fromBlock; start <= tip; start += CHUNK) {
       const end = Math.min(start + CHUNK - 1, tip);
-      const [inbound, outbound] = await Promise.all([
-        provider.getLogs({ address: USDC, topics: [TOPIC, null, treasuryTopic], fromBlock: start, toBlock: end }),
-        provider.getLogs({ address: USDC, topics: [TOPIC, treasuryTopic, null], fromBlock: start, toBlock: end }),
-      ]);
+      let inbound, outbound;
+      try {
+        [inbound, outbound] = await Promise.all([
+          provider.getLogs({ address: USDC, topics: [TOPIC, null, treasuryTopic], fromBlock: start, toBlock: end }),
+          provider.getLogs({ address: USDC, topics: [TOPIC, treasuryTopic, null], fromBlock: start, toBlock: end }),
+        ]);
+      } catch (error) {
+        // A frozen state file (this exact class of bug found 2026-09-10:
+        // stuck 4.4 days, output never updated) means the next run's first
+        // chunk can be far enough behind the node's retention that
+        // "pruned history unavailable" (code 4444) makes THAT range
+        // permanently unservable, not just transiently down — retrying it
+        // forever every run, as this used to, means it never catches up.
+        // Skip the chunk (checkpointing past it so the run keeps moving
+        // toward the tip) instead of aborting the whole scan; record the
+        // gap so it's visible, not silently dropped.
+        console.error(`skipping ${start}-${end}: ${error?.info?.error?.message || error?.shortMessage || error?.message || error}`);
+        gaps.push({ from: start, to: end, reason: error?.info?.error?.message || error?.shortMessage || String(error) });
+        writeFileSync(STATE, JSON.stringify({ lastBlock: end, entries: entries.slice(0, 1000), gaps: gaps.slice(-50) }, null, 2));
+        continue;
+      }
       const matches = [...inbound, ...outbound];
       const blockNumbers = [...new Set(matches.map((l) => l.blockNumber))];
       const blocks = new Map((await Promise.all(blockNumbers.map((n) => provider.getBlock(n)))).map((b) => [b.number, b]));
@@ -85,14 +108,14 @@ async function main() {
       }
       // Checkpoint every chunk so a slow/interrupted first run resumes near
       // where it left off instead of re-scanning from GENESIS_FLOOR.
-      writeFileSync(STATE, JSON.stringify({ lastBlock: end, entries: entries.slice(0, 1000) }, null, 2));
+      writeFileSync(STATE, JSON.stringify({ lastBlock: end, entries: entries.slice(0, 1000), gaps: gaps.slice(-50) }, null, 2));
       console.log(`scanned ${start}-${end} (tip ${tip}), ${matches.length} matches this chunk, ${entries.length} total`);
     }
   }
 
   entries.sort((a, b) => b.block - a.block);
   const kept = entries.slice(0, 1000);
-  writeFileSync(STATE, JSON.stringify({ lastBlock: tip, entries: kept }, null, 2));
+  writeFileSync(STATE, JSON.stringify({ lastBlock: tip, entries: kept, gaps: gaps.slice(-50) }, null, 2));
 
   const [native, usdcBal] = await Promise.all([provider.getBalance(TREASURY), new Contract(USDC, erc20, provider).balanceOf(TREASURY)]);
   const totals = {
@@ -111,6 +134,11 @@ async function main() {
     totals,
     counts: { transactions: kept.length, inbound: kept.filter((x) => x.direction === "in").length, outbound: kept.filter((x) => x.direction === "out").length, attributed: kept.filter((x) => x.category !== "Unknown").length },
     entries: kept,
+    // Block ranges the RPC couldn't serve (typically pruned history) that
+    // this run skipped rather than got stuck retrying forever — surfaced
+    // here rather than silently dropped, since it means totals above may
+    // be undercounted for those ranges specifically.
+    gaps: gaps.slice(-50),
   };
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, JSON.stringify(payload, null, 2));

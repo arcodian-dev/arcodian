@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { ARC_MAINNET } from "../config";
-import { imageUrl, rpcUrlsFor } from "../shared";
+import { CoinIcon, rpcUrlsFor } from "../shared";
 import "./TradingTerminal.css";
 
 type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string };
@@ -256,7 +256,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
   if (!market) return <main className="trading-terminal-page"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></main>;
   return <main className="trading-terminal-page">
     <header className="terminal-header">
-      <a className="terminal-brand" href="/market"><span>{market.image ? <img src={imageUrl(market.image)} alt="" /> : market.symbol.slice(0, 2)}</span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
+      <a className="terminal-brand" href="/market"><span><CoinIcon image={market.image} fallback={market.symbol.slice(0, 2)} /></span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
       <div className="terminal-price"><strong className={priceFlash ? `flash-${priceFlash}` : ""}>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em className={market.priceChange24h == null ? "" : market.priceChange24h >= 0 ? "up" : "down"}>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
       <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap, market.globalPool ? 6 : 18))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h, market.globalPool ? 6 : 18))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity, market.globalPool ? 6 : 18))}</b></span></div>
       <div className="terminal-actions"><span className={wrongNetwork ? "terminal-network wrong" : mobileChain ? "terminal-network online" : "terminal-network"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>

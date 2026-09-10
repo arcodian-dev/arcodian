@@ -13,7 +13,7 @@ import {
   arcProvider,
   communitySigningMessage,
   ensureWalletChain,
-  imageUrl,
+  CoinIcon,
   normalizeSocial,
   patchActivity,
   rpcUrlsFor,
@@ -707,7 +707,7 @@ export default function Screener({
               const share = Math.round((Math.max(item.arenaScore, 0.01) / arenaTotal) * 100);
               return <div className={`arena-fighter ${item.address === arenaLeader?.address ? "leader" : ""}`} key={item.address} onClick={() => chooseCoin(item.address)}>
                 <div className="arena-identity">
-                  {item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol[0]}</b>}
+                  <CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} />
                   <span><small>{index === 0 ? "Leading now" : "Challenger"}</small><strong>{item.symbol}</strong><em>{item.name}</em></span>
                 </div>
                 <div className="arena-score"><strong>{share}%</strong><span>{compactNumber(displayVolume24h(item))} USDC · {item.tradeCount || 0} trades</span></div>
@@ -797,7 +797,7 @@ export default function Screener({
               onClick={() => openMarketAsset(item)}
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
               <span className="mt-market">
-                {item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}
+                <CoinIcon image={item.image} fallback={<b>{item.symbol.slice(0, 1)}</b>} />
                 <span><strong>{item.symbol}</strong><small>{item.name}</small></span>
               </span>
               <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
@@ -817,7 +817,7 @@ export default function Screener({
             <div className="mt-row mt-global-pool" role="row" tabIndex={0} key={`p-${item.pool || item.address}`}
               onClick={() => openMarketAsset(item)}
               onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMarketAsset(item); } }}>
-              <span className="mt-market">{item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol.slice(0, 1)}</b>}<span><strong>{item.symbol}</strong><small>{item.name} · {item.dex}</small></span></span>
+              <span className="mt-market"><CoinIcon image={item.image} fallback={<b>{item.symbol.slice(0, 1)}</b>} /><span><strong>{item.symbol}</strong><small>{item.name} · {item.dex}</small></span></span>
               <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
               <span className="mt-num">{compactNumber(displayVolume24h(item))} <small>USDC</small></span>
               <span className={`mt-num ${pctClass(item.priceChange5m)}`}><small>5m </small>{pctText(item.priceChange5m)}</span>
@@ -848,8 +848,8 @@ export default function Screener({
             >
               <div className="coin-top">
                 <span className="asset">
-                  {"image" in item && item.image ? (
-                    <img src={imageUrl(item.image)} alt={item.symbol} />
+                  {"image" in item ? (
+                    <CoinIcon image={item.image} alt={item.symbol} fallback={<b>{item.symbol.slice(0, 1)}</b>} />
                   ) : (
                     <b>{item.symbol.slice(0, 1)}</b>
                   )}
@@ -1710,7 +1710,7 @@ function TradingDesk({
             <div className="orbit-brand-name">ARCODIAN<span>/terminal</span></div>
           </div>
           <div className="orbit-pair">
-            <div className="orbit-avatar">{asset.image ? <img src={imageUrl(asset.image)} alt="" /> : asset.symbol.slice(0, 2).toUpperCase()}</div>
+            <div className="orbit-avatar"><CoinIcon image={asset.image} fallback={asset.symbol.slice(0, 2).toUpperCase()} /></div>
             <div className="orbit-pair-id">
               <div className="orbit-pair-sym">{asset.symbol} <em>/ {currency}</em></div>
               <div className="orbit-pair-name">{asset.name}</div>
@@ -2284,14 +2284,14 @@ function Launch({
         </label>
         {image && (
           <div className="image-preview">
-            <img src={imageUrl(image)} alt="Token preview" />
+            <CoinIcon image={image} alt="Token preview" fallback={<small>Image unavailable — try re-uploading.</small>} />
             <small>512×512 WebP · public URL recorded onchain</small>
           </div>
         )}
       </div>
       <aside className="launch-live-preview">
         <div className="preview-head"><p className="kicker">Market preview</p><span>{isMainnet ? "Mainnet" : "Testnet"}</span></div>
-        <div className="preview-token-art">{image ? <img src={imageUrl(image)} alt="" /> : <b>{symbol?.[0]?.toUpperCase() || "A"}</b>}</div>
+        <div className="preview-token-art"><CoinIcon image={image} fallback={<b>{symbol?.[0]?.toUpperCase() || "A"}</b>} /></div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
         <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>12,000 {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>

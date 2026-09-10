@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatEther, formatUnits } from "ethers";
-import { imageUrl } from "../shared";
+import { CoinIcon, imageUrl } from "../shared";
 import { navHref } from "../config";
 
 /**
@@ -358,7 +358,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           {active.key === "market" ? (
             ranked.slice(0, 4).map((row) => (
               <button type="button" key={row.address} className="lp-mini" onClick={() => chooseCoin(row.address)}>
-                <span className="lp-avatar">{row.image ? <img src={imageUrl(row.image)} alt="" /> : row.symbol[0]}</span>
+                <span className="lp-avatar"><CoinIcon image={row.image} fallback={row.symbol[0]} /></span>
                 <span className="lp-mini-id"><b>{row.symbol}</b><small>{row.name}</small></span>
                 {row.spark
                   ? <svg viewBox="0 0 120 34" aria-hidden="true"><polyline points={row.spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -419,7 +419,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           <button type="button" key={row.address} className="lp-tr" onClick={() => chooseCoin(row.address)}>
             <span className="lp-rank">{index + 1}</span>
             <span className="lp-asset">
-              <span className="lp-avatar">{row.image ? <img src={imageUrl(row.image)} alt="" /> : row.symbol[0]}</span>
+              <span className="lp-avatar"><CoinIcon image={row.image} fallback={row.symbol[0]} /></span>
               <span>
                 <b>{row.symbol}{row.currency === "EURC" && <i className="lp-eurc">EURC</i>}</b>
                 <small>{row.name}</small>

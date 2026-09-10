@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Contract, formatEther } from "ethers";
 import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
-import { arcProvider, imageUrl, readActivities, short, type LaunchAsset, type WalletActivity } from "../shared";
+import { arcProvider, CoinIcon, readActivities, short, type LaunchAsset, type WalletActivity } from "../shared";
 
 // Module-level so the reference stays stable across renders — an inline
 // array here would allocate fresh every render and (since the holdings
@@ -352,11 +352,7 @@ export default function Profile({
                   onClick={() => chooseCoin(item.address)}
                 >
                   <span className="asset">
-                    {item.image ? (
-                      <img src={imageUrl(item.image)} alt="" />
-                    ) : (
-                      <b>{item.symbol[0]}</b>
-                    )}
+                    <CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} />
                     <span>
                       <strong>{item.symbol}</strong>
                       <small>{item.name}</small>
@@ -396,7 +392,7 @@ export default function Profile({
               <div className="holdings-list">
                 {created.map((item) => (
                   <button key={`created-${item.address}`} onClick={() => chooseCoin(item.address)}>
-                    <span className="asset">{item.image ? <img src={imageUrl(item.image)} alt="" /> : <b>{item.symbol[0]}</b>}<span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
+                    <span className="asset"><CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} /><span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
                     <span><small>{item.graduated ? "Venue" : "Progress"}</small><b>{item.graduated ? "ARC DEX" : `${item.progress.toFixed(2)}%`}</b></span><span><small>24h volume</small><b>{Number(formatEther(BigInt(item.volume24h||"0"))).toLocaleString(undefined,{maximumFractionDigits:2})} USDC</b></span><i>→</i>
                   </button>
                 ))}

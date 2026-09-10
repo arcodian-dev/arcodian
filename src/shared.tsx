@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { FallbackProvider, JsonRpcProvider, Network, parseEther } from "ethers";
 import { ARC, ARC_MAINNET } from "./config";
 
@@ -76,8 +77,18 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
 export function short(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
+// ipfs.io alone is a single point of failure for every native-launch coin
+// image (the create flow requires an ipfs:// URI) — confirmed live
+// 2026-09-10 that it was answering every request with 429 (rate-limited),
+// with no in-code fallback: a broken-image icon, not the letter-avatar
+// shown for a coin with no image at all. Public IPFS gateways rate-limit
+// independently of each other and the Market grid requests many coin
+// images in a burst on load (exactly the pattern that triggers it), so a
+// single default is inherently fragile — resolveImageCandidates below
+// gives CoinIcon a fallback chain instead of a single URL.
+const IPFS_GATEWAYS = ["https://ipfs.io/ipfs/", "https://gateway.pinata.cloud/ipfs/", "https://nftstorage.link/ipfs/"];
 export function imageUrl(uri: string) {
-  if (uri.startsWith("ipfs://")) return `https://ipfs.io/ipfs/${uri.slice(7)}`;
+  if (uri.startsWith("ipfs://")) return `${IPFS_GATEWAYS[0]}${uri.slice(7)}`;
   try {
     const url = new URL(uri, window.location.origin);
     if (["arc.tensoriumlabs.com", "arcodian.fun", "www.arcodian.fun"].includes(url.hostname) && url.pathname.startsWith("/uploads/")) {
@@ -85,6 +96,19 @@ export function imageUrl(uri: string) {
     }
     return url.toString();
   } catch { return uri; }
+}
+export function resolveImageCandidates(uri: string): string[] {
+  if (uri.startsWith("ipfs://")) return IPFS_GATEWAYS.map((gateway) => `${gateway}${uri.slice(7)}`);
+  return [imageUrl(uri)];
+}
+
+/** A coin's image with an IPFS gateway fallback chain, then `fallback` (a letter avatar, normally) once every candidate has failed to load. */
+export function CoinIcon({ image, alt = "", className, fallback }: { image?: string; alt?: string; className?: string; fallback: ReactNode }) {
+  const candidates = useMemo(() => (image ? resolveImageCandidates(image) : []), [image]);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => setAttempt(0), [image]);
+  if (!candidates.length || attempt >= candidates.length) return <>{fallback}</>;
+  return <img className={className} src={candidates[attempt]} alt={alt} onError={() => setAttempt((value) => value + 1)} />;
 }
 export function safeEther(value: string) {
   try {

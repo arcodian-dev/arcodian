@@ -4,6 +4,13 @@ After=network-online.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=10min
 WorkingDirectory=/root/.openclaw/workspace/arc
+# This unit never loaded the private Zeeve RPC other mainnet indexers use,
+# so it always ran against the public rpc-mainnet.php fallback — found
+# 2026-09-10 stuck failing every single run for 4.4 days straight (502 from
+# that proxy on the very first eth_blockNumber call, output frozen since
+# 2026-09-06). The private endpoint has been markedly more reliable.
+EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-treasury-stats.mjs
 User=root
