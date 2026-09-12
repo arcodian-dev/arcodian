@@ -36,6 +36,11 @@ if ($body === '' || strlen($body) > 262144) {
 
 $endpoints = [
   [
+    'name' => 'arc-scan',
+    'url' => 'https://rpc.arc-scan.org/',
+    'headers' => ['Content-Type: application/json'],
+  ],
+  [
     'name' => 'railway-warp',
     'url' => 'https://warp-arc-production.up.railway.app/rpc',
     'headers' => ['Content-Type: application/json'],
@@ -46,6 +51,11 @@ $endpoints = [
     'headers' => ['Content-Type: application/json'],
   ],
 ];
+// arc-scan (rpc.arc-scan.org) added 2026-09-12 — Arcscan's own mainnet RPC,
+// verified live: correct chainId, real recent blocks, full CORS, handles a
+// many-address eth_getLogs fine, ~0.3-1.2s round trip (comparable to or
+// better than the other two). Listed first but still shuffled with the
+// rest below, same as always.
 // baracat (arc-mainnet-rpc.baracat.meme) dropped 2026-08-02 — caught ~65
 // blocks behind the other two endpoints while still answering every eth_call
 // with a stale-but-HTTP-200 result, which (combined with a fixed try-order

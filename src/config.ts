@@ -390,9 +390,17 @@ export const V5_TESTNET_DEPLOY = {
 // existing Arc Testnet rpc.php); the proxy itself still talks to
 // arc-rpc.stakeme.pro server-side, where CORS doesn't apply.
 const THIRDWEB_CLIENT_ID = import.meta.env.VITE_THIRDWEB_CLIENT_ID || "";
-const ARC_MAINNET_RPC =
-  import.meta.env.VITE_ARC_MAINNET_RPC ||
-  (THIRDWEB_CLIENT_ID ? `https://5042.rpc.thirdweb.com/${THIRDWEB_CLIENT_ID}` : "https://arcodian.fun/api/rpc-mainnet.php");
+const THIRDWEB_RPC = THIRDWEB_CLIENT_ID ? `https://5042.rpc.thirdweb.com/${THIRDWEB_CLIENT_ID}` : "https://arcodian.fun/api/rpc-mainnet.php";
+// Arcscan's own mainnet RPC (rpc.arc-scan.org) — found and verified live
+// 2026-09-12: correct chainId, real recent blocks, ~0.3-1.2s round trip
+// (comparable to or better than the other candidates), full CORS
+// (Access-Control-Allow-Origin: *, confirmed via an OPTIONS preflight), and
+// handles a many-address eth_getLogs call fine. Arcscan is a real,
+// independent Arc explorer (trustswap.com's own Arc guides point to it),
+// not a random third party — made the default, with the previous default
+// kept as a runtime fallback candidate below rather than dropped.
+const ARC_SCAN_RPC = "https://rpc.arc-scan.org/";
+const ARC_MAINNET_RPC = import.meta.env.VITE_ARC_MAINNET_RPC || ARC_SCAN_RPC;
 
 export const ARC_MAINNET = {
   id: 5042,
@@ -413,12 +421,24 @@ export const ARC_MAINNET = {
   // it no longer exists ("Application not found", 404 with no CORS headers,
   // confirmed via curl), so every FallbackProvider construction was wasting a
   // request+timeout on a dead host and logging a CORS error in every user's
-  // console.
+  // console. rpc.arc-scan.org added 2026-09-12, see above.
   rpcs: [
     ARC_MAINNET_RPC,
+    ARC_SCAN_RPC,
+    THIRDWEB_RPC,
     "https://warp-arc-production.up.railway.app/rpc",
   ],
-  explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc.exploreme.pro",
+  // arc.exploreme.pro has been serving its own maintenance page on every
+  // API path since before 2026-09-05 (still true 2026-09-10). arc-scan.org
+  // ("Arcscan") is a real, independent Arc explorer confirmed live
+  // 2026-09-12 — supports address/tx lookups, contract verification, token
+  // holders. Its own verify-contract API endpoint isn't publicly documented
+  // yet (its web UI sits behind a Cloudflare bot challenge that blocked
+  // every automated attempt to find it, and it isn't the plain Blockscout
+  // REST shape at /api/ — that path just serves the site's own SPA shell);
+  // resolve that once the user or the official Sept 16 mainnet launch
+  // surfaces the real endpoint.
+  explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc-scan.org",
   nativeToken: "0x3600000000000000000000000000000000000000",
   nativeSymbol: "USDC",
   nativeDecimals: 18,

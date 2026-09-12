@@ -18,10 +18,16 @@ Type=oneshot
 TimeoutStartSec=20min
 WorkingDirectory=/root/.openclaw/workspace/arc
 Environment=MAINNET_INDEX_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
-# ARC_MAINNET_RPC_URL lives in /root/.config/arcodian/mainnet-rpc.env, not
-# here — its path segment is an access-gated key, confirmed 2026-08-30 (any
-# other path 403s), and this file is committed to a public repo.
-EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
+# ARC_MAINNET_RPC_URL: this unit reads its own override
+# (mainnet-index-rpc.env), not the shared mainnet-rpc.env the other two
+# mainnet services use — that file switched to Arcscan's public RPC
+# 2026-09-12, which is genuinely better for lighter callers but this is the
+# heaviest one (a full rescan across 1000+ venue addresses every 30s) and
+# hit Arcscan's per-client rate limit immediately on the first run after
+# the switch ("edge_rate_limited"). Neither file is in git — both hold a
+# path segment that's an access-gated key, confirmed 2026-08-30 (any other
+# path 403s).
+EnvironmentFile=/root/.config/arcodian/mainnet-index-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-market-index.mjs
 ExecStartPost=/bin/chown www:www /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
 ExecStartPost=/bin/sh -c 'cmp -s /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json || cp -f /www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json /www/wwwroot/arcodian.fun/current/data/mainnet-market-index.json'
