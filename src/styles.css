@@ -461,6 +461,10 @@ button {
 .terminal-stats b {
   color: #0a6fe8;
 }
+.terminal-stats-native {
+  color: #26d98a;
+  font-weight: 700;
+}
 .market-terminal .board-head h2 {
   font-size: clamp(42px, 5vw, 78px);
 }
@@ -3406,7 +3410,7 @@ body::before { background-size:80px 80px; opacity:.45; }
 
 /* --- ticker --- */
 .lp-ticker { border-block: 1px solid var(--lp-border); background: var(--lp-panel); overflow: hidden; }
-.lp-ticker-track { display: flex; width: max-content; animation: lp-marquee 550s linear infinite; }
+.lp-ticker-track { display: flex; width: max-content; animation: lp-marquee 140s linear infinite; }
 .lp-ticker-run { display: flex; }
 .lp-ticker span {
   display: flex; align-items: center; gap: 9px; padding: 13px 26px;

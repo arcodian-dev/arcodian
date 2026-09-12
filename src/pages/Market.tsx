@@ -606,6 +606,20 @@ export default function Screener({
   const totalTrades = launches.reduce((sum, item) => sum + (item.tradeCount || 0), 0);
   const totalVolume = launches.reduce((sum, item) => sum + displayVolume24h(item), 0);
   const graduatedMarkets = launches.filter((item) => item.graduated).length;
+  // "Canonical markets"/"graduated" above count EVERYTHING this page lists,
+  // which is overwhelmingly externally-discovered pools (Radar's global
+  // screener), not coins actually created on our own launchpad — found
+  // 2026-09-12 checking the user's question directly: of 1113 listed
+  // markets, 1109 are globalPool (external), only 4 are native Arcodian
+  // launches. Reporting one blended number made the launchpad look far
+  // more active than it is and hid how few native coins have ever
+  // graduated. These two are native-only (!globalPool), shown alongside
+  // the all-markets ones rather than replacing them — both facts are real,
+  // they just answer different questions ("how big is Arc's whole token
+  // market" vs "how much has our own launchpad actually done").
+  const nativeLaunches = launches.filter((item) => !item.globalPool);
+  const launchpadVolume = nativeLaunches.reduce((sum, item) => sum + displayVolume24h(item), 0);
+  const launchpadGraduated = nativeLaunches.filter((item) => item.graduated).length;
   const traderBoard = arenaActivity.reduce<Array<{ address: string; volume: bigint; trades: number }>>((board, trade) => {
     const found = board.find((row) => row.address.toLowerCase() === trade.user.toLowerCase());
     if (found) { found.volume += BigInt(trade.native); found.trades += 1; }
@@ -691,8 +705,10 @@ export default function Screener({
         </span>
         <span>{launches.length} canonical markets</span>
         <span>{totalTrades} confirmed trades</span>
-        <span>{compactNumber(totalVolume)} USDC volume</span>
-        <span>{graduatedMarkets} graduated · LP locked</span>
+        <span>{compactNumber(totalVolume)} USDC volume (all markets)</span>
+        <span>{graduatedMarkets} graduated (all markets)</span>
+        <span className="terminal-stats-native">{compactNumber(launchpadVolume)} USDC launchpad volume</span>
+        <span className="terminal-stats-native">{launchpadGraduated} launchpad graduated</span>
       </div>
       <div className="board-head">
         <div>

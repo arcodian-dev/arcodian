@@ -264,9 +264,18 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
     {ranked.length > 0 && (
       <div className="lp-ticker" aria-hidden="true">
         <div className="lp-ticker-track">
+          {/* Found 2026-09-12: this used to scroll the FULL `ranked` list —
+              fine when the launchpad had a few dozen coins, but `ranked` is
+              now 1000+ (most of it external Radar-discovered pools, not
+              native launches), so the same animation duration had to cover
+              a track roughly 20x wider than it was tuned for. Visually that
+              read as "the ticker is racing" even though the CSS duration
+              never changed — the fix is capping content, not just slowing
+              the animation down further. Top 40 by volume keeps it both
+              readable and actually meaningful (highest-signal coins first). */}
           {[0, 1].map((copy) => (
             <div className="lp-ticker-run" key={copy}>
-              {ranked.map((row) => (
+              {ranked.slice(0, 40).map((row) => (
                 <span key={`${copy}-${row.address}`}>
                   <b>{row.symbol}</b>
                   <small>{money(quoteAmount(row.volume24h, row.currency, row.globalPool), row.currency)} 24h</small>
