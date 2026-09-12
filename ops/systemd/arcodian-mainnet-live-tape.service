@@ -14,10 +14,17 @@ Type=simple
 WorkingDirectory=/root/.openclaw/workspace/arc
 Environment=MAINNET_INDEX_PATH=/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json
 Environment=MAINNET_TAPE_OUTPUT=/www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json
-# ARC_MAINNET_RPC_URL lives in /root/.config/arcodian/mainnet-rpc.env, not
-# here — its path segment is an access-gated key, confirmed 2026-08-30 (any
-# other path 403s), and this file is committed to a public repo.
-EnvironmentFile=/root/.config/arcodian/mainnet-rpc.env
+# ARC_MAINNET_RPC_URL (a comma-separated fallback list — see the script's
+# own comment) lives in /root/.config/arcodian/mainnet-tape-rpc.env, split
+# off 2026-09-12 from the shared mainnet-rpc.env: this unit calls RPC
+# endpoints directly (with in-script rotation on failure) rather than
+# through the same-origin proxy the other mainnet services use, because
+# the proxy's extra HTTP hop was slow enough to blow this unit's own 30s
+# per-tick timeout during venue-discovery bootstrap. Not committed here —
+# same reasoning as before: kept out of the tracked file on principle even
+# though these particular URLs are public, so this pattern doesn't quietly
+# regress if a future edit swaps one back to a gated endpoint.
+EnvironmentFile=/root/.config/arcodian/mainnet-tape-rpc.env
 ExecStart=/usr/bin/node scripts/mainnet-live-tape.mjs
 # ExecStartPost cp removed 2026-08-30: current/data is a symlink straight to
 # shared/data (see DEPLOYMENT.md), so this had become a same-file copy —

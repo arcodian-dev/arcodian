@@ -12,18 +12,44 @@ import { Contract, Interface, JsonRpcProvider } from "ethers";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
-// Same same-origin PHP proxy the rest of the mainnet stack uses — it already
-// round-robins/retries across the 3 known-working Arc Mainnet RPC endpoints,
-// so one provider pointed here gets that failover for free.
-const RPC = process.env.ARC_MAINNET_RPC_URL || "https://arcodian.fun/api/rpc-mainnet.php";
+// Found 2026-09-12: pointing this at the same-origin PHP proxy (which
+// round-robins/retries across 3 endpoints, and is what the rest of the
+// mainnet stack uses) sounds like free failover but is wrong for THIS
+// script specifically — the venue-discovery bootstrap fires hundreds of
+// individual token0() calls (resolveInBatches, concurrency 20), and each
+// one through the proxy costs a full extra external HTTP hop (this box ->
+// arcodian.fun -> upstream) on top of the upstream's own latency. That
+// pushed bootstrap past the 30s tick timeout every single time
+// (venues stayed at 0 forever, tape never ticked). Direct calls to a
+// single RPC are fast enough (~0.3-1.2s each, proven), but a single URL
+// has no fallback of its own — verified the same day that rpc.arc-scan.org
+// alone can go intermittently 503 ("reason":"unreachable") for stretches.
+// So: call endpoints directly (no proxy hop) but rotate across a list on
+// any failure, same shape of failover as the proxy without its per-call
+// latency tax. ARC_MAINNET_RPC_URL may be a comma-separated list; a single
+// URL still works (falls back to itself, i.e. the old behavior).
+const RPC_URLS = (process.env.ARC_MAINNET_RPC_URL || "https://rpc.arc-scan.org/")
+  .split(",").map((url) => url.trim()).filter(Boolean);
 const marketPath = process.env.MAINNET_INDEX_PATH || "/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json";
 const output = process.env.MAINNET_TAPE_OUTPUT || "/www/wwwroot/arcodian.fun/shared/data/mainnet-live-tape.json";
 const USDC = "0x3600000000000000000000000000000000000000";
 
-let provider = new JsonRpcProvider(RPC, undefined, { batchMaxCount: 1, staticNetwork: true });
+// batchMaxCount is 1 everywhere else in this codebase, but the cold-start
+// venue bootstrap below fires resolveQuoteIs0() for up to ~20 pools at once
+// (VENUE_RESOLVE_CONCURRENCY) per resolveInBatches() round — with batching
+// off that's 20 separate HTTP round trips per round, and across ~1000+
+// venues on a fresh cache that alone blew even a 120s bootstrap budget
+// (verified: still "venues=0" at 120s against a healthy rpc.arc-scan.org).
+// Confirmed via curl that arc-scan.org answers a JSON-RPC batch array
+// correctly, so raising this lets ethers coalesce each same-tick round of
+// concurrent calls into one HTTP request instead of 20.
+const RPC_OPTS = { batchMaxCount: 25, staticNetwork: true };
+let rpcIndex = 0;
+let provider = new JsonRpcProvider(RPC_URLS[rpcIndex], undefined, RPC_OPTS);
 function rotateProvider() {
   try { provider.destroy(); } catch {}
-  provider = new JsonRpcProvider(RPC, undefined, { batchMaxCount: 1, staticNetwork: true });
+  rpcIndex = (rpcIndex + 1) % RPC_URLS.length;
+  provider = new JsonRpcProvider(RPC_URLS[rpcIndex], undefined, RPC_OPTS);
 }
 
 const curveInterface = new Interface([
@@ -74,7 +100,18 @@ let venues = new Map();
 // Caches a pool's token0() across loadVenues() calls so a graduated launch
 // (whose mainnet-market-index.json record carries no token0 field) only
 // costs one extra RPC call the first time it's ever seen, not every 15s.
+// Persisted to disk (a pool's token0/token1 ordering is a fixed onchain
+// fact, never changes) — found 2026-09-12: this cache used to live only in
+// memory, so every restart re-resolved every single venue (1000+) from
+// scratch via individual RPC calls, which alone could take minutes and
+// looked identical to "the RPC is down". A restart now only needs to
+// resolve venues that are new since the last run.
+const quoteCachePath = `${output}.quotecache.json`;
 const quoteIs0Cache = new Map();
+try {
+  const saved = JSON.parse(await readFile(quoteCachePath, "utf8"));
+  for (const [key, value] of Object.entries(saved)) quoteIs0Cache.set(key, value);
+} catch {}
 let lastMarketLoad = 0;
 let lastBlock = 0;
 let trades = [];
@@ -96,6 +133,10 @@ async function resolveQuoteIs0(pool) {
   } catch {
     return true; // best-effort default; a wrong guess only mislabels BUY/SELL, never crashes
   }
+}
+
+async function saveQuoteCache() {
+  try { await writeFile(quoteCachePath, JSON.stringify(Object.fromEntries(quoteIs0Cache))); } catch {}
 }
 
 async function loadVenues() {
@@ -141,6 +182,7 @@ async function loadVenues() {
     });
   }
   lastMarketLoad = Date.now();
+  await saveQuoteCache();
 }
 
 // A many-address getLogs call (1000+ venues as of 2026-09) can only cover a
@@ -219,14 +261,24 @@ async function tick() {
   await rename(`${output}.tmp`, output);
 }
 
+// A cold-start bootstrap (empty quote cache, hundreds of never-seen venues)
+// can legitimately take longer than one steady-state tick has any business
+// taking — found 2026-09-12 forcing both through the same 30s budget: a
+// bootstrap that needed ~35-40s never got to finish even once, since it hit
+// the timeout, rotated to a different (no more or less loaded) RPC, and
+// started over from zero every time. Bootstrap now gets its own, longer
+// budget; ordinary ticks (venues already populated) keep the tight one so a
+// truly wedged RPC still self-heals within a second-scale cadence.
+const BOOTSTRAP_TIMEOUT_MS = 120_000;
+
 while (true) {
   const started = Date.now();
-  try { await runWithTimeout(tick(), TICK_TIMEOUT_MS); }
+  try { await runWithTimeout(tick(), venues.size ? TICK_TIMEOUT_MS : BOOTSTRAP_TIMEOUT_MS); }
   catch (error) {
     // Include the state that made this tick fail — a bare error string
     // (what this used to log) gave no way to tell "stuck on a runaway
     // range" apart from "RPC is actually down" without reading the code.
-    console.error(`Mainnet live tape retry: ${error?.shortMessage || error?.message || error} (lastBlock=${lastBlock ?? "unset"}, venues=${venues.size})`);
+    console.error(`Mainnet live tape retry: ${error?.shortMessage || error?.message || error} (lastBlock=${lastBlock ?? "unset"}, venues=${venues.size}, rpc=${RPC_URLS[rpcIndex]})`);
     rotateProvider();
   }
   await sleep(Math.max(200, 1_000 - (Date.now() - started)));
