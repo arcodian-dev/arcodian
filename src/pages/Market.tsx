@@ -59,6 +59,25 @@ function compactNumber(value: number): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 2, notation: "compact" });
 }
 
+// The card grid used to show a fixed, identical 7-bar shape on every single
+// coin regardless of its actual price history — decorative, not data, and
+// the same pattern the terminal's own order-book mock was removed for
+// earlier this project. Built from the coin's real recent trades instead;
+// too few points to trend just says so rather than drawing a fake line.
+function sparklinePath(trades: readonly { native: string; tokens: string; timestamp?: number; block?: number }[] | undefined): string | null {
+  if (!trades || trades.length < 2) return null;
+  const priced = [...trades]
+    .filter((trade) => { try { return BigInt(trade.tokens) > 0n; } catch { return false; } })
+    .sort((a, b) => (a.timestamp || a.block || 0) - (b.timestamp || b.block || 0))
+    .slice(-20)
+    .map((trade) => Number(trade.native) / Number(trade.tokens));
+  if (priced.length < 2) return null;
+  const min = Math.min(...priced), max = Math.max(...priced);
+  const span = max - min || max || 1;
+  const step = 100 / (priced.length - 1);
+  return priced.map((price, index) => `${(index * step).toFixed(1)},${(26 - ((price - min) / span) * 24).toFixed(1)}`).join(" ");
+}
+
 // Global Radar/V2/V3/V4 records store USDC aggregates in raw 6-decimal
 // units. Canonical launch records use the contract's 18-decimal accounting.
 // Keep the conversion at the presentation boundary so ranking and onchain
@@ -780,7 +799,7 @@ export default function Screener({
           Reading canonical factories onchain…
         </div>
       ) : (
-        <>
+        <div className={["Launchpad", "New", "Trending"].includes(filter) ? "market-views prefer-cards" : "market-views"}>
         <div className="market-table-view" role="table" aria-label="Markets">
           <div className="mt-row mt-head" role="row">
             <span>Market</span>
@@ -840,7 +859,7 @@ export default function Screener({
         <div className="coin-grid market-cards-view">
           {visibleRows.map((item) => (
             <article
-              className={`coin-card ${"curve" in item ? "tradeable" : ""}`}
+              className={`coin-card ${"curve" in item ? "tradeable" : ""} ${"progress" in item ? "coin-card-launch" : ""}`}
               key={item.address}
               onClick={() => {
                 if ("curve" in item) openMarketAsset(item);
@@ -852,6 +871,9 @@ export default function Screener({
                     <CoinIcon image={item.image} alt={item.symbol} fallback={<b>{item.symbol.slice(0, 1)}</b>} />
                   ) : (
                     <b>{item.symbol.slice(0, 1)}</b>
+                  )}
+                  {"progress" in item && (
+                    <span className={item.graduated ? "coin-badge graduated" : "coin-badge curve"}>{item.graduated ? "Graduated" : "Curve"}</span>
                   )}
                   <span>
                     <strong>{item.symbol}</strong>
@@ -881,26 +903,32 @@ export default function Screener({
               ) : "progress" in item ? (
                 <>
                   <div className="coin-discovery-metrics">
-                    <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} USDC</b></span>
+                    <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} {item.currency || "USDC"}</b></span>
                     <span><small>Holders</small><b>{item.holderCount || 0}</b></span>
                     <span><small>24h</small><b className={pctClass(item.priceChange24h)}>{pctText(item.priceChange24h)}</b></span>
                   </div>
-                  <div className="mini-chart">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                  </div>
+                  {(() => {
+                    const points = sparklinePath(item.trades);
+                    return points ? (
+                      <svg className="mini-chart" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
+                        <polyline points={points} />
+                      </svg>
+                    ) : (
+                      <div className="mini-chart mini-chart-empty">Too new to trend yet</div>
+                    );
+                  })()}
                   <div className="progress-copy">
-                    <span>Bonding progress</span>
-                    <b>{item.progress.toFixed(2)}%</b>
+                    <span>{item.graduated ? "Graduated" : "Bonding progress"}</span>
+                    <b>{item.graduated ? "Live on ARC DEX" : `${item.progress.toFixed(2)}%`}</b>
                   </div>
-                  <div className="progress-bar">
-                    <i style={{ width: `${Math.min(100, item.progress)}%` }} />
-                  </div>
+                  {!item.graduated && (
+                    <>
+                      <div className="progress-bar">
+                        <i style={{ width: `${Math.min(100, item.progress)}%` }} />
+                      </div>
+                      <small className="progress-amount">{Number(formatEther(item.reserve)).toLocaleString(undefined, { maximumFractionDigits: 2 })} of {Number(formatEther(item.threshold)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {item.currency || "USDC"} raised</small>
+                    </>
+                  )}
                   <button>Open {item.symbol} market →</button>
                 </>
               ) : (
@@ -923,7 +951,7 @@ export default function Screener({
             </button>
           )}
         </div>
-        </>
+        </div>
       )}
       <div className="empty-note">
         <span>The contracts are the source</span>

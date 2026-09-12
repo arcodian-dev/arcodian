@@ -2555,6 +2555,12 @@ body::before { background-size:80px 80px; opacity:.45; }
     background: var(--ax-surface);
     box-shadow: var(--ax-shadow-1);
   }
+  /* Launchpad/New/Trending show a small, curated set of coins rather than
+     the full ~1,100-market catalog — a dense table is the wrong tool there
+     (built to scan many rows at once), so those three filters keep the
+     card grid even on desktop instead of forcing the table default. */
+  .prefer-cards .market-table-view { display: none; }
+  .prefer-cards .market-cards-view { display: grid; }
 }
 /* Every row variant (canonical launch, global pool, official asset) renders
    8 cells — market/mcap/vol/change/holders-or-liquidity/progress/status/
@@ -5222,3 +5228,53 @@ footer::before {
   .coin-page-shell .orbit-chart-wrap{padding:6px;height:56vh;min-height:320px}
   .coin-page-shell .orbit-chart-wrap .terminal-chart-canvas{inset:6px;width:calc(100% - 12px);height:calc(100% - 12px)}
 }
+
+/* ------------------------------------------------------------------------ */
+/* Premium launchpad card, 2026-09-12 — image-forward layout (a big square   */
+/* thumbnail with a status badge overlaid, like a curated launchpad grid     */
+/* rather than a spreadsheet row) plus a REAL sparkline built from a coin's  */
+/* own recent trades and the bonding curve's absolute raised amount, not     */
+/* just its percentage. Scoped to .coin-card-launch specifically (native     */
+/* Arcodian launches only) so the global-pool/official card layouts, which   */
+/* share the same .coin-top/.asset markup, are completely untouched.        */
+/* ------------------------------------------------------------------------ */
+.coin-card-launch { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.coin-card-launch .coin-top { position: relative; flex-direction: column; align-items: stretch; gap: 0; }
+.coin-card-launch .asset { position: relative; display: block; padding: 0; }
+.coin-card-launch .asset > img,
+.coin-card-launch .asset > b {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  height: auto;
+  border-radius: 0;
+  font-size: 46px;
+}
+.coin-card-launch .asset > span { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px 0; }
+.coin-card-launch .coin-badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font: 700 9px/1 "JetBrains Mono", ui-monospace, monospace;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  backdrop-filter: blur(6px);
+}
+.coin-card-launch .coin-badge.graduated { background: rgba(111,169,122,.88); color: #0b1f16; }
+.coin-card-launch .coin-badge.curve { background: rgba(10,14,12,.72); color: var(--f-amber, #C9A15C); border: 1px solid rgba(201,161,92,.4); }
+.coin-card-launch .coin-card-actions { position: absolute; top: 10px; right: 10px; z-index: 2; }
+.coin-card-launch .coin-card-actions .verified { display: none; } /* the badge above already says this */
+.coin-card-launch .coin-discovery-metrics,
+.coin-card-launch .progress-copy,
+.coin-card-launch .progress-bar,
+.coin-card-launch .progress-amount { margin-left: 14px; margin-right: 14px; }
+.coin-card-launch button { margin: 12px 14px 14px; }
+.coin-card-launch .mini-chart { display: block; width: calc(100% - 28px); height: 30px; margin: 10px 14px; overflow: visible; }
+.coin-card-launch .mini-chart polyline { fill: none; stroke: var(--f-amber, #C9A15C); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.coin-card-launch .mini-chart-empty { display: grid; place-items: center; height: 30px; color: var(--f-faint, #6f7b8c); font-size: 10px; letter-spacing: .02em; }
+.coin-card-launch .progress-amount { display: block; margin-top: 4px; color: var(--f-faint, #6f7b8c); font-size: 10px; }
