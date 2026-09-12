@@ -88,3 +88,67 @@
   .skel::after{animation:none}
   .terminal-price strong{transition:none}
 }
+
+/* ---------------------------------------------------------------------- */
+/* Brand-accent pass, 2026-09-12 — this page was the only one in the whole */
+/* product still on a standalone green/black "hacker terminal" palette,    */
+/* unrelated to the --arc/--volt cyan-blue accent every other page uses    */
+/* (styles.css's "Orbital Instrument" system). That mismatch, not a lack   */
+/* of decoration, is most of why this page read as bolted-on/"jelek" next  */
+/* to the rest of the site. Recolors NEUTRAL chrome (borders, ambient      */
+/* glow, the connected-wallet chip, the active timeframe tab) to the       */
+/* brand's cyan/blue; buy/sell/live SIGNAL colors (candles, the live dot,  */
+/* trade-row sides, price flash) stay green/red on purpose — that's a      */
+/* correct, universal trading convention, not the thing that was wrong.    */
+/* Also adds the site's own signature corner accent (a cyan "arc-tick"     */
+/* quarter-bracket, styles.css's .cards article::after) to every terminal  */
+/* card, so this page visibly belongs to the same product family.         */
+/* ---------------------------------------------------------------------- */
+.trading-terminal-page{
+  background:
+    radial-gradient(1100px 520px at 14% -10%, rgba(22,200,234,.06), transparent 60%),
+    radial-gradient(900px 460px at 100% 0%, rgba(10,111,232,.05), transparent 55%),
+    #05070a;
+}
+.terminal-header::after{background:linear-gradient(90deg,transparent,rgba(22,200,234,.4),transparent)}
+.terminal-wallet{border-color:#1a3a52;color:#5fd4ee}
+.terminal-network.online{color:#5fd4ee}
+.terminal-toolbar button.active{background:#0d2740;color:#5fd4ee;box-shadow:0 0 0 1px rgba(22,200,234,.25) inset}
+.terminal-chart-card::before{background:linear-gradient(90deg,transparent,rgba(22,200,234,.32),transparent)}
+.poolinfo-links a{color:#5fd4ee}
+
+/* Scoped to terminal-poolinfo only (not the shared .terminal-card class) —
+   the chart/trades/execution cards all have their own right-aligned
+   content flush against the top edge (toolbar live badge, section-title
+   count, execution tabs) that this accent would sit on top of. PoolInfo's
+   header is the one spot with clear room for it. */
+.terminal-poolinfo{position:relative}
+.terminal-poolinfo::after{
+  content:"";position:absolute;right:0;top:0;width:20px;height:20px;
+  border-top:1.5px solid #16c8ea;border-right:1.5px solid #16c8ea;border-radius:0 10px 0 0;
+  opacity:.55;pointer-events:none;
+}
+
+/* Bonding-curve progress — mirrors Market's own premium launch card
+   (reserve/threshold, % + absolute raised) so the same fact reads
+   identically whether a trader sees it on a card or in the Terminal. */
+.poolinfo-progress{padding:12px;border-bottom:1px solid #161d29}
+.poolinfo-progress-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.poolinfo-progress-head span{color:#6f7b8c;font:10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em}
+.poolinfo-progress-head b{color:#5fd4ee;font:700 11px "JetBrains Mono",monospace}
+.poolinfo-progress-bar{height:6px;border-radius:99px;background:#111720;overflow:hidden}
+.poolinfo-progress-bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#0a6fe8,#16c8ea);transition:width .5s ease}
+.poolinfo-progress small{display:block;margin-top:6px;color:#8b97a8;font:10px "JetBrains Mono",monospace}
+.poolinfo-progress.graduated{display:flex;justify-content:space-between;align-items:center}
+.poolinfo-progress.graduated span{color:#26d98a;font:700 10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em}
+.poolinfo-progress.graduated b{color:#c4cede;font:11px "Space Grotesk",system-ui,sans-serif}
+
+/* Creator fee — new, real feature (ArcPumpV11) once a coin's curve
+   supports it; silently absent for pre-V11 coins (see CreatorFeeSection). */
+.poolinfo-creator-fee{border-top:1px solid #161d29}
+.creator-fee-stat{display:flex;justify-content:space-between;align-items:baseline;padding:10px 12px;background:rgba(22,200,234,.06)}
+.creator-fee-stat span{color:#6f7b8c;font:10px "JetBrains Mono",monospace;text-transform:uppercase;letter-spacing:.05em}
+.creator-fee-stat b{color:#5fd4ee;font:700 13px "JetBrains Mono",monospace}
+.creator-fee-claim{width:calc(100% - 24px);margin:0 12px 10px;padding:9px;border:1px solid #16c8ea;border-radius:8px;background:linear-gradient(135deg,#0a6fe8,#16c8ea);color:#031320;font-weight:700;font-size:11px;cursor:pointer;transition:filter .15s ease}
+.creator-fee-claim:hover:not(:disabled){filter:brightness(1.08)}
+.creator-fee-claim:disabled{opacity:.5;cursor:default;background:#101722;color:#6f7b8c;border-color:#263142}

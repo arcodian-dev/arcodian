@@ -1102,6 +1102,35 @@ footer button { border: 0; padding: 0; color: inherit; background: transparent; 
   text-align: left;
   cursor: pointer;
 }
+/* Created tab: same button card, but wrapped in a row div so a
+   creator-fee chip (visible only to the connected creator wallet itself —
+   see Profile.tsx's CreatorFeeChip) can sit as an extra line underneath
+   without disturbing the button's own 4-column grid. */
+.created-market-row > button {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) 1fr 1fr auto;
+  gap: 18px;
+  align-items: center;
+  width: 100%;
+  padding: 15px;
+  border: 1px solid #ffffff10;
+  border-radius: 15px 15px 0 0;
+  background: #0d1e17;
+  color: #eaf8f2;
+  text-align: left;
+  cursor: pointer;
+}
+.created-market-row:has(.creator-fee-chip) > button { border-radius: 15px 15px 0 0; border-bottom: 0; }
+.created-market-row:not(:has(.creator-fee-chip)) > button { border-radius: 15px; }
+.creator-fee-chip {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 10px 15px; border: 1px solid #ffffff10; border-top: 1px dashed #ffffff1a;
+  border-radius: 0 0 15px 15px; background: linear-gradient(135deg, #0a2b4a, #0d1e17);
+}
+.creator-fee-chip small { color: #7fb8e0; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.creator-fee-chip b { color: #6fd8f5; font-size: 13px; margin-right: auto; }
+.creator-fee-chip button { padding: 6px 12px; border: 1px solid #16c8ea; border-radius: 8px; background: linear-gradient(135deg,#0a6fe8,#16c8ea); color: #031320; font-weight: 700; font-size: 11px; cursor: pointer; }
+.creator-fee-chip button:disabled { opacity: .5; cursor: default; background: #16324a; color: #7fb8e0; border-color: #244a63; }
 .holdings-list > button > span:not(.asset) {
   display: grid;
   gap: 5px;
@@ -5009,6 +5038,15 @@ footer::before {
 .orbit-risk-note{display:flex;align-items:flex-start;gap:8px;margin-top:12px;padding:9px 10px;border-radius:var(--r);
   background:var(--panel);border:1px solid var(--line)}
 .orbit-risk-note span{font-size:10.5px;color:var(--muted);line-height:1.45}
+
+/* Creator fee — only ever rendered for the connected wallet that IS this
+   coin's creator (see Market.tsx CreatorFeeCard), so a subtle highlighted
+   treatment is appropriate: this block only exists for one specific person. */
+.orbit-creator-fee{background:var(--orbit-dim);border-radius:var(--r);margin:0 -2px;padding:14px 12px}
+.orbit-claim-btn{width:100%;margin-top:10px;padding:10px;border:1px solid var(--orbit-accent);border-radius:var(--r-sm);
+  background:var(--orbit-accent);color:#04170f;font-weight:700;font-size:12px;cursor:pointer;transition:filter .15s ease}
+.orbit-claim-btn:hover:not(:disabled){filter:brightness(1.08)}
+.orbit-claim-btn:disabled{opacity:.5;cursor:default;background:var(--panel);color:var(--muted);border-color:var(--line)}
 
 .orbit-addr{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--line);
   border-radius:var(--r-sm);background:var(--panel);font-family:var(--mono);font-size:10.5px;color:var(--ink-2)}

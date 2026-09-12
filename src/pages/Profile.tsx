@@ -8,6 +8,54 @@ import { arcProvider, CoinIcon, readActivities, short, type LaunchAsset, type Wa
 // array here would allocate fresh every render and (since the holdings
 // effect depends on it) retrigger an infinite refetch loop, same failure
 // mode fixed in Market.tsx.
+const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function withdrawCreatorFees() external"];
+
+// V11-only (ArcPumpV11's creator fee split) — silently renders nothing for
+// any coin on an older engine (creatorFeesAccrued() reverts there, same
+// fail-quiet pattern TradingTerminal.tsx uses). `created` is already
+// filtered to creator===account (see the effect below), so every row this
+// renders in IS this wallet's own coin — no extra visibility gate needed
+// here, that's the whole reason this lives on the Created tab specifically.
+function CreatorFeeChip({ curve, activeArc, activeProvider, account }: {
+  curve: string;
+  activeArc: { rpc: string; rpcs?: readonly string[]; id?: number };
+  activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
+  account: string;
+}) {
+  const [accrued, setAccrued] = useState<bigint | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [claiming, setClaiming] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const provider = arcProvider(activeArc);
+    const poll = () => new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+      .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
+      .catch(() => { if (alive) setSupported(false); });
+    void poll();
+    const timer = window.setInterval(poll, 15_000);
+    return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
+  }, [curve, activeArc]);
+
+  if (!supported || accrued == null) return null;
+
+  async function claim(event: { stopPropagation: () => void }) {
+    event.stopPropagation();
+    if (!activeProvider) return;
+    setClaiming(true);
+    try {
+      const iface = new Contract(curve, CREATOR_FEE_ABI);
+      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
+      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: curve, data }] });
+    } catch { /* status surfaced via the balance simply not moving; kept minimal here, terminal has the full flow */ }
+    finally { setClaiming(false); }
+  }
+
+  return <span className="creator-fee-chip"><small>Your creator fee</small><b>{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
+    <button disabled={claiming || accrued === 0n} onClick={(event) => void claim(event)}>{claiming ? "Claiming…" : "Claim"}</button>
+  </span>;
+}
+
 const MAINNET_LEGACY_FACTORIES: string[] = [
   ARC_MAINNET_CONTRACTS.marketUsdcFactory,
   ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,
@@ -18,11 +66,20 @@ const MAINNET_LEGACY_FACTORIES: string[] = [
 
 export default function Profile({
   account,
+  viewerAccount,
+  activeProvider,
   chainId,
   connect,
   chooseCoin,
 }: {
   account: string;
+  // The wallet actually connected in this browser — distinct from `account`,
+  // which can be someone else's address when viewing their public profile
+  // page. Creator-fee visibility must gate on THIS, never on `account`:
+  // otherwise viewing another creator's profile would leak (and offer to
+  // claim!) their fee balance to whoever's just looking.
+  viewerAccount?: string;
+  activeProvider?: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   chainId?: number | null;
   connect: () => void;
   chooseCoin: (address: string) => void;
@@ -393,12 +450,17 @@ export default function Profile({
             <div className="created-markets">
               <p className="kicker">Created markets</p>
               <div className="holdings-list">
-                {created.map((item) => (
-                  <button key={`created-${item.address}`} onClick={() => chooseCoin(item.address)}>
-                    <span className="asset"><CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} /><span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
-                    <span><small>{item.graduated ? "Venue" : "Progress"}</small><b>{item.graduated ? "ARC DEX" : `${item.progress.toFixed(2)}%`}</b></span><span><small>24h volume</small><b>{Number(formatEther(BigInt(item.volume24h||"0"))).toLocaleString(undefined,{maximumFractionDigits:2})} USDC</b></span><i>→</i>
-                  </button>
-                ))}
+                {created.map((item) => {
+                  const showFee = Boolean(item.curve) && isMainnet && Boolean(viewerAccount) && viewerAccount!.toLowerCase() === account.toLowerCase();
+                  return <div key={`created-${item.address}`} className="created-market-row">
+                    <button onClick={() => chooseCoin(item.address)}>
+                      <span className="asset"><CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} /><span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
+                      <span><small>{item.graduated ? "Venue" : "Progress"}</small><b>{item.graduated ? "ARC DEX" : `${item.progress.toFixed(2)}%`}</b></span><span><small>24h volume</small><b>{Number(formatEther(BigInt(item.volume24h||"0"))).toLocaleString(undefined,{maximumFractionDigits:2})} USDC</b></span>
+                      <i>→</i>
+                    </button>
+                    {showFee && <CreatorFeeChip curve={item.curve} activeArc={activeArc} activeProvider={activeProvider || null} account={viewerAccount!} />}
+                  </div>;
+                })}
               </div>
             </div>
           )}

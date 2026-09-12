@@ -996,6 +996,64 @@ export default function Screener({
   );
 }
 
+const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function withdrawCreatorFees() external"];
+
+// V11-only (ArcPumpV11's creator fee split) — visible ONLY to the connected
+// wallet that IS this coin's creator (user-specified privacy rule, same as
+// TradingTerminal.tsx's CreatorFeeSection and Profile.tsx's CreatorFeeChip —
+// three independent surfaces, one shared rule). Silently renders nothing
+// for a coin on an older engine (creatorFeesAccrued() reverts there).
+function CreatorFeeCard({ asset, account, activeArc, activeProvider }: {
+  asset: LaunchAsset;
+  account: string;
+  activeArc: typeof ARC | typeof ARC_MAINNET;
+  activeProvider: EthereumProvider | null;
+}) {
+  const [accrued, setAccrued] = useState<bigint | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [claiming, setClaiming] = useState(false);
+  const [status, setStatus] = useState("");
+  const isCreator = Boolean(account) && Boolean(asset.creator) && account.toLowerCase() === (asset.creator || "").toLowerCase();
+
+  useEffect(() => {
+    if (!asset.curve || !isCreator) return;
+    let alive = true;
+    const provider = arcProvider(activeArc);
+    const poll = () => new Contract(asset.curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+      .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
+      .catch(() => { if (alive) setSupported(false); });
+    void poll();
+    const timer = window.setInterval(poll, 10_000);
+    return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
+  }, [asset.curve, isCreator, activeArc]);
+
+  if (!asset.curve || !isCreator || !supported || accrued == null) return null;
+
+  async function claim() {
+    if (!activeProvider) return;
+    setClaiming(true);
+    setStatus("Confirm the claim in your wallet…");
+    try {
+      const iface = new Contract(asset.curve, CREATOR_FEE_ABI);
+      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
+      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: asset.curve, data }] });
+      setStatus("Claim submitted — it'll land in a few seconds.");
+    } catch (error) {
+      setStatus((error as { message?: string })?.message?.slice(0, 120) || "Claim failed.");
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  return <div className="orbit-block orbit-creator-fee">
+    <div className="orbit-block-h"><div className="orbit-block-t">Your creator fee</div></div>
+    <div className="orbit-curve-top"><div className="orbit-curve-pct">{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })}</div><div className="orbit-curve-sub">USDC claimable</div></div>
+    <div className="orbit-curve-note">Visible only to you — you're the creator wallet for {asset.symbol}. 1% trading fee, split 50/50 with the protocol treasury.</div>
+    <button className="orbit-claim-btn" disabled={claiming || accrued === 0n} onClick={() => void claim()}>{claiming ? "Claiming…" : accrued === 0n ? "Nothing to claim yet" : "Claim creator fee"}</button>
+    {status && <div className="orbit-curve-note">{status}</div>}
+  </div>;
+}
+
 function TradingDesk({
   asset,
   account,
@@ -1794,6 +1852,8 @@ function TradingDesk({
               </div>
               <div className="orbit-risk-note"><span>Permissionless market — anyone can create a token here. These signals cover what's readable onchain, not a full audit. Never trade more than you can afford to lose.</span></div>
             </div>
+
+            <CreatorFeeCard asset={asset} account={account} activeArc={activeArc} activeProvider={activeProvider} />
 
             <div className="orbit-block">
               <div className="orbit-block-h"><div className="orbit-block-t">Market</div></div>

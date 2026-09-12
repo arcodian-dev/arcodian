@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Contract, formatEther } from "ethers";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { ARC_MAINNET } from "../config";
-import { CoinIcon, rpcUrlsFor } from "../shared";
+import { arcProvider, CoinIcon, rpcUrlsFor } from "../shared";
 import "./TradingTerminal.css";
 
 type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string };
@@ -23,6 +24,9 @@ type MarketRecord = {
   curve?: string;
   pair?: string;
   pool?: string;
+  creator?: string;
+  reserve?: string;
+  threshold?: string;
   trades?: MarketTrade[];
 };
 type TapeTrade = MarketTrade & { token: string };
@@ -104,16 +108,106 @@ function venueAddress(market: MarketRecord): string {
   return market.pool || market.pair || market.curve || market.address;
 }
 
+// Same bonding-curve progress the Market cards already show (reserve of
+// threshold, both as % and an absolute amount) — the Terminal's PoolInfo
+// used to only say "1.00% curve" with no sense of how close to graduating,
+// the one piece of Pons's coin page that had a real, missing counterpart
+// here rather than just a color/spacing difference.
+function CurveProgress({ market }: { market: MarketRecord }) {
+  if (!market.curve || !market.threshold) return null;
+  if (market.graduated) return <div className="poolinfo-progress graduated"><span>Graduated</span><b>Live on Arc DEX / Uniswap V3</b></div>;
+  const reserve = usdc(market.reserve, market.globalPool ? 6 : 18);
+  const threshold = usdc(market.threshold, market.globalPool ? 6 : 18);
+  const pct = threshold > 0 ? Math.min(100, (reserve / threshold) * 100) : 0;
+  return <div className="poolinfo-progress">
+    <div className="poolinfo-progress-head"><span>Bonding curve</span><b>{pct.toFixed(1)}% to graduation</b></div>
+    <div className="poolinfo-progress-bar"><i style={{ width: `${pct}%` }} /></div>
+    <small>{reserve.toLocaleString(undefined, { maximumFractionDigits: 2 })} of {threshold.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDC raised</small>
+  </div>;
+}
+
+const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function creator() view returns(address)", "function withdrawCreatorFees() external"];
+
+// V11-only feature (creator fee split — see contracts/src/ArcPumpV11.sol).
+// Reads live, not from the index snapshot: this is a claimable balance, so a
+// 30s-stale number could show "0" right after a real accrual or, worse,
+// look claimable after it's already been withdrawn. Silently renders
+// nothing for anything that isn't a V11 curve (creatorFeesAccrued() reverts
+// on V9/V10/V8 — the ABI doesn't exist there), same fail-quiet pattern the
+// rest of this file uses for optional per-engine features.
+function CreatorFeeSection({ market, account, activeProvider }: {
+  market: MarketRecord;
+  account: string;
+  activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
+}) {
+  const [accrued, setAccrued] = useState<bigint | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [claiming, setClaiming] = useState(false);
+  const [status, setStatus] = useState("");
+  const curve = market.curve;
+  // User-specified privacy rule: creator-fee info shows ONLY to the wallet
+  // that IS this coin's creator, connected. Everyone else sees nothing here
+  // (not even a disabled/blurred hint) — the balance is technically public
+  // on any block explorer, but this UI never surfaces it to a non-creator.
+  const isCreator = Boolean(account) && Boolean(market.creator) && account.toLowerCase() === (market.creator || "").toLowerCase();
+
+  useEffect(() => {
+    if (!curve || !isCreator) return;
+    let alive = true;
+    const provider = arcProvider(ARC_MAINNET);
+    const poll = () => new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+      .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
+      .catch(() => { if (alive) setSupported(false); });
+    void poll();
+    const timer = window.setInterval(poll, 10_000);
+    return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
+  }, [curve, isCreator]);
+
+  if (!curve || !isCreator || !supported || accrued == null) return null;
+
+  async function claim() {
+    if (!activeProvider || !curve) return;
+    setClaiming(true);
+    setStatus("Confirm the claim in your wallet…");
+    try {
+      const iface = new Contract(curve, CREATOR_FEE_ABI);
+      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
+      const hash = await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: curve, data }] });
+      setStatus(typeof hash === "string" ? "Claim submitted — it'll land in a few seconds." : "Claim submitted.");
+    } catch (error) {
+      setStatus((error as { message?: string })?.message?.slice(0, 120) || "Claim failed.");
+    } finally {
+      setClaiming(false);
+    }
+  }
+
+  return <div className="poolinfo-creator-fee">
+    <div className="terminal-section-title">Your creator fee <span>1% trading fee, split</span></div>
+    <div className="creator-fee-stat">
+      <span>Claimable now</span>
+      <b>{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
+    </div>
+    <p className="poolinfo-note">Visible only to you — you're the creator wallet for {market.symbol}.</p>
+    <button className="creator-fee-claim" disabled={claiming || accrued === 0n} onClick={() => void claim()}>{claiming ? "Claiming…" : accrued === 0n ? "Nothing to claim yet" : "Claim creator fee"}</button>
+    {status && <p className="poolinfo-note">{status}</p>}
+  </div>;
+}
+
 // Arc markets are AMM-priced (bonding curve pre-graduation, Uniswap V3 pool
 // after) — there is no limit order book anywhere in the stack. This used to
 // render a fabricated bid/ask ladder computed from arbitrary offsets off the
 // last price, which looked like real depth but wasn't backed by anything.
 // Real, disclosed pool state instead of a synthetic-but-convincing fake.
-function PoolInfo({ market }: { market: MarketRecord }) {
+function PoolInfo({ market, account, activeProvider }: {
+  market: MarketRecord;
+  account: string;
+  activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
+}) {
   const venue = venueAddress(market);
   const feePct = market.feeTier ? (market.feeTier / 10_000).toFixed(2) : null;
   return <aside className="terminal-poolinfo">
     <div className="terminal-section-title">Pool <span>{market.dex || "Arc Mainnet"}</span></div>
+    <CurveProgress market={market} />
     <div className="poolinfo-rows">
       <div><span>Venue</span><b>{market.dex || (market.graduated === false ? "Bonding curve" : "—")}</b></div>
       <div><span>Fee tier</span><b>{feePct ? `${feePct}%` : market.graduated === false ? "1.00% curve" : "—"}</b></div>
@@ -125,6 +219,7 @@ function PoolInfo({ market }: { market: MarketRecord }) {
       <a href={`${ARC_MAINNET.explorer}/address/${market.address}`} target="_blank" rel="noreferrer">Token contract ↗</a>
       {venue.toLowerCase() !== market.address.toLowerCase() && <a href={`${ARC_MAINNET.explorer}/address/${venue}`} target="_blank" rel="noreferrer">Trading venue ↗</a>}
     </div>
+    <CreatorFeeSection market={market} account={account} activeProvider={activeProvider} />
     <p className="poolinfo-note">Onchain pool state — Arc markets are AMM-priced, so there's no order book to show.</p>
   </aside>;
 }
@@ -280,7 +375,7 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
           <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade, Boolean(market.globalPool)) > 0 ? tradePrice(trade, Boolean(market.globalPool)).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native, market.globalPool ? 6 : 18))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
         </div>
       </section>
-      <PoolInfo market={market} />
+      <PoolInfo market={market} account={account} activeProvider={activeProvider} />
       <aside className="terminal-execution terminal-card">
         <div className="execution-tabs"><button className={activeSide === "buy" ? "active buy" : ""} onClick={() => setActiveSide("buy")}>Buy</button><button className={activeSide === "sell" ? "active sell" : ""} onClick={() => setActiveSide("sell")}>Sell</button></div>
         <div className="execution-context"><span>Arcodian route engine</span><b>{activeSide === "buy" ? `Buy ${market.symbol}` : `Sell ${market.symbol}`}</b><small>Best executable route · 0.30% protocol fee where applicable</small></div>

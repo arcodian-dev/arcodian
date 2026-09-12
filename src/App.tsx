@@ -1121,6 +1121,8 @@ export default function App() {
       ) : tab === "profile" ? (
         <Profile
           account={profileAddress || account}
+          viewerAccount={account}
+          activeProvider={activeProvider}
           chainId={chainId}
           connect={() => connect()}
           chooseCoin={chooseCoin}
