@@ -171,7 +171,8 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Arc Mainnet — live, real value",
       note: `Deployed on Arc Mainnet, chain ${ARC_MAINNET.id}, not Arc Testnet. Governance on these is still deployer-only — no mainnet multisig yet (see Mainnet readiness below). ArcBridgeRouter deployed on 2026-07-31 across 5 chains; verify links below open the relevant chain's own explorer.`,
       cards: [
-        ["USDC-only Market Factory (V10, current)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Mainnet launch factory — every new coin launches here. Graduates atomically into its own Uniswap V3 pool with no pre-create price-manipulation window (fixed 2026-08-30)."],
+        ["USDC-only Market Factory (V11, current)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, "Mainnet launch factory — every new coin launches here. Same fair-launch curve as V10 below, plus a creator fee split (1% trading fee, half to the launch's creator via pull-claim, half treasury) and a separate 1% one-time graduation fee (100% treasury)."],
+        ["USDC-only Market Factory (V10, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Superseded by V11 above. Kept live read-only for the one coin still trading there that can't be migrated."],
         ["USDC-only Market Factory (V9, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, "Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
         ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the pair factory below."],
         ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead."],

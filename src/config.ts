@@ -174,6 +174,12 @@ export const FX_AGGREGATOR_ALLOWED_TARGETS = (import.meta.env.VITE_FX_AGGREGATOR
 // reserve, 12,000 USDC graduation, and the same 1% curve fee.
 export const ENGINE_VERSION = 10;
 export const PUMP_FACTORY_ADDRESS = "0x453a38aB960137e0294665d7C5A1BC0B1C41b9cc";
+// Mainnet's own engine-version label — Market.tsx's launch-studio badge used
+// to hardcode the TESTNET constant above even while displaying the mainnet
+// factory (they happened to both read "10" until this factory bump, which
+// hid the bug). Kept separate so mainnet and testnet can diverge without
+// either one silently mislabeling the other again.
+export const ARC_MAINNET_ENGINE_VERSION = 11;
 export const GRADUATION_THRESHOLD_18 = "12000000000000000000000"; // 12,000 USDC, 18 decimals
 
 /// Superseded deployments. Recorded so history stays readable and so nothing
@@ -496,8 +502,17 @@ export const ARC_MAINNET_CONTRACTS = {
   // graduationThreshold still 12,000 ether. Old factory's existing
   // launches can't be migrated and stay readable via the mainnet indexer's
   // ARC_MAINNET_FACTORY_V10_LEGACY entry.
+  // 2026-09-12: V11 is now the active factory for new launches — same
+  // v3Factory/positionManager/treasury/graduationThreshold as V10, adds a
+  // creator fee split (1% trading fee, half to the launch's creator via
+  // pull-claim, half treasury — V10's `creator` was attribution-only) plus
+  // a separate 1% one-time graduation fee (100% treasury). V10 keeps its
+  // one existing launch readable/tradeable via MAINNET_LEGACY_FACTORIES
+  // (frontend) / ARC_MAINNET_FACTORY_V10_LEGACY (indexer) — it can't
+  // migrate, same pattern as every prior factory generation here.
   marketUsdcFactoryV9: "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
   marketUsdcFactoryV10: "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3",
+  marketUsdcFactoryV11: "0x12ae88784D1CB2A23408BBA483B4bBBc88226FF9",
   v3Factory: "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
   v3SwapRouter: "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
   v3Quoter: "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",

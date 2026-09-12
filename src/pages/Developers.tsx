@@ -52,7 +52,8 @@ const entries=[
 // actually runs on — exactly the kind of self-defeating staleness this
 // "verify before integrating" page exists to prevent.
 const mainnetEntries=[
- ["USDC-only Market Factory (V10, current)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10,"Fair-launch bonding-curve factory — every new coin launches here. Graduates atomically into its own Uniswap V3 pool with no pre-create price-manipulation window (fixed 2026-08-30, redeployed from 0xCEc317Ca...19cED)."],
+ ["USDC-only Market Factory (V11, current)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11,"Fair-launch bonding-curve factory — every new coin launches here. Same curve as V10 below, plus a creator fee split (1% trading fee, half to the launch's creator via pull-claim, half treasury) and a separate 1% one-time graduation fee (100% treasury)."],
+ ["USDC-only Market Factory (V10, legacy)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10,"Superseded by V11 above. Kept live read-only for the one coin still trading there that can't be migrated."],
  ["USDC-only Market Factory (V9, legacy)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,"Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
  ["Market Graduation Hub",ARC_MAINNET_CONTRACTS.marketGraduationHub,"Seals graduation authority into the pair factory below."],
  ["Market Pair Factory (Arcodian DEX)",ARC_MAINNET_CONTRACTS.marketPairFactory,"Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead (see the V3 factory below)."],

@@ -35,7 +35,11 @@ const FACTORIES = [
   // longer pre-created at launch — see ArcPumpV10.sol). The old factory's
   // existing launches can't be migrated and stay readable/tradeable here.
   { address: process.env.ARC_MAINNET_FACTORY_V10_LEGACY || "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED", fromBlock: 13_830_022, kind: "v3" },
+  // 2026-09-12: superseded by V11 (creator fee split + graduation fee, see
+  // ArcPumpV11.sol) — same reason as every prior generation, its one
+  // existing launch can't migrate and stays readable/tradeable here.
   { address: process.env.ARC_MAINNET_FACTORY_V10 || "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3", fromBlock: 18_201_614, kind: "v3" },
+  { address: process.env.ARC_MAINNET_FACTORY_V11 || "0x12ae88784D1CB2A23408BBA483B4bBBc88226FF9", fromBlock: 20_487_025, kind: "v3" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },

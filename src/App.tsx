@@ -979,7 +979,11 @@ export default function App() {
           <details className={`nav-group ${["how", "contracts", "faq", "canary", "analytics", "treasury", "developers"].includes(tab) ? "active" : ""}`}>
             <summary>Resources <i>⌄</i></summary>
             <div>
-              <button onClick={() => chooseTab("developers")}><b>Developers</b><small>SDK, registry & MCP</small></button>
+              {/* Developers page hidden from nav 2026-09-12 (user request) —
+                  its contract-address content mostly duplicates Trust Center,
+                  which is the one meant to be public-facing. Route/page/data
+                  left intact (still reachable at /developers directly), so
+                  this is easily reversible if that's not actually wanted. */}
               <button onClick={() => chooseTab("contracts")}><b>Trust Center</b><small>Canonical contracts</small></button>
               <button onClick={() => chooseTab("analytics")}><b>Analytics</b><small>Public protocol metrics</small></button>
               <button onClick={() => chooseTab("treasury")}><b>Treasury</b><small>Protocol treasury</small></button>
@@ -1418,7 +1422,7 @@ export default function App() {
         <p className="mm-group">Agent</p>
         <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/services">Services</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>
-        <a href="/developers">Developers</a><a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
+        <a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
         <button className="mm-create" onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
       {walletOpen && (
         <WalletModal

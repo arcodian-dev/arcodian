@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
@@ -177,6 +177,9 @@ function dedupeMarketAssets(items: LaunchAsset[]): LaunchAsset[] {
 const MAINNET_LEGACY_FACTORIES: string[] = [
   "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
   "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
+  // V10 superseded by V11 2026-09-12 (creator fee split + graduation fee) —
+  // its one existing launch can't migrate and stays readable here.
+  "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3",
 ];
 
 export default function Screener({
@@ -213,11 +216,11 @@ export default function Screener({
   // signing.
   const isMainnet = true;
   const activeArc = isMainnet ? ARC_MAINNET : ARC;
-  // V9 (real Uniswap V3 graduation) is the primary and only mainnet factory
-  // as of 2026-08-01 — every createLaunch() and every listing reads here. V8
+  // V11 is the active mainnet factory as of 2026-09-12 (creator fee split +
+  // graduation fee) — every createLaunch() and every listing reads here. V8
   // (ArcPairFactoryV2 graduation, ARCD) is retired: no longer read anywhere,
   // so it no longer shows up in the Market screener.
-  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10 : PUMP_FACTORY_ADDRESS;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11 : PUMP_FACTORY_ADDRESS;
   const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("All");
@@ -462,7 +465,7 @@ export default function Screener({
     setWrongNetworkArc(null);
     if (loading || !coinAddress || selected) return;
     const otherArc = isMainnet ? ARC : ARC_MAINNET;
-    const otherFactory = isMainnet ? PUMP_FACTORY_ADDRESS : ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10;
+    const otherFactory = isMainnet ? PUMP_FACTORY_ADDRESS : ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11;
     let alive = true;
     const provider = arcProvider(otherArc);
     (async () => {
@@ -709,7 +712,7 @@ export default function Screener({
         <button role="tab" aria-selected={marketView === "arena"} className={marketView === "arena" ? "active" : ""} onClick={() => setMarketView("arena")}><span>02</span> Coin Arena <small>Weekly onchain contest</small></button>
       </div>
       <section className="market-proof-strip" aria-label="Canonical market proof">
-        <span><small>ENGINE</small><b>v{ENGINE_VERSION}</b></span>
+        <span><small>ENGINE</small><b>v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</b></span>
         <span><small>FACTORIES</small><b>{isMainnet ? "USDC canonical" : "USDC + EURC canonical"}</b></span>
         <span><small>GRADUATION</small><b>12,000 stablecoin reserve</b></span>
         <a href="/contracts">Verify deployment →</a>
@@ -2211,7 +2214,7 @@ function Launch({
         {/* Derived from ENGINE_VERSION rather than written by hand — this
             label read "v5" through the whole of v6 and v7. V8 has no suite
             contract, so the link points at the launch factory itself. */}
-        <span>● Arcodian v{ENGINE_VERSION} market engine live</span>
+        <span>● Arcodian v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION} market engine live</span>
         <a
           href={`${activeArc.explorer}/address/${activeFactory}`}
           target="_blank"
@@ -2231,7 +2234,7 @@ function Launch({
           <h3>Build the coin.<br/><em>We handle the market.</em></h3>
           <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 12,000 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
         </div>
-        <span className="launch-network"><i/> Canonical v{ENGINE_VERSION}</span>
+        <span className="launch-network"><i/> Canonical v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</span>
       </div>
       <div className="pump-flow">
         <span>

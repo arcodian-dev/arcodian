@@ -11,6 +11,9 @@ import { arcProvider, CoinIcon, readActivities, short, type LaunchAsset, type Wa
 const MAINNET_LEGACY_FACTORIES: string[] = [
   ARC_MAINNET_CONTRACTS.marketUsdcFactory,
   ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,
+  // V10 superseded by V11 2026-09-12 — its one existing launch can't
+  // migrate and stays readable here, same pattern as Market.tsx.
+  ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10,
 ];
 
 export default function Profile({
@@ -30,7 +33,7 @@ export default function Profile({
   // holdings/launches (ARDN etc.) never showed up here at all.
   const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
   const activeArc = isMainnet ? ARC_MAINNET : ARC;
-  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10 : PUMP_FACTORY_ADDRESS;
+  const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11 : PUMP_FACTORY_ADDRESS;
   const activeLegacyFactories = isMainnet ? MAINNET_LEGACY_FACTORIES : LEGACY_PUMP_FACTORY_ADDRESSES;
   const [holdings, setHoldings] = useState<
     Array<LaunchAsset & { balance: bigint; value: bigint }>
