@@ -51,7 +51,8 @@ contract ArcodianLaunchHook is IHooks, IUnlockCallback {
     /// needs the factory's — one of them has to be set second. Settable
     /// exactly once, by the deployer, and only before any launch exists.
     address public factory;
-    address private immutable deployer;
+    /// The account allowed to bind the factory, once.
+    address private immutable admin;
 
     /// The creator entitled to a pool's creator share. Set once, by the
     /// factory, when the launch is created.
@@ -75,20 +76,24 @@ contract ArcodianLaunchHook is IHooks, IUnlockCallback {
         _;
     }
 
-    constructor(IPoolManager poolManager_, address factory_, address payable treasury_) {
-        require(address(poolManager_) != address(0) && treasury_ != address(0), "ZERO");
+    /// @param admin_ the account allowed to call setFactory. Passed in
+    /// rather than taken from msg.sender because this contract is deployed
+    /// through the deterministic CREATE2 deployer — its address has to encode
+    /// the hook's permissions, which means mining a salt, which means the
+    /// constructor's msg.sender is that deployer contract and not a person.
+    constructor(IPoolManager poolManager_, address admin_, address payable treasury_) {
+        require(address(poolManager_) != address(0) && admin_ != address(0) && treasury_ != address(0), "ZERO");
         poolManager = poolManager_;
         treasury = treasury_;
-        factory = factory_;
-        deployer = msg.sender;
+        admin = admin_;
     }
 
     /// @notice Bind the factory, once.
-    /// @dev Self-locking: after this the deployer has no remaining privilege
+    /// @dev Self-locking: after this the admin has no remaining privilege
     /// over the hook at all. A factory that could be changed later would let
     /// whoever changed it register pools and take the creator share.
     function setFactory(address factory_) external {
-        if (msg.sender != deployer) revert NotDeployer();
+        if (msg.sender != admin) revert NotDeployer();
         if (factory != address(0)) revert FactoryAlreadySet();
         require(factory_ != address(0), "ZERO_FACTORY");
         factory = factory_;

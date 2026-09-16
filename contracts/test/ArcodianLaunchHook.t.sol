@@ -65,8 +65,12 @@ contract ArcodianLaunchHookTest is Test {
         // what the PoolManager validates at initialize(); mining a CREATE2
         // salt is the deploy-time equivalent of this.
         address flagged = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG) | uint160(0x4444 << 20));
-        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, factory, treasury), flagged);
+        // admin, then the factory binding — the constructor takes an admin
+        // now because the real deploy goes through CREATE2 and cannot rely on
+        // msg.sender being a person.
+        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, address(this), treasury), flagged);
         hook = ArcodianLaunchHook(flagged);
+        hook.setFactory(factory);
 
         tokenA = new MintableToken();
         tokenB = new MintableToken();

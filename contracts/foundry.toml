@@ -4,11 +4,13 @@ test = "test"
 script = "script"
 out = "out"
 solc_version = "0.8.24"
-# The V4 hook needs 0.8.26 and the IR pipeline. It is skipped here rather
+# The V4 engine needs 0.8.26 and the IR pipeline. It is skipped here rather
 # than raising this profile's solc, because every already-deployed contract
 # has published source pinned to 0.8.24 and a different compiler produces
 # different bytecode — re-verifying any of them would stop matching.
-skip = ["src/ArcodianLaunchHook.sol", "test/ArcodianLaunchHook.t.sol"]
+# Globbed rather than listed file by file so a new V4 contract cannot break
+# the default build by being forgotten here.
+skip = ["src/Arcodian*.sol", "test/Arcodian*.t.sol"]
 optimizer = true
 optimizer_runs = 200
 

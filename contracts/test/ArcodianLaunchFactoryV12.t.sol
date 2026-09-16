@@ -52,7 +52,7 @@ contract ArcodianLaunchFactoryV12Test is Test {
         usdc = new QuoteToken();
 
         address flagged = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG) | uint160(0x7777 << 20));
-        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, address(0), treasury), flagged);
+        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, address(this), treasury), flagged);
         hook = ArcodianLaunchHook(flagged);
 
         factory = new ArcodianLaunchFactoryV12(manager, hook, Currency.wrap(address(usdc)), treasury);
@@ -177,7 +177,7 @@ contract ArcodianLaunchFactoryV12Test is Test {
 
     function testOnlyTheDeployerCouldEverSetTheFactory() public {
         address flagged = address(uint160(Hooks.BEFORE_SWAP_FLAG | Hooks.BEFORE_SWAP_RETURNS_DELTA_FLAG) | uint160(0x5555 << 20));
-        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, address(0), treasury), flagged);
+        deployCodeTo("ArcodianLaunchHook.sol:ArcodianLaunchHook", abi.encode(manager, address(this), treasury), flagged);
         vm.prank(address(0xBAD));
         vm.expectRevert(ArcodianLaunchHook.NotDeployer.selector);
         ArcodianLaunchHook(flagged).setFactory(address(0xBAD));
