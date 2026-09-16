@@ -33,6 +33,12 @@ evm_version = "cancun"
 # caught immediately, but it would have made the next verification of a
 # deployed contract fail to match for no visible reason.
 out = "out-v4"
+# And its own cache. Sharing solidity-files-cache.json meant a v4 build
+# rewrote the default profile's cache, after which the default profile could
+# no longer find its own 0.8.24 artifacts — the launch verifier crashed with
+# "No matching artifact found for PumpToken with compiler version 0.8.24"
+# and no new coin got its checkmark.
+cache_path = "cache-v4"
 # Profiles inherit from default, including its skip list — which would skip
 # the very files this profile exists to build.
 skip = []

@@ -77,9 +77,16 @@ done.contracts ||= {};
 
 // Every launched coin is a PumpToken, but which build of it depends on the
 // factory that minted it — see COMPILER_BY_PROFILE.
+// Built per profile, and a profile that cannot produce its input only
+// skips the launches that need it rather than crashing the whole pass —
+// one missing artifact used to stop every coin from being verified.
+const tryStandardJson = (path, name, profile) => {
+  try { return standardJson(path, name, profile); }
+  catch (error) { console.error(`no ${profile} build of ${name}: ${String(error.message || error).slice(0, 120)}`); return null; }
+};
 const tokenInputs = {
-  default: standardJson("src/ArcPump.sol", "PumpToken", "default"),
-  v4: standardJson("src/ArcPump.sol", "PumpToken", "v4"),
+  default: tryStandardJson("src/ArcPump.sol", "PumpToken", "default"),
+  v4: tryStandardJson("src/ArcPump.sol", "PumpToken", "v4"),
 };
 const profileFor = (engineVersion) => (Number(engineVersion) >= 12 ? "v4" : "default");
 
@@ -111,7 +118,7 @@ const launches = (() => {
     // Keyed off the factory rather than the presence of a curve — a V12
     // launch has no curve at all, and testing for one silently skipped every
     // coin from the current engine.
-    return (data.launches || []).filter((row) => !row.globalPool && row.address && (row.curve || Number(row.engineVersion) === 12));
+    return (data.launches || []).filter((row) => !row.globalPool && row.address && (row.curve || Number(row.engineVersion) >= 12));
   } catch { return []; }
 })();
 
@@ -127,7 +134,11 @@ for (const launch of launches) {
     }
   }
   const profile = profileFor(launch.engineVersion);
-  const result = tokenDone ? { ok: true, already: true } : await verify(launch.address, "src/ArcPump.sol", "PumpToken", tokenInputs[profile], profile);
+  const result = tokenDone
+    ? { ok: true, already: true }
+    : tokenInputs[profile]
+      ? await verify(launch.address, "src/ArcPump.sol", "PumpToken", tokenInputs[profile], profile)
+      : { ok: false, error: `no ${profile} build available` };
   if (tokenDone) {
     skipped += 1;
   } else if (result.ok) {

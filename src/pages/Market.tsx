@@ -1050,6 +1050,10 @@ function v13PoolKey(tokenAddress: string) {
     tokenIsZero,
   };
 }
+const V13_FACTORY_ABI = [
+  "function createLaunch(string,string,string) returns(address,bytes32)",
+  "event LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
+];
 const V4_ROUTER_ABI = [
   "function quoteExactInputSingle((address,address,uint24,int24,address),bool,uint256) returns(uint256)",
   "function swapExactInputSingle((address,address,uint24,int24,address),bool,uint256,uint256,uint256) returns(uint256)",
@@ -1266,7 +1270,9 @@ function TradingDesk({
     ? (quote * BigInt(Math.floor((100 - Number(slippage || 0)) * 100))) / 10000n
     : 0n;
   const insufficientBalance = side === "sell" && amountWei > balance;
-  const venueFeeLabel = graduated
+  const venueFeeLabel = isPoolEngine
+    ? "1.00% pool fee · half to creator"
+    : graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
   const cost = trueCost(Number(amount) || 0, holdingCurrency, liveAsset, fxRate);
@@ -2009,11 +2015,11 @@ function TradingDesk({
   const topHolderShare = topExternalHolder
     ? Number((BigInt(topExternalHolder.balance) * 10_000n) / totalSupplyWei) / 100
     : null;
-  const lpCheck: boolean | null = asset.globalPool ? null : graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
+  const lpCheck: boolean | null = asset.globalPool ? null : Number(asset.engineVersion) >= 13 ? true : graduated ? (pairIsV3 || burnedPct >= 99.99) : null;
   const safetyChecks: Array<{ label: string; ok: boolean | null; value: string }> = [
     { label: "Mint authority", ok: true, value: "No mint function" },
     { label: "Freeze authority", ok: true, value: "No freeze function" },
-    { label: "LP status", ok: lpCheck, value: asset.globalPool ? "External — verify locker" : graduated ? (pairIsV3 ? "Locked (NFT)" : lpCheck ? "Locked (burned)" : "Verify onchain") : "N/A — pre-graduation" },
+    { label: "LP status", ok: lpCheck, value: asset.globalPool ? "External — verify locker" : isPoolEngine ? "Locked forever — no LP NFT" : graduated ? (pairIsV3 ? "Locked (NFT)" : lpCheck ? "Locked (burned)" : "Verify onchain") : "N/A — pre-graduation" },
     { label: "Contract", ok: isMainnet ? verified : null, value: isMainnet ? (verified === null ? "Checking…" : verified ? "Verified" : "Unverified") : "Not tracked (testnet)" },
     { label: "Top holder", ok: topHolderShare === null ? null : topHolderShare < 20, value: topHolderShare === null ? "No data yet" : `${topHolderShare.toFixed(1)}%` },
   ];
@@ -2074,16 +2080,18 @@ function TradingDesk({
         <div className="orbit-main">
           <aside className="orbit-col orbit-col-left">
             <div className="orbit-block">
-              <div className="orbit-block-h"><div className="orbit-block-t">{graduated ? "Market status" : "Bonding curve"}</div></div>
+              <div className="orbit-block-h"><div className="orbit-block-t">{graduated ? "Market status" : Number(asset.engineVersion) >= 13 ? "Uniswap V4 pool" : "Bonding curve"}</div></div>
               {graduated ? <>
                 <div className="orbit-curve-top"><div className="orbit-curve-pct done">{asset.globalPool ? "External · Unverified" : "Graduated"}</div></div>
                 <div className="orbit-curve-note">{asset.globalPool
                   ? <>This token was discovered from an external USDC pool. It is <b>not an Arcodian launch</b>; liquidity shown is the current onchain pool-balance estimate and can change.</>
-                  : <>Liquidity is <b>permanently locked</b> — trading now routes through {pairIsV3 ? "a real Uniswap V3 pool" : "the canonical Arcodian pair"}, the same venue any external router or bot reads.</>}</div>
+                  : <>Liquidity is <b>permanently locked</b> — trading {Number(asset.engineVersion) >= 13 ? "has run on its own Uniswap V4 pool since launch and crossed the 12,000 USDC milestone" : <>now routes through {pairIsV3 ? "a real Uniswap V3 pool" : "the canonical Arcodian pair"}</>}, the same venue any external router or bot reads.</>}</div>
               </> : <>
                 <div className="orbit-curve-top"><div className="orbit-curve-pct">{asset.progress.toFixed(1)}%</div><div className="orbit-curve-sub">to graduation</div></div>
                 <div className="orbit-track"><i style={{ width: `${Math.min(100, asset.progress)}%` }}></i></div>
-                <div className="orbit-curve-note"><b>{Number(formatEther(asset.threshold > reserve ? asset.threshold - reserve : 0n)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b> more in buys and this market graduates automatically. Liquidity locks the moment it does.</div>
+                <div className="orbit-curve-note"><b>{Number(formatEther(asset.threshold > reserve ? asset.threshold - reserve : 0n)).toLocaleString(undefined, { maximumFractionDigits: 2 })} {currency}</b> {Number(asset.engineVersion) >= 13
+                  ? <>more in buys to reach the 12,000 {currency} graduation milestone. This coin already trades on its own Uniswap V4 pool, and that liquidity is locked from the first block.</>
+                  : <>more in buys and this market graduates automatically. Liquidity locks the moment it does.</>}</div>
               </>}
             </div>
 
@@ -2419,9 +2427,13 @@ function Launch({
       // V12 has no curve and no graduation: createLaunch returns the token
       // and a V4 pool id, and the coin is tradeable from that block.
       const isPoolLaunch = isMainnet && !isEurc && ACTIVE_ENGINE_VERSION >= 13;
+      // V13's LaunchCreated carries a V4 pool id where the curve engines'
+      // carries a curve address, so its topic is different and parsing the
+      // receipt with the curve ABI finds nothing — which silently skipped
+      // saving the creator's X and Discord links on every pool launch.
       const factory = new Contract(
         factoryAddress,
-        ARC_PUMP_FACTORY_ABI,
+        isPoolLaunch ? V13_FACTORY_ABI : ARC_PUMP_FACTORY_ABI,
         signer,
       );
       // Mobile OKX may run its own eth_estimateGas against a stale/busy
@@ -2490,12 +2502,14 @@ function Launch({
         .find((log: { name?: string } | null) => log?.name === "LaunchCreated");
       setStatus(
         created
-          ? `Launch created · Token ${created.args.token} · Curve ${created.args.curve}`
+          ? isPoolLaunch
+            ? `Launch created · Token ${created.args.token} · live on Uniswap V4`
+            : `Launch created · Token ${created.args.token} · Curve ${created.args.curve}`
           : `Launch confirmed: ${receipt.hash}`,
       );
       if (created) {
         const tokenAddress = String(created.args.token);
-        const curveAddress = String(created.args.curve);
+        const curveAddress = isPoolLaunch ? "" : String(created.args.curve);
         if (twitterUrl || discordUrl) {
           try {
             const timestamp = Math.floor(Date.now() / 1000);
@@ -2579,13 +2593,13 @@ function Launch({
           <b>1</b> Fixed 1B supply
         </span>
         <span>
-          <b>2</b> Bonding curve
+          <b>2</b> {launchesStraightToPool ? "Uniswap V4 pool" : "Bonding curve"}
         </span>
         <span>
-          <b>3</b> Auto-graduate
+          <b>3</b> {launchesStraightToPool ? "12k milestone" : "Auto-graduate"}
         </span>
         <span>
-          <b>4</b> LP → burn address
+          <b>4</b> {launchesStraightToPool ? "Liquidity locked forever" : "LP → burn address"}
         </span>
       </div>
       <div className="launch-studio-workspace">
@@ -2662,7 +2676,7 @@ function Launch({
         <div className="preview-token-art"><CoinIcon image={image} fallback={<b>{symbol?.[0]?.toUpperCase() || "A"}</b>} /></div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
-        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>{launchesStraightToPool ? "Venue" : "Graduation"}</small><b>{launchesStraightToPool ? "Uniswap V4 · instant" : `${graduationLabel} ${quoteChoice}`}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
+        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>{launchesStraightToPool ? "Uniswap V4 pool" : "Bonding curve"}</b></span><span><small>{launchesStraightToPool ? "Venue" : "Graduation"}</small><b>{launchesStraightToPool ? "Uniswap V4 · instant" : `${graduationLabel} ${quoteChoice}`}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
         <div className="launch-readiness"><b>{launchReady ? "Ready to launch" : "Complete required fields"}</b><div><i className={identityReady ? "done" : ""}/><i className={image ? "done" : ""}/><i className={launchReady ? "done" : ""}/></div></div>
         <small className="preview-note">This is a visual preview. Contract addresses are created only after wallet confirmation.</small>
       </aside>
