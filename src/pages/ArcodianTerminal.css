@@ -1433,7 +1433,11 @@
    to stay visible on a trading screen. A fixed viewport height bounds the
    grid so the 225px trades row is always on screen; the panels scroll
    internally instead of the page growing. */
-.axt {
+/* Only the dedicated trading terminal locks to the viewport. The coin
+   terminal shares this scope for its tokens and panel styling but is a
+   normal scrolling page, so the height rule is opt-in rather than something
+   every .axt subtree inherits. */
+.axt.axt-viewport {
   height: 100vh;
   max-height: 100vh;
   overflow: hidden;
@@ -1476,7 +1480,7 @@
   /* A fixed 100vh is right on a desktop trading screen and wrong on a phone,
      where the browser chrome moves and three stacked panels genuinely need
      to scroll. */
-  .axt,
+  .axt.axt-viewport,
   .axt .terminal {
     height: auto;
     max-height: none;
@@ -1529,3 +1533,150 @@
   .axt .panel-chart > .chart { min-height: 0; }
   .axt .right { display: flex; flex-direction: column; overflow: visible; }
 }
+
+/* =========================================================
+   COIN TERMINAL (/coin/<address>)
+
+   The second terminal. Its markup is far larger than the trading terminal's
+   — three columns, a community feed, curve checks, a preset-driven buy form
+   — and the template has no equivalent for most of it. Rewriting all of it
+   onto template class names would have been a big change with a lot of
+   surface to get wrong for very little that the eye would notice.
+
+   So this maps the existing orbit-* structure onto the same tokens, panels
+   and typography instead. The two terminals end up reading as one product
+   without either one's markup being rebuilt to match the other.
+   ========================================================= */
+
+.axt.orbit-terminal {
+  color: var(--text);
+  background:
+    radial-gradient(ellipse 70% 45% at 50% -12%, rgba(25, 231, 154, 0.075), transparent 62%),
+    radial-gradient(ellipse 45% 50% at 100% 40%, rgba(52, 103, 180, 0.045), transparent 65%),
+    var(--bg);
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* Panels — every block picks up the trading terminal's panel treatment. */
+.axt .orbit-block,
+.axt .orbit-tape,
+.axt .orbit-community,
+.axt .orbit-chart-wrap {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(145deg, rgba(13, 19, 28, 0.97), rgba(6, 9, 14, 0.98));
+  box-shadow: var(--shadow-panel);
+}
+
+.axt .orbit-block-t,
+.axt .orbit-tabs,
+.axt .orbit-chart-bar {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.axt .orbit-top {
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(14, 20, 29, 0.98), rgba(10, 14, 21, 0.96));
+}
+
+.axt .orbit-brand-name,
+.axt .orbit-pair-sym { color: var(--text); font-weight: 800; letter-spacing: 0.02em; }
+.axt .orbit-pair-name { color: var(--muted); }
+
+.axt .orbit-top-price {
+  color: var(--green-bright);
+  background: rgba(25, 231, 154, 0.065);
+  border: 1px solid var(--green-glow);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+}
+
+.axt .orbit-stat {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.012);
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.axt .orbit-stat b { color: var(--text); }
+.axt .orbit-live { color: var(--green); font-family: var(--mono); letter-spacing: 0.06em; }
+
+/* Rows and numbers read as data, not prose. */
+.axt .orbit-row,
+.axt .orbit-summary,
+.axt .orbit-addr,
+.axt .mono {
+  color: #9aa8bb;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.axt .orbit-row { border-bottom: 1px solid rgba(112, 132, 157, 0.065); }
+.axt .orbit-row b { color: var(--text); font-weight: 600; }
+
+.axt .orbit-track > * {
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--green), var(--green-bright));
+  box-shadow: 0 0 12px var(--green-glow);
+}
+
+/* Buy and sell keep the same colour language as the trading terminal. */
+.axt .orbit-tabs button.active,
+.axt .orbit-seg.active,
+.axt .orbit-tool.active {
+  color: var(--green-bright);
+  border-color: var(--green-glow);
+  background: var(--green-soft);
+}
+
+/* Only the creator-fee claim gets the primary-button treatment.
+   .orbit-sidebtn is NOT a button — it is the BUY/SELL toggle's container,
+   and painting it as one turned the whole toggle into a green slab with the
+   sell tab sitting on it as a red block. The page's own submit button was
+   already styled correctly and is left alone. */
+.axt .orbit-claim-btn {
+  width: 100%;
+  border: 1px solid rgba(182, 255, 215, 0.42);
+  border-radius: 15px;
+  padding: 15px;
+  color: #03130b;
+  background: linear-gradient(145deg, var(--green-bright), var(--green));
+  box-shadow: var(--shadow-green);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.axt .orbit-field,
+.axt .orbit-field-in {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: linear-gradient(145deg, rgba(21, 27, 37, 0.94), rgba(13, 18, 26, 0.94));
+}
+
+.axt .orbit-field-in input {
+  color: var(--text);
+  background: transparent;
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.axt .orbit-links a,
+.axt .orbit-presets button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-decoration: none;
+}
+
+.axt .orbit-curve-note,
+.axt .orbit-risk-note { color: var(--muted-2); font-size: 10px; line-height: 1.6; }

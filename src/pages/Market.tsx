@@ -3,6 +3,10 @@ import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, forma
 import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, graduationUnitsFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { quoteAmount, quoteDecimalsOf } from "../shared";
+// The coin terminal shares the trading terminal's design tokens and panel
+// treatment so the two read as one product. It does NOT take the viewport
+// lock — this page scrolls.
+import "./ArcodianTerminal.css";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
@@ -1809,7 +1813,7 @@ function TradingDesk({
 
   return (
     <section className="coin-page-shell">
-      <div className="orbit-terminal">
+      <div className="axt orbit-terminal">
         {reportOpen && <div className="report-panel"><div><strong>Report ${asset.symbol}</strong><small>Reports do not freeze a market. Include only verifiable concerns.</small></div><select value={reportCategory} onChange={(event) => setReportCategory(event.target.value)}><option value="scam">Suspected scam</option><option value="impersonation">Impersonation</option><option value="harmful-link">Harmful social link</option><option value="illegal">Illegal content</option><option value="other">Other</option></select><textarea maxLength={240} value={reportDetail} onChange={(event) => setReportDetail(event.target.value)} placeholder="Optional evidence or context (max 240 characters)"/><div><button onClick={() => setReportOpen(false)}>Cancel</button><button className="primary" onClick={() => void submitReport()}>Submit report</button></div></div>}
 
         <header className="orbit-top">

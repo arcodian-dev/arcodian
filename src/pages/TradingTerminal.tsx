@@ -351,15 +351,15 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
     }
     if (price > 0) lastPriceRef.current = price;
   }, [price]);
-  if (marketLoading) return <main className="axt"><div className="terminal"><TerminalSkeleton /></div></main>;
-  if (!market) return <main className="axt"><div className="terminal"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></div></main>;
+  if (marketLoading) return <main className="axt axt-viewport"><div className="terminal"><TerminalSkeleton /></div></main>;
+  if (!market) return <main className="axt axt-viewport"><div className="terminal"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></div></main>;
   const quoteDp = quoteDecimalsOf(market);
   // .axt is the scope root and .terminal is a child of it, never the same
   // element: every rule generated from the template is a DESCENDANT selector
   // (.axt .terminal), so putting both on one node left the entire grid shell
   // inert — which is why the chart grew past the viewport and pushed the live
   // trades panel off screen.
-  return <main className="axt">
+  return <main className="axt axt-viewport">
     <div className="terminal">
     <header className="topbar">
       <a className="brand-link" href="/market"><span className="brand-mark"><CoinIcon image={market.image} fallback={market.symbol.slice(0, 2)} /></span><b className="brand">{market.symbol}</b><span className="pair">/ USDC · {market.dex || "MAINNET"}</span></a>
