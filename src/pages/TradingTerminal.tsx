@@ -3,7 +3,11 @@ import { Contract, formatEther } from "ethers";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
 import { ARC_MAINNET } from "../config";
-import { arcProvider, CoinIcon, rpcUrlsFor } from "../shared";
+import { arcProvider, CoinIcon, quoteDecimalsOf, rpcUrlsFor } from "../shared";
+// The scoped design system comes first so the older TradingTerminal.css,
+// which still owns PoolInfo and the skeleton, can override it where those
+// pieces have not been rebuilt yet.
+import "./ArcodianTerminal.css";
 import "./TradingTerminal.css";
 
 type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string };
@@ -347,44 +351,73 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
     }
     if (price > 0) lastPriceRef.current = price;
   }, [price]);
-  if (marketLoading) return <main className="trading-terminal-page"><TerminalSkeleton /></main>;
-  if (!market) return <main className="trading-terminal-page"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></main>;
-  return <main className="trading-terminal-page">
-    <header className="terminal-header">
-      <a className="terminal-brand" href="/market"><span><CoinIcon image={market.image} fallback={market.symbol.slice(0, 2)} /></span><b>{market.symbol}</b><small>/ USDC · {market.dex || "MAINNET"}</small></a>
-      <div className="terminal-price"><strong className={priceFlash ? `flash-${priceFlash}` : ""}>{price > 0 ? `$${price.toFixed(8)}` : "Price unavailable"}</strong><em className={market.priceChange24h == null ? "" : market.priceChange24h >= 0 ? "up" : "down"}>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em></div>
-      <div className="terminal-metrics"><span><small>MKT CAP</small><b>{money(usdc(market.marketCap, market.globalPool ? 6 : 18))}</b></span><span><small>VOL 24H</small><b>{money(usdc(market.volume24h, market.globalPool ? 6 : 18))}</b></span><span><small>LIQUIDITY</small><b>{money(usdc(market.liquidity, market.globalPool ? 6 : 18))}</b></span></div>
-      <div className="terminal-actions"><span className={wrongNetwork ? "terminal-network wrong" : mobileChain ? "terminal-network online" : "terminal-network"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Arc · connect wallet"}</span>{account ? <span className="terminal-wallet">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button onClick={connect}>Connect wallet</button>}<a href="/market">Exit terminal</a></div>
+  if (marketLoading) return <main className="axt"><div className="terminal"><TerminalSkeleton /></div></main>;
+  if (!market) return <main className="axt"><div className="terminal"><div className="terminal-data-empty">Select a token from Markets to open its terminal.</div></div></main>;
+  const quoteDp = quoteDecimalsOf(market);
+  // .axt is the scope root and .terminal is a child of it, never the same
+  // element: every rule generated from the template is a DESCENDANT selector
+  // (.axt .terminal), so putting both on one node left the entire grid shell
+  // inert — which is why the chart grew past the viewport and pushed the live
+  // trades panel off screen.
+  return <main className="axt">
+    <div className="terminal">
+    <header className="topbar">
+      <a className="brand-link" href="/market"><span className="brand-mark"><CoinIcon image={market.image} fallback={market.symbol.slice(0, 2)} /></span><b className="brand">{market.symbol}</b><span className="pair">/ USDC · {market.dex || "MAINNET"}</span></a>
+      <div className={`price ${priceFlash ? `flash-${priceFlash}` : ""}`}>
+        <strong>{price > 0 ? `$${price.toFixed(8)}` : "—"}</strong>
+        <em className={market.priceChange24h == null ? "" : market.priceChange24h >= 0 ? "up" : "down"}>{market.priceChange24h == null ? "—" : `${market.priceChange24h >= 0 ? "+" : ""}${market.priceChange24h.toFixed(2)}%`}</em>
+      </div>
+      <div className="stat"><small>MKT CAP</small><b>{money(usdc(market.marketCap, quoteDp))}</b></div>
+      <div className="stat"><small>VOL 24H</small><b>{money(usdc(market.volume24h, quoteDp))}</b></div>
+      <div className="stat"><small>LIQUIDITY</small><b>{money(usdc(market.liquidity, quoteDp))}</b></div>
+      <span className={`live ${tapeHealth}`}><i />{feedLabel}</span>
+      <div className="topbar-actions">
+        {/* Reads the network, not the wallet action — it sat next to an actual
+            "Connect wallet" button and saying the same words made one of them
+            look broken. */}
+        <span className={wrongNetwork ? "net-pill wrong" : mobileChain ? "net-pill ok" : "net-pill"}>● {wrongNetwork ? "Wrong network" : mobileChain ? "Arc Mainnet" : "Not connected"}</span>
+        {account ? <span className="token">{account.slice(0, 6)}…{account.slice(-4)}</span> : <button className="btn" onClick={connect}>Connect wallet</button>}
+        <a className="btn" href="/market">Exit</a>
+      </div>
     </header>
-    {wrongNetwork && <div className="terminal-network-banner">Your wallet is on a different network than this market. {market.symbol} trades on <b>Arc Mainnet</b> — switch to see your real balance and trade. <button onClick={() => void switchToArcMainnet()}>Switch to Arc Mainnet</button></div>}
-    <div className="terminal-layout">
-      <section className="terminal-main-column">
-        <div className="terminal-card terminal-chart-card">
-          <div className="terminal-toolbar"><div>{["1m", "5m", "15m", "1H", "4H"].map((item) => <button key={item} className={timeframe === item ? "active" : ""} onClick={() => setTimeframe(item)}>{item}</button>)}</div><span className={`streaming ${tapeHealth}`}><i /> {feedLabel}</span></div>
-          <div className="terminal-chart-wrap"><MarketChart market={market} timeframe={timeframe} trades={tapeTrades} /></div>
-          <div className="terminal-chart-footer"><span>Price · USDC</span><span>Volume</span><span>Contract markets only · Arc Mainnet</span></div>
+    {wrongNetwork && <div className="note">Your wallet is on a different network than this market. {market.symbol} trades on <b>Arc Mainnet</b> — switch to see your real balance and trade. <button className="btn" onClick={() => void switchToArcMainnet()}>Switch to Arc Mainnet</button></div>}
+    <div className="body">
+      <section className="left">
+        <div className="panel panel-chart">
+          <div className="chart-head">
+            {["1m", "5m", "15m", "1H", "4H"].map((item) => <button key={item} className={`tf ${timeframe === item ? "active" : ""}`} onClick={() => setTimeframe(item)}>{item}</button>)}
+            <span className="spacer" />
+            <span className="chart-tag">Price · USDC</span>
+            <span className="chart-tag">Arc Mainnet</span>
+          </div>
+          <div className="chart"><MarketChart market={market} timeframe={timeframe} trades={tapeTrades} /></div>
         </div>
-        <div className="terminal-card terminal-trades">
-          <div className="terminal-section-title">Live trades <span>{tapeTrades.length} indexed</span></div>
-          <div className="trades-head"><span>Type</span><span>Price</span><span>Amount</span><span>Value</span><span>Wallet</span></div>
+        <div className="panel panel-trades">
+          <div className="trades">
+          <div className="section-title">Live trades <span>{tapeTrades.length} indexed</span></div>
+          <div className="trades-head trade-row"><span>Type</span><span>Price</span><span>Amount</span><span>Value</span><span>Wallet</span></div>
           {/* tapeTrades holds up to 500 (mergeTrades' cap, needed so the
               chart has enough history at wider timeframes) — rendering all
               500 as DOM rows on every 1s tick is what made this list feel
               janky. Only the newest ~120 are ever visible in this panel
               anyway, so slice before mapping instead of after. */}
-          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade, Boolean(market.globalPool)) > 0 ? tradePrice(trade, Boolean(market.globalPool)).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native, market.globalPool ? 6 : 18))}</span><span>{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
+          <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade, Boolean(market.globalPool)) > 0 ? tradePrice(trade, Boolean(market.globalPool)).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native, quoteDp))}</span><span className="wallet-cell">{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
+          </div>
         </div>
       </section>
-      <PoolInfo market={market} account={account} activeProvider={activeProvider} />
-      <aside className="terminal-execution terminal-card">
-        <div className="execution-tabs"><button className={activeSide === "buy" ? "active buy" : ""} onClick={() => setActiveSide("buy")}>Buy</button><button className={activeSide === "sell" ? "active sell" : ""} onClick={() => setActiveSide("sell")}>Sell</button></div>
-        <div className="execution-context"><span>Arcodian route engine</span><b>{activeSide === "buy" ? `Buy ${market.symbol}` : `Sell ${market.symbol}`}</b><small>Best executable route · 0.30% protocol fee where applicable</small></div>
-        {wrongNetwork ? (
-          <div className="terminal-data-empty">Switch your wallet to Arc Mainnet (banner above) to trade {market.symbol} — it doesn't exist on the network your wallet is currently connected to.</div>
-        ) : (
-          <SwapPanel account={account} activeProvider={activeProvider} onConnect={connect} chainId={chainId} initialTokenAddress={market.address} />
-        )}
+      <aside className="right">
+        <div className="panel swap">
+          <div className="tabs"><button className={`tab buy ${activeSide === "buy" ? "active" : ""}`} onClick={() => setActiveSide("buy")}>Buy</button><button className={`tab sell ${activeSide === "sell" ? "active" : ""}`} onClick={() => setActiveSide("sell")}>Sell</button></div>
+          <div className="box"><div className="box-label">Arcodian route engine</div><b>{activeSide === "buy" ? `Buy ${market.symbol}` : `Sell ${market.symbol}`}</b><small>Best executable route · 0.30% protocol fee where applicable</small></div>
+          {wrongNetwork ? (
+            <div className="terminal-data-empty">Switch your wallet to Arc Mainnet (banner above) to trade {market.symbol} — it doesn't exist on the network your wallet is currently connected to.</div>
+          ) : (
+            <SwapPanel account={account} activeProvider={activeProvider} onConnect={connect} chainId={chainId} initialTokenAddress={market.address} />
+          )}
+        </div>
+        <PoolInfo market={market} account={account} activeProvider={activeProvider} />
       </aside>
+    </div>
     </div>
   </main>;
 }
