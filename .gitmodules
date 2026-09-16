@@ -10,3 +10,9 @@
 [submodule "contracts/lib/solidity-lib"]
 	path = contracts/lib/solidity-lib
 	url = https://github.com/Uniswap/solidity-lib
+[submodule "contracts/lib/v4-core"]
+	path = contracts/lib/v4-core
+	url = https://github.com/Uniswap/v4-core
+[submodule "contracts/lib/v4-periphery"]
+	path = contracts/lib/v4-periphery
+	url = https://github.com/Uniswap/v4-periphery
