@@ -18,7 +18,15 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
 const API = process.env.ARCEXPLORER_API || "https://www.arcexplorer.org/api/v1";
-const COMPILER = process.env.SOLC_VERSION || "0.8.24+commit.e11b9ed9";
+// The curve engines build with 0.8.24 and no IR; the V4 engine needs 0.8.26
+// and viaIR. That difference reaches the coins themselves: a factory embeds
+// its child's creation bytecode, so a PumpToken minted by the V12 factory is
+// not byte-identical to one minted by V11 even though the source file is the
+// same. Verifying a V12 coin against the 0.8.24 build simply does not match.
+const COMPILER_BY_PROFILE = {
+  default: process.env.SOLC_VERSION || "0.8.24+commit.e11b9ed9",
+  v4: process.env.SOLC_VERSION_V4 || "0.8.26+commit.8a97fa7a",
+};
 const CONTRACTS = "/root/.openclaw/workspace/arc/contracts";
 const INDEX = process.env.MAINNET_INDEX_PATH || "/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json";
 const STATE = process.env.VERIFY_STATE || "/www/wwwroot/arcodian.fun/shared/data/verified-mainnet.json";
@@ -32,8 +40,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * so any drift in settings or source paths changes the parent too. Both pump
  * factories failed a hand-built request and matched immediately on this.
  */
-function standardJson(path, name) {
-  const out = execFileSync("forge", ["verify-contract", "0x0000000000000000000000000000000000000000", `${path}:${name}`, "--show-standard-json-input"], { cwd: CONTRACTS, maxBuffer: 64 * 1024 * 1024 }).toString();
+function standardJson(path, name, profile = "default") {
+  const out = execFileSync(
+    "forge",
+    ["verify-contract", "0x0000000000000000000000000000000000000000", `${path}:${name}`, "--show-standard-json-input"],
+    { cwd: CONTRACTS, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, FOUNDRY_PROFILE: profile } },
+  ).toString();
   return JSON.parse(out);
 }
 
@@ -45,8 +57,8 @@ async function status(address) {
   } catch { return null; }
 }
 
-async function verify(address, path, name, input) {
-  const body = { address, compilerVersion: COMPILER, contractPath: path, contractName: name, sources: input.sources, settings: input.settings };
+async function verify(address, path, name, input, profile = "default") {
+  const body = { address, compilerVersion: COMPILER_BY_PROFILE[profile], contractPath: path, contractName: name, sources: input.sources, settings: input.settings };
   // The endpoint rate-limits and 502s on larger sources; a refusal to serve
   // is not a verification failure and must not be recorded as one.
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -63,8 +75,13 @@ async function verify(address, path, name, input) {
 const done = (() => { try { return JSON.parse(readFileSync(STATE, "utf8")); } catch { return { contracts: {} }; } })();
 done.contracts ||= {};
 
-// Every launched coin is a PumpToken, so its input is built once and reused.
-const tokenInput = standardJson("src/ArcPump.sol", "PumpToken");
+// Every launched coin is a PumpToken, but which build of it depends on the
+// factory that minted it — see COMPILER_BY_PROFILE.
+const tokenInputs = {
+  default: standardJson("src/ArcPump.sol", "PumpToken", "default"),
+  v4: standardJson("src/ArcPump.sol", "PumpToken", "v4"),
+};
+const profileFor = (engineVersion) => (Number(engineVersion) >= 12 ? "v4" : "default");
 
 // Each launch also deploys its own bonding curve, and that is the contract a
 // trader actually calls before graduation — it deserves published source as
@@ -109,11 +126,12 @@ for (const launch of launches) {
       tokenDone = true;
     }
   }
-  const result = tokenDone ? { ok: true, already: true } : await verify(launch.address, "src/ArcPump.sol", "PumpToken", tokenInput);
+  const profile = profileFor(launch.engineVersion);
+  const result = tokenDone ? { ok: true, already: true } : await verify(launch.address, "src/ArcPump.sol", "PumpToken", tokenInputs[profile], profile);
   if (tokenDone) {
     skipped += 1;
   } else if (result.ok) {
-    done.contracts[address] = { verified: true, name: "PumpToken", symbol: launch.symbol, matchType: result.matchType || "already", at: new Date().toISOString() };
+    done.contracts[address] = { verified: true, name: "PumpToken", symbol: launch.symbol, engineVersion: Number(launch.engineVersion) || 0, matchType: result.matchType || "already", at: new Date().toISOString() };
     verified += 1;
     console.log(`verified ${launch.symbol} ${launch.address} (${result.matchType || "already"})`);
   } else {
@@ -124,6 +142,9 @@ for (const launch of launches) {
 
   // The launch's curve, using whichever engine produced it.
   const engine = Number(launch.engineVersion || 0);
+  // A V12 launch has no curve — it trades in a V4 pool, which is not a
+  // contract at all.
+  if (engine >= 12) continue;
   const curveAddress = String(launch.curve || "").toLowerCase();
   const curveSpec = curveInputFor(engine);
   if (!curveSpec || !curveAddress || done.contracts[curveAddress]?.verified) continue;
