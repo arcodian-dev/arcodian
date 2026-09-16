@@ -25,10 +25,14 @@ export const TOKENS = [
 
 // Arc Mainnet's native-USDC ERC-20 view precompile lives at the exact same
 // fixed address as testnet (0x3600...0000, confirmed by direct probe
-// 2026-07-30) — no separate mainnet USDC constant needed. EURC has no
-// published mainnet address yet, so it's the only pinned mainnet token.
+// 2026-07-30) — no separate mainnet USDC constant needed. USDC was the only
+// pinned mainnet token until 2026-09-16, when Circle published Arc Mainnet's
+// EURC (a different contract from testnet's — see ARC_MAINNET_CONTRACTS.eurc)
+// and external V3 pools against it turned out to already hold real
+// liquidity, making it selectable rather than decorative.
 export const MAINNET_TOKENS = [
   { symbol: "USDC", name: "USD Coin", address: ARC.nativeToken, decimals: 6 },
+  { symbol: "EURC", name: "Euro Coin", address: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1", decimals: 6 },
 ] as const;
 
 export const CHAINS = [

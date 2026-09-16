@@ -126,7 +126,17 @@ export default function SwapPanel({ account, activeProvider, onConnect, chainId,
   // active Arcodian pool or route exists" showed for every market
   // regardless of whether a route actually existed. Memoized so the
   // reference is only ever new when isMainnet itself actually changes.
-  const activeHubs = useMemo(() => (isMainnet ? [ARC_USDC_ERC20] : ROUTE_HUBS), [isMainnet]);
+  // Mainnet was USDC-only here because no Arc Mainnet EURC contract existed.
+  // Circle published one on 2026-09-16 and there is already real external V3
+  // liquidity against it (a 0.3% USDC/EURC pool holding ~822 USDC / ~583
+  // EURC, verified on-chain), so EURC earns its place as a routing hub on
+  // mainnet too — it opens USDC⇄EURC directly and gives coin↔EURC a second
+  // path to try. Adding a hub only widens the search; routing still picks
+  // the best quote and fails closed when no route exists.
+  const activeHubs = useMemo(
+    () => (isMainnet ? [ARC_USDC_ERC20, ARC_MAINNET_CONTRACTS.eurc] : ROUTE_HUBS),
+    [isMainnet],
+  );
   const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [tokens, setTokens] = useState<TokenMeta[]>(pinnedTokens);
   const [tokenIn, setTokenIn] = useState<TokenMeta | null>(pinnedTokens[0]);
