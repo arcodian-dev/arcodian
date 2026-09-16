@@ -62,6 +62,39 @@ if ($body === '' || strlen($body) > 262144) {
 // visitor would. The two rate-limited official endpoints are demoted to
 // fallbacks rather than dropped: they are Circle's own and answer fine at
 // lower volume.
+// A keyed Alchemy endpoint, when one is configured, leads everything. Measured
+// against the unauthenticated endpoints: 200/200 eth_calls served in 7.3s
+// where blockdaemon (also 200/200) took 11.2s, and it handles the
+// many-address getLogs shape too (it caps by response SIZE rather than block
+// range, so a wide query asks you to split rather than refusing outright).
+//
+// The key is read from shared/rpc-secret.php, deliberately OUTSIDE this repo
+// and outside every release directory. A version of the Zeeve mainnet RPC key
+// was committed to this public repository from 2026-08-04 to 2026-08-30 and
+// had to be rotated; keyed endpoints do not go in tracked files again. The
+// file returns an array of URLs, is absent on any machine without a key, and
+// is not reachable over HTTP (shared/ sits beside the webroot; only its data
+// and uploads directories are symlinked in).
+// Two candidate paths because __DIR__ resolves through the `current` symlink
+// to the real release directory: from releases/<ts>/api/ the shared directory
+// is three levels up, while a plain (unversioned) docroot puts it two. Try
+// both rather than assuming a layout.
+$keyed = [];
+$secretPath = null;
+foreach ([__DIR__ . '/../../../shared/rpc-secret.php', __DIR__ . '/../../shared/rpc-secret.php'] as $candidate) {
+  if (is_readable($candidate)) { $secretPath = $candidate; break; }
+}
+if ($secretPath !== null) {
+  $configured = @include $secretPath;
+  if (is_array($configured)) {
+    foreach ($configured as $url) {
+      if (is_string($url) && str_starts_with($url, 'https://')) {
+        $keyed[] = ['name' => 'keyed', 'url' => $url, 'headers' => ['Content-Type: application/json']];
+      }
+    }
+  }
+}
+
 $primary = [
   [
     'name' => 'arc-blockdaemon',
@@ -102,7 +135,9 @@ $fallback = [
   ],
 ];
 shuffle($primary);
-$endpoints = array_merge($primary, $fallback);
+// Keyed endpoints are not shuffled in: they are strictly better, so they go
+// first and the public pool becomes the fallback behind them.
+$endpoints = array_merge($keyed, $primary, $fallback);
 
 $attempts = 4;
 for ($i = 0; $i < $attempts; $i++) {
