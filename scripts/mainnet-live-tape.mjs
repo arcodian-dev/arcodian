@@ -146,7 +146,13 @@ async function loadVenues() {
   const pairQuotes = await resolveInBatches(pairLaunches, (launch) => resolveQuoteIs0(launch.pair));
   for (const launch of index.launches || []) {
     if (!launch.address) continue;
-    if (launch.curve) next.set(String(launch.curve).toLowerCase(), { token: launch.address, symbol: launch.symbol, type: "curve" });
+    // quoteKind 1 means the curve is quoted in EURC, which holds 6 decimals
+    // where native USDC holds 18. The Bought/Sold event SIGNATURES are
+    // identical (parameter names are labels, not part of the topic), so the
+    // existing ABI decodes an EURC trade fine — but the amount would read
+    // 1e12 too small without this, which on a live tape looks like a real
+    // trade of almost nothing rather than a bug.
+    if (launch.curve) next.set(String(launch.curve).toLowerCase(), { token: launch.address, symbol: launch.symbol, type: "curve", quoteScale: Number(launch.quoteKind) === 1 ? 10n ** 12n : 1n });
     if (launch.pair && launch.graduated) {
       const quoteIs0 = pairQuotes[pairLaunches.indexOf(launch)];
       next.set(String(launch.pair).toLowerCase(), { token: launch.address, symbol: launch.symbol, type: "pool", quoteIs0 });
@@ -233,8 +239,9 @@ async function tick() {
       if (venue.type === "curve") {
         const parsed = curveInterface.parseLog(log);
         if (!parsed) return [];
-        if (parsed.name === "Bought") return [{ token: venue.token, symbol: venue.symbol, side: "BUY", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.buyer, native: parsed.args.nativeIn.toString(), tokens: parsed.args.tokensOut.toString(), timestamp }];
-        if (parsed.name === "Sold") return [{ token: venue.token, symbol: venue.symbol, side: "SELL", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.seller, native: parsed.args.nativeOut.toString(), tokens: parsed.args.tokensIn.toString(), timestamp }];
+        const scale = venue.quoteScale ?? 1n;
+        if (parsed.name === "Bought") return [{ token: venue.token, symbol: venue.symbol, side: "BUY", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.buyer, native: (parsed.args.nativeIn * scale).toString(), tokens: parsed.args.tokensOut.toString(), timestamp }];
+        if (parsed.name === "Sold") return [{ token: venue.token, symbol: venue.symbol, side: "SELL", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.seller, native: (parsed.args.nativeOut * scale).toString(), tokens: parsed.args.tokensIn.toString(), timestamp }];
         return [];
       }
       const parsed = poolInterface.parseLog(log);

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, graduationUnitsFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
@@ -2096,8 +2096,10 @@ function Launch({
   const [image, setImage] = useState("");
   const [twitter, setTwitter] = useState("");
   const [discord, setDiscord] = useState("");
-  // EURC has no mainnet pump-factory yet (see task #48) — force USDC there.
   const [quoteChoice, setQuoteChoice] = useState<"USDC" | "EURC">("USDC");
+  // Arc Mainnet's EURC engine graduates at 3,000 where every other engine
+  // graduates at 12,000, so this can no longer be a literal in the copy.
+  const graduationLabel = graduationUnitsFor(isMainnet, quoteChoice).toLocaleString("en-US");
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
@@ -2170,8 +2172,13 @@ function Launch({
       await ensureWalletChain(activeProvider, activeArc);
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
-      const isEurc = !isMainnet && quoteChoice === "EURC";
-      const factoryAddress = (isEurc ? EURC_PUMP_FACTORY_ADDRESS : activeFactory).toLowerCase();
+      // EURC launches went live on Arc Mainnet 2026-09-16 with
+      // ArcPumpFactoryEurcV11, so this is no longer a testnet-only choice —
+      // each network just has its own EURC factory. The curve reads are
+      // identical either way; only the address differs.
+      const isEurc = quoteChoice === "EURC";
+      const eurcFactory = isMainnet ? ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11 : EURC_PUMP_FACTORY_ADDRESS;
+      const factoryAddress = (isEurc ? eurcFactory : activeFactory).toLowerCase();
       const factory = new Contract(
         factoryAddress,
         ARC_PUMP_FACTORY_ABI,
@@ -2308,7 +2315,7 @@ function Launch({
         <div>
           <p className="kicker">Launch studio · {activeArc.name}</p>
           <h3>Build the coin.<br/><em>We handle the market.</em></h3>
-          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At 12,000 {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
+          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At {graduationLabel} {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
         </div>
         <span className="launch-network"><i/> Canonical v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</span>
       </div>
@@ -2349,22 +2356,19 @@ function Launch({
             placeholder="ACAT"
           />
         </label>
-        {isMainnet ? (
-          <label>
-            <span>Quote asset <i>Trading currency</i></span>
-            <div className="quote-toggle" role="group" aria-label="Quote asset"><button type="button" className="active" disabled>USDC</button></div>
-            <small>Arc Mainnet is USDC-only for now — EURC launches are still Arc Testnet only. Graduation at 12,000 USDC.</small>
-          </label>
-        ) : (
-          <label>
-            <span>Quote asset <i>Trading currency</i></span>
-            <div className="quote-toggle" role="group" aria-label="Quote asset">
-              <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
-              <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
-            </div>
-            <small>Traders buy/sell your coin in {quoteChoice}. Graduation at 12,000 {quoteChoice}.</small>
-          </label>
-        )}
+        {/* One selector for both networks since 2026-09-16 — mainnet used to
+            show a disabled USDC-only toggle because no mainnet EURC factory
+            existed. The graduation figure is read from config rather than
+            written into the copy, because the two mainnet engines no longer
+            share a threshold. */}
+        <label>
+          <span>Quote asset <i>Trading currency</i></span>
+          <div className="quote-toggle" role="group" aria-label="Quote asset">
+            <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
+            <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
+          </div>
+          <small>Traders buy/sell your coin in {quoteChoice}. Graduation at {graduationLabel} {quoteChoice}.</small>
+        </label>
         <div className="launch-section-title launch-section-social"><span>02</span><div><b>Community</b><small>Optional discovery links</small></div></div>
         <label>
           <span>X / Twitter <i>Optional</i></span>
@@ -2401,7 +2405,7 @@ function Launch({
         <div className="preview-token-art"><CoinIcon image={image} fallback={<b>{symbol?.[0]?.toUpperCase() || "A"}</b>} /></div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
-        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>12,000 {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
+        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>{graduationLabel} {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
         <div className="launch-readiness"><b>{launchReady ? "Ready to launch" : "Complete required fields"}</b><div><i className={identityReady ? "done" : ""}/><i className={image ? "done" : ""}/><i className={launchReady ? "done" : ""}/></div></div>
         <small className="preview-note">This is a visual preview. Contract addresses are created only after wallet confirmation.</small>
       </aside>

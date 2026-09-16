@@ -293,6 +293,20 @@ export const ARC_EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 // DEX nothing else could route through, and is retired.
 export const EURC_PUMP_FACTORY_ADDRESS = "0x171033cA9A61C71A73e0f68FfA3BEEFFEA44f2ef";
 export const EURC_GRADUATION_THRESHOLD_6 = "12000000000"; // 12,000 EURC, 6 decimals
+
+/// Graduation thresholds in whole quote units, for display only — the
+/// authoritative number always comes from the curve's own
+/// graduationThreshold(). Three of the four launch engines graduate at 12,000
+/// of their quote; Arc Mainnet's EURC engine is the exception at 3,000,
+/// because EURC liquidity on Arc was still thin when it was deployed (the
+/// deepest external USDC/EURC pool held ~583 EURC) and 12,000 was unreachable.
+/// Its curve's virtual reserve was scaled by the same factor, so the curve
+/// shape is unchanged — only the entry point moved.
+export const GRADUATION_UNITS = 12_000;
+export const MAINNET_EURC_GRADUATION_UNITS = 3_000;
+export function graduationUnitsFor(isMainnet: boolean, quote: "USDC" | "EURC"): number {
+  return isMainnet && quote === "EURC" ? MAINNET_EURC_GRADUATION_UNITS : GRADUATION_UNITS;
+}
 // Permissionless AMM. Anyone may create a pair for any two ERC-20s at 10 bps
 // (stable) or 30 bps (volatile); fees split 80% LP / 20% protocol. Pairs derive
 // reserves from measured balances, so fee-on-transfer and rebasing tokens cannot

@@ -17,6 +17,17 @@ import { dirname } from "node:path";
 const RPC = process.env.ARC_MAINNET_RPC_URL || "https://arc-rpc.stakeme.pro";
 const OUTPUT = process.env.MAINNET_INDEX_OUTPUT || "/www/wwwroot/arcodian.fun/shared/data/mainnet-market-index.json";
 const USDC = "0x3600000000000000000000000000000000000000";
+// Circle's Arc Mainnet EURC, published 2026-09-16. Launches quoted in it are
+// indexed through the same pipeline as USDC ones; see QUOTE_SCALE below for
+// the one real difference.
+const EURC = "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1";
+// EURC is 6 decimals where native USDC is 18. Every reserve, threshold and
+// trade amount from an EURC curve is scaled up by this before it is written
+// out, so the whole index — and therefore every consumer of it — speaks one
+// magnitude. The frontend already does exactly this for launches it creates
+// itself (Market.tsx's QSCALE); doing it anywhere else would mean two
+// conventions in one file.
+const QUOTE_SCALE = 10n ** 12n;
 
 // V8 (ArcPair v2-style AMM graduation) is retired as of 2026-08-01 — the one
 // coin that used it (ARCD) is dropped from the index entirely, same as the
@@ -40,6 +51,11 @@ const FACTORIES = [
   // existing launch can't migrate and stays readable/tradeable here.
   { address: process.env.ARC_MAINNET_FACTORY_V10 || "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3", fromBlock: 18_201_614, kind: "v3" },
   { address: process.env.ARC_MAINNET_FACTORY_V11 || "0x12ae88784D1CB2A23408BBA483B4bBBc88226FF9", fromBlock: 20_487_025, kind: "v3" },
+  // EURC launch engine, deployed 2026-09-16 at block 21,096,267. Graduates
+  // into Uniswap V3 exactly like the USDC V11 above — the kind differs only
+  // because its curve names the quote "quote" rather than "native" and holds
+  // it at 6 decimals.
+  { address: process.env.ARC_MAINNET_FACTORY_EURC_V11 || "0x426e68f06207a3f3ef7aa261f3856e71746af7aa", fromBlock: 21_096_267, kind: "v3-eurc" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
@@ -101,6 +117,19 @@ const curveAbiV2 = [
   "function pair() view returns(address)",
   "event Bought(address indexed buyer,uint256 nativeIn,uint256 tokensOut,uint256 protocolFee)",
   "event Sold(address indexed seller,uint256 tokensIn,uint256 nativeOut,uint256 protocolFee)",
+];
+const curveAbiV3Eurc = [
+  "function ENGINE_VERSION() view returns(uint8)",
+  "function CURVE_SUPPLY() view returns(uint256)",
+  "function curveSold() view returns(uint256)",
+  "function realQuoteReserve() view returns(uint256)",
+  "function VIRTUAL_QUOTE() view returns(uint256)",
+  "function graduationThreshold() view returns(uint256)",
+  "function graduated() view returns(bool)",
+  "function creator() view returns(address)",
+  "function pool() view returns(address)",
+  "event Bought(address indexed buyer,uint256 quoteIn,uint256 tokensOut,uint256 protocolFee)",
+  "event Sold(address indexed seller,uint256 tokensIn,uint256 quoteOut,uint256 protocolFee)",
 ];
 const curveAbiV3 = [
   "function ENGINE_VERSION() view returns(uint8)",
@@ -436,7 +465,17 @@ async function indexRadarGlobalTokens(existingPools) {
 }
 
 async function indexLaunches(seeds, { FACTORY, kind, fromBlock }) {
-const curveAbi = kind === "v3" ? curveAbiV3 : curveAbiV2;
+// "v3-eurc" is a V3-graduating curve like "v3", differing only in what it
+// calls the quote and how many decimals it holds it at. Treating it as a
+// third kind rather than a flag on "v3" would duplicate the whole branch
+// below, so it is `isEurc` plus `v3Graduation` instead.
+const isEurc = kind === "v3-eurc";
+const v3Graduation = kind === "v3" || isEurc;
+const curveAbi = isEurc ? curveAbiV3Eurc : kind === "v3" ? curveAbiV3 : curveAbiV2;
+const quoteToken = isEurc ? EURC : USDC;
+// Normalizes an EURC curve's 6-decimal amount to the 18-decimal magnitude
+// every consumer of this index already assumes. A no-op for USDC.
+const toWei = (value) => (isEurc ? BigInt(value) * QUOTE_SCALE : BigInt(value));
 return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   const token = new Contract(address, tokenAbi, provider);
   const market = new Contract(curve, curveAbi, provider);
@@ -445,9 +484,11 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   if (previousMarket) {
     name = previousMarket.name; symbol = previousMarket.symbol;
     virtualReserve = BigInt(previousMarket.virtualReserve); threshold = BigInt(previousMarket.threshold);
-    [reserve, graduated, inventory] = await Promise.all([market.realNativeReserve(), market.graduated(), token.balanceOf(curve)]);
+    [reserve, graduated, inventory] = await Promise.all([isEurc ? market.realQuoteReserve() : market.realNativeReserve(), market.graduated(), token.balanceOf(curve)]);
+    reserve = toWei(reserve);
   } else {
-    [name, symbol, reserve, virtualReserve, threshold, graduated, inventory] = await Promise.all([token.name(), token.symbol(), market.realNativeReserve(), market.VIRTUAL_NATIVE(), market.graduationThreshold(), market.graduated(), token.balanceOf(curve)]);
+    [name, symbol, reserve, virtualReserve, threshold, graduated, inventory] = await Promise.all([token.name(), token.symbol(), isEurc ? market.realQuoteReserve() : market.realNativeReserve(), isEurc ? market.VIRTUAL_QUOTE() : market.VIRTUAL_NATIVE(), market.graduationThreshold(), market.graduated(), token.balanceOf(curve)]);
+    reserve = toWei(reserve); virtualReserve = toWei(virtualReserve); threshold = toWei(threshold);
   }
   let engineVersion = Number(previousMarket?.engineVersion || 0);
   try { engineVersion = Number(await market.ENGINE_VERSION()); } catch {}
@@ -472,13 +513,13 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   // V3 pools have no simple reserve0/reserve1 (concentrated liquidity, LP
   // held as a locked NFT position rather than fungible LP tokens) — the
   // pool's own token balances stand in as a display-only reserve proxy.
-  if (graduated && kind === "v3") try {
+  if (graduated && v3Graduation) try {
     pair = await market.pool();
     dexPoolV3 = new Contract(pair, poolAbiV3, provider);
     const token0 = await dexPoolV3.token0();
-    const quoteIsToken0 = token0.toLowerCase() === USDC.toLowerCase();
-    const [tokenBal, usdcBal] = await Promise.all([token.balanceOf(pair), new Contract(USDC, tokenAbi, provider).balanceOf(pair)]);
-    reserve = usdcBal; inventory = tokenBal;
+    const quoteIsToken0 = token0.toLowerCase() === quoteToken.toLowerCase();
+    const [tokenBal, quoteBal] = await Promise.all([token.balanceOf(pair), new Contract(quoteToken, tokenAbi, provider).balanceOf(pair)]);
+    reserve = toWei(quoteBal); inventory = tokenBal;
     void quoteIsToken0;
   } catch {}
   let image = previousMarket?.image || "", creator = previousMarket?.creator || "";
@@ -491,8 +532,11 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
     trades = (await contractLogs(market, fromBlock)).flatMap((log) => {
       try {
         const parsed = market.interface.parseLog(log);
-        if (parsed?.name === "Bought") return [{ side: "BUY", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.buyer, native: parsed.args.nativeIn.toString(), tokens: parsed.args.tokensOut.toString() }];
-        if (parsed?.name === "Sold") return [{ side: "SELL", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.seller, native: parsed.args.nativeOut.toString(), tokens: parsed.args.tokensIn.toString() }];
+        // The EURC curve names these quoteIn/quoteOut; everything downstream
+        // reads `native`, so the amount is normalized here rather than
+        // teaching every consumer about a second field name.
+        if (parsed?.name === "Bought") return [{ side: "BUY", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.buyer, native: toWei(isEurc ? parsed.args.quoteIn : parsed.args.nativeIn).toString(), tokens: parsed.args.tokensOut.toString() }];
+        if (parsed?.name === "Sold") return [{ side: "SELL", block: log.blockNumber, tx: log.transactionHash, user: parsed.args.seller, native: toWei(isEurc ? parsed.args.quoteOut : parsed.args.nativeOut).toString(), tokens: parsed.args.tokensIn.toString() }];
       } catch {}
       return [];
     });
@@ -555,7 +599,7 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   const pricedTrades = trades.filter((trade) => BigInt(trade.tokens) > 0n);
   const priceChange24h = changeFor(pricedTrades, now, 86400);
   return {
-    address, curve, pair, engineVersion, quoteKind: 0, currency: "USDC",
+    address, curve, pair, engineVersion, quoteKind: isEurc ? 1 : 0, currency: isEurc ? "EURC" : "USDC",
     lpSupply: lpSupply.toString(), lpBurned: lpBurned.toString(),
     name, symbol, image, creator,
     reserve: reserve.toString(), virtualReserve: virtualReserve.toString(), threshold: threshold.toString(), inventory: inventory.toString(),
