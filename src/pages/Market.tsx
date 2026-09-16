@@ -9,7 +9,9 @@ import { quoteAmount, quoteDecimalsOf } from "../shared";
 import "./ArcodianTerminal.css";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
-import { TerminalChart, type Candle } from "../components/TerminalChart";
+import { TerminalChart } from "../components/TerminalChart";
+import { buildCandles, type Candle } from "../candles";
+import { findBestExternalV3Route } from "../routingReads";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -1119,7 +1121,7 @@ function TradingDesk({
   const [reportOpen, setReportOpen] = useState(false);
   const [reportCategory, setReportCategory] = useState("scam");
   const [reportDetail, setReportDetail] = useState("");
-  const [timeframe, setTimeframe] = useState<1 | 15 | 60 | 300 | 900 | 3600>(60);
+  const [timeframe, setTimeframe] = useState<1 | 15 | 60 | 300 | 900 | 3600 | 14400>(60);
   const [chartWindow, setChartWindow] = useState(30);
   const [chartHover, setChartHover] = useState<Candle | null>(null);
   const [netCost, setNetCost] = useState(0n);
@@ -1469,40 +1471,87 @@ function TradingDesk({
       await ensureWalletChain(activeProvider, activeArc);
       const provider = new BrowserProvider(activeProvider as never);
       const signer = await provider.getSigner();
+      // Every READ here goes through Arcodian's own RPC, not the wallet's.
+      //
+      // This whole function used to read through the BrowserProvider, which
+      // means OKX's selected Arc endpoint. Several of those reads run in
+      // Promise.all, ethers folds simultaneous calls into one JSON-RPC
+      // batch, and when that endpoint fails the batch ethers raises "could
+      // not coalesce error" — which surfaced to the user as "Wallet
+      // preflight failed before signing", on a trade that had not even been
+      // quoted yet. arcProvider is the same failover pool the rest of the
+      // app reads from and it already forces batchMaxCount 1, so one bad
+      // endpoint costs a retry instead of the whole trade.
+      //
+      // The wallet is still the only thing that signs. Nothing below sends a
+      // transaction through `read`.
+      const read = arcProvider(activeArc);
       const venueAddress = graduated && pair ? pair : asset.curve;
       const tokenReader = new Contract(
         asset.address,
         ["function balanceOf(address) view returns(uint256)"],
-        provider,
+        read,
       );
       const isEurc = asset.quoteKind === 1;
       const QSCALE = 10n ** 12n; // EURC 6-dec <-> normalized 18-dec
       let freshInventory: bigint;
       let freshReserve: bigint;
       let pairReader: Contract | null = null;
+      let pairWriter: Contract | null = null;
       let pairZeroForOne = false;
       // A real Uniswap V3 pool has no view-only reserve0()/reserve1()/quote()
       // — quoting goes through the Quoter contract instead (staticCall; its
       // quoteExactInputSingle is non-view by design, computing the amount via
       // a revert-trick under the hood, same as every Uniswap V3 frontend).
       let v3QuoteOut = 0n;
+      let v3Route: Awaited<ReturnType<typeof findBestExternalV3Route>> = null;
       if (graduated && pairIsV3) {
-        const v3FeeTier = Number(asset.feeTier || 3000);
-        const quoter = new Contract(
-          ARC_MAINNET_CONTRACTS.v3Quoter,
-          ["function quoteExactInputSingle(address,address,uint24,uint256,uint160) returns(uint256)"],
-          provider,
-        );
         const tokenInAddr = side === "buy" ? ARC_USDC_ERC20 : asset.address;
         const tokenOutAddr = side === "buy" ? asset.address : ARC_USDC_ERC20;
         const amountInRaw = side === "buy" ? venueAmountWei / QSCALE : amountWei;
-        v3QuoteOut = amountInRaw > 0n
-          ? await quoter.quoteExactInputSingle.staticCall(tokenInAddr, tokenOutAddr, v3FeeTier, amountInRaw, 0) as bigint
-          : 0n;
+        if (asset.globalPool) {
+          // A Uniswap V3 quoter only knows pools from the factory it was
+          // deployed against. This market's pool belongs to the external
+          // permissionless factory, so Arcodian's quoter looks for it at a
+          // completely different address, finds nothing, and reverts with no
+          // data — which ethers reports as "missing revert data" and the UI
+          // turned into "Wallet preflight failed before signing", on a trade
+          // that had not been quoted yet. TOLLY hit this: its 1% pool is on
+          // 0xf0db7b58…, and Arcodian's factory returns the zero address
+          // for it.
+          //
+          // Reuse the route finder /swap already trades these pools with.
+          // It prices straight off the pool's own slot0 and liquidity, so it
+          // needs no quoter at all, and it returns the router this pool must
+          // actually be executed against.
+          v3Route = amountInRaw > 0n
+            ? await findBestExternalV3Route(
+                read, tokenInAddr, tokenOutAddr, amountInRaw,
+                ARC_MAINNET_CONTRACTS.externalV3Factory,
+                ARC_MAINNET_CONTRACTS.externalV3Router,
+                ARC_MAINNET_CONTRACTS.externalV3FeeRouter,
+              )
+            : null;
+          v3QuoteOut = v3Route?.out ?? 0n;
+        } else {
+          const v3FeeTier = Number(asset.feeTier || 3000);
+          const quoter = new Contract(
+            ARC_MAINNET_CONTRACTS.v3Quoter,
+            ["function quoteExactInputSingle(address,address,uint24,uint256,uint160) returns(uint256)"],
+            read,
+          );
+          v3QuoteOut = amountInRaw > 0n
+            ? await quoter.quoteExactInputSingle.staticCall(tokenInAddr, tokenOutAddr, v3FeeTier, amountInRaw, 0) as bigint
+            : 0n;
+        }
         freshInventory = 0n;
         freshReserve = 0n;
       } else if (graduated) {
-        pairReader = new Contract(venueAddress, ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)", "function quote(bool,uint256) view returns(uint256)", "function swap(bool,uint256,uint256,uint64) returns(uint256)"], signer);
+        // Split read from write: the same ABI, but quoting and reserves come
+        // from our RPC while swap() still goes out through the wallet.
+        const pairAbi = ["function token0() view returns(address)", "function reserve0() view returns(uint256)", "function reserve1() view returns(uint256)", "function quote(bool,uint256) view returns(uint256)", "function swap(bool,uint256,uint256,uint64) returns(uint256)"];
+        pairReader = new Contract(venueAddress, pairAbi, read);
+        pairWriter = new Contract(venueAddress, pairAbi, signer);
         const [token0, reserve0, reserve1] = await Promise.all([
           pairReader.token0() as Promise<string>, pairReader.reserve0() as Promise<bigint>, pairReader.reserve1() as Promise<bigint>,
         ]);
@@ -1513,9 +1562,9 @@ function TradingDesk({
         pairZeroForOne = token0.toLowerCase() === inputToken.toLowerCase();
       } else {
         const reserveFn = isEurc ? "realQuoteReserve" : "realNativeReserve";
-        const venueReader = new Contract(venueAddress, [`function ${reserveFn}() view returns(uint256)`], provider);
+        const venueReader = new Contract(venueAddress, [`function ${reserveFn}() view returns(uint256)`], read);
         [freshInventory, freshReserve] = await Promise.all([
-          readBondingInventory(asset.address, venueAddress, provider),
+          readBondingInventory(asset.address, venueAddress, read),
           venueReader[reserveFn]() as Promise<bigint>,
         ]);
         if (isEurc) freshReserve *= QSCALE;
@@ -1578,22 +1627,47 @@ function TradingDesk({
         const tokenOutAddr = side === "buy" ? asset.address : ARC_USDC_ERC20;
         const v3AmountIn = side === "buy" ? amountWei / QSCALE : amountWei;
         const v3AmountOutMinimum = side === "buy" ? minOut : minOut / QSCALE;
+        // Approve and execute against the router that actually owns this
+        // pool. Arcodian's own SwapRouter cannot reach an external-factory
+        // pool, and the two routers do not even take the same struct — the
+        // external one's exactInputSingle has no deadline field. Getting
+        // either wrong reverts before anything is signed.
+        // router is optional on a route, so every fallback is spelled out
+        // rather than left to a possibly-undefined address reaching approve().
+        const externalRouter = v3Route?.router || ARC_MAINNET_CONTRACTS.externalV3Router;
+        const spender = v3Route ? (v3Route.feeRouter || externalRouter) : ARC_MAINNET_CONTRACTS.v3SwapRouter;
         const inputToken = new Contract(tokenInAddr, erc20Abi, signer);
-        const allowance = await inputToken.allowance(owner, ARC_MAINNET_CONTRACTS.v3SwapRouter) as bigint;
+        const allowance = await new Contract(tokenInAddr, erc20Abi, read).allowance(owner, spender) as bigint;
         if (allowance < v3AmountIn) {
           setTradeStage("approval");
           setStatus(`Approve ${side === "buy" ? currency : asset.symbol} spending in your wallet.`);
-          await (await inputToken.approve(ARC_MAINNET_CONTRACTS.v3SwapRouter, v3AmountIn)).wait();
+          await (await inputToken.approve(spender, v3AmountIn)).wait();
         }
-        const swapRouter = new Contract(
-          ARC_MAINNET_CONTRACTS.v3SwapRouter,
-          ["function exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns(uint256)"],
-          signer,
-        );
-        const v3FeeTier = Number(asset.feeTier || 3000);
-        tx = await swapRouter.exactInputSingle([
-          tokenInAddr, tokenOutAddr, v3FeeTier, owner, deadline, v3AmountIn, v3AmountOutMinimum, 0,
-        ]);
+        const v3FeeTier = Number(v3Route?.fee ?? asset.feeTier ?? 3000);
+        if (v3Route?.feeRouter) {
+          const feeRouter = new Contract(
+            v3Route.feeRouter,
+            ["function swapExactInputSingle(address,address,uint24,uint256,uint256,uint256) returns(uint256)"],
+            signer,
+          );
+          tx = await feeRouter.swapExactInputSingle(tokenInAddr, tokenOutAddr, v3FeeTier, v3AmountIn, v3AmountOutMinimum, deadline);
+        } else if (v3Route) {
+          const router = new Contract(
+            externalRouter,
+            ["function exactInputSingle((address,address,uint24,address,uint256,uint256,uint160)) payable returns(uint256)"],
+            signer,
+          );
+          tx = await router.exactInputSingle([tokenInAddr, tokenOutAddr, v3FeeTier, owner, v3AmountIn, v3AmountOutMinimum, 0]);
+        } else {
+          const swapRouter = new Contract(
+            ARC_MAINNET_CONTRACTS.v3SwapRouter,
+            ["function exactInputSingle((address,address,uint24,address,uint256,uint256,uint256,uint160)) payable returns(uint256)"],
+            signer,
+          );
+          tx = await swapRouter.exactInputSingle([
+            tokenInAddr, tokenOutAddr, v3FeeTier, owner, deadline, v3AmountIn, v3AmountOutMinimum, 0,
+          ]);
+        }
       } else if (graduated) {
         if (!pairReader) throw new Error("NO_LIQUIDITY");
         if (route === "manual") throw new Error("Switch to the pair quote currency before trading this graduated market.");
@@ -1601,13 +1675,14 @@ function TradingDesk({
         const pairAmountIn = side === "buy" ? amountWei / QSCALE : amountWei;
         const pairMinOut = side === "buy" ? minOut : minOut / QSCALE;
         const inputToken = new Contract(inputTokenAddress, erc20Abi, signer);
-        const allowance = await inputToken.allowance(owner, venueAddress) as bigint;
+        const allowance = await new Contract(inputTokenAddress, erc20Abi, read).allowance(owner, venueAddress) as bigint;
         if (allowance < pairAmountIn) {
           setTradeStage("approval");
           setStatus(`Approve ${side === "buy" ? currency : asset.symbol} spending in your wallet.`);
           await (await inputToken.approve(venueAddress, pairAmountIn)).wait();
         }
-        tx = await pairReader.swap(pairZeroForOne, pairAmountIn, pairMinOut, deadline);
+        if (!pairWriter) throw new Error("NO_LIQUIDITY");
+        tx = await pairWriter.swap(pairZeroForOne, pairAmountIn, pairMinOut, deadline);
       } else if (side === "buy") {
         if (route === "cross") {
           // Atomic USDC -> EURC -> curve buy. If any leg fails the whole
@@ -1701,10 +1776,12 @@ function TradingDesk({
     ? Number((BigInt(asset.lpBurned || "0") * 10_000n) / BigInt(asset.lpSupply)) / 100
     : 0;
   const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: tradePrice(BigInt(trade.native), BigInt(trade.tokens)), volume: formatTradeQuote(BigInt(trade.native)) }));
-  const candleMap = new Map<number, Array<{price:number;volume:number}>>();
-  for (const point of tradePrices) { const bucket = Math.floor(point.timestamp / timeframe) * timeframe; candleMap.set(bucket, [...(candleMap.get(bucket) || []), {price:point.price,volume:point.volume}]); }
-  const candles = [...candleMap.entries()].sort(([a], [b]) => a - b).slice(-chartWindow).map(([time, points]) => { const prices=points.map(point=>point.price); return { time, open: prices[0], close: prices[prices.length - 1], high: Math.max(...prices), low: Math.min(...prices), volume: points.reduce((sum,point)=>sum+point.volume,0) }; });
-  const visibleCandles = candles;
+  // Shared with the trading terminal (src/candles.ts). This used to be its
+  // own copy of the bucketing loop, with the same two bugs: empty buckets
+  // were dropped, leaving holes in the series on any market that trades
+  // less than continuously, and each candle opened at its own first trade
+  // rather than the previous close, so every pair of candles gapped.
+  const visibleCandles = buildCandles(tradePrices, timeframe, chartWindow);
   const lastPrice = tradePrices.at(-1)?.price || 0;
   // Price impact must compare execution against the current pool/curve spot
   // before the user's trade. Comparing against the previous trade made a
@@ -1801,7 +1878,10 @@ function TradingDesk({
   const scoredChecks = safetyChecks.filter((check) => check.ok !== null);
   const safetyScore = scoredChecks.length ? Math.round((scoredChecks.filter((check) => check.ok).length / scoredChecks.length) * 100) : null;
   const agoLabel = (seconds: number) => {
-    if (!seconds) return "—";
+    // Anything before Arc existed is a field that was never a timestamp —
+    // external pool rows briefly carried a block height here and rendered as
+    // "20555d ago". Say nothing rather than say 1970.
+    if (!seconds || seconds < 1_600_000_000) return "—";
     const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
     if (delta < 60) return `${delta}s ago`;
     if (delta < 3600) return `${Math.floor(delta / 60)}m ago`;
@@ -1915,7 +1995,7 @@ function TradingDesk({
           <section className="orbit-col orbit-col-mid">
             <div className="orbit-chart-bar">
               <div className="orbit-seg">
-                {([[1, "1s"], [15, "15s"], [60, "1m"], [300, "5m"], [900, "15m"], [3600, "1h"]] as const).map(([seconds, label]) => (
+                {([[1, "1s"], [15, "15s"], [60, "1m"], [300, "5m"], [900, "15m"], [3600, "1h"], [14400, "4h"]] as const).map(([seconds, label]) => (
                   <button key={seconds} className={timeframe === seconds ? "on" : ""} onClick={() => { setTimeframe(seconds); setChartHover(null); }}>{label}</button>
                 ))}
               </div>

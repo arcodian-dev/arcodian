@@ -337,7 +337,13 @@ async function indexGlobalV3Pools() {
           volume: trades.reduce((sum, trade) => sum + BigInt(trade.native), 0n).toString(), volume5m: volumeFor(300).toString(), volume10m: volumeFor(600).toString(), volume1h: volumeFor(3600).toString(), volume24h: volumeFor(86400).toString(),
           priceChange5m: changeFor(priced, now, 300), priceChange10m: changeFor(priced, now, 600), priceChange1h: changeFor(priced, now, 3600), priceChange24h: changeFor(priced, now, 86400),
           marketCap: last && tokenBalance > 0n ? ((BigInt(last.native) * tokenBalance) / BigInt(last.tokens)).toString() : "0",
-          liquidity: (usdcBalance * 2n).toString(), createdAt: log.blockNumber, indexedBlock: latestBlock, progress: 100, risk: venue.dex, type: "Graduated", trades,
+          // createdAt is a unix timestamp everywhere else in this payload.
+          // This wrote log.blockNumber instead, and the coin terminal read a
+          // ~21,000,000 block height as seconds since the epoch — every
+          // external pool showed "Created 20555d ago", i.e. mid-1970. The
+          // pool's first indexed trade is the closest honest answer we have
+          // without an extra getBlock per pool; 0 renders as "—".
+          liquidity: (usdcBalance * 2n).toString(), createdAt: Number(trades[0]?.timestamp || 0), indexedBlock: latestBlock, progress: 100, risk: venue.dex, type: "Graduated", trades,
         };
         const index = results.findIndex((item) => item.pool.toLowerCase() === pool.toLowerCase());
         if (index >= 0) results[index] = row; else results.push(row);

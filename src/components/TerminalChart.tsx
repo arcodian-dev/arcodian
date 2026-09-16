@@ -1,29 +1,33 @@
 import { useEffect, useRef } from "react";
-import { AreaSeries, ColorType, HistogramSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import { CandlestickSeries, ColorType, HistogramSeries, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
+import type { Candle } from "../candles";
 
-export type Candle = { time: number; open: number; high: number; low: number; close: number; volume: number };
+export type { Candle };
 
-// Keep every trading surface on the same terminal palette. The coin route and
-// the standalone terminal intentionally share this renderer so line color,
-// grid contrast, and crosshair labels cannot drift apart again.
-const UP = "#26d98a";
-const DOWN = "#ff4f6a";
+// Both trading surfaces share this renderer on purpose, so candle colour,
+// grid contrast and crosshair styling cannot drift apart between them.
+const UP = "#19e79a";
+const DOWN = "#ff5b70";
+const UP_FILL = "rgba(25,231,154,.34)";
+const DOWN_FILL = "rgba(255,91,112,.34)";
 
-// Switched from candlesticks to a smooth filled area/line 2026-09-12 (user
-// request: "chart buy dan sell harus bener-bener mulus" — really smooth).
-// Two real problems candlesticks had, not just an aesthetic preference:
-// most Arcodian coins trade a handful of times a day, so a 1m/5m candle
-// grid was mostly empty wicks with huge gaps — looked broken, not "sparse
-// but legitimate" the way a continuous line reads with the exact same
-// underlying data. A smooth area also matches what traders coming from
-// Pons/pump.fun-style launchpads already expect from a bonding-curve chart.
-// Still real, still onchain — this draws the same close-price series a
-// candle chart would, just without inventing OHLC structure sparse trade
-// data doesn't actually support.
+// History: this was candlesticks, became a smooth area chart on 2026-09-12,
+// and is candlesticks again now. Worth recording why the first switch
+// happened and why coming back is not just undoing it.
+//
+// The area chart was a response to a real problem — a 1m candle grid on a
+// market that trades a few times an hour came out as a handful of bars
+// separated by holes, which reads as broken data. But the holes were a bug
+// in how candles were built, not something inherent to candles: empty
+// buckets were dropped from the series entirely, and each bucket opened at
+// its own first trade instead of the previous close, so even adjacent
+// candles gapped. buildCandles fills both of those now, and a continuous
+// candle series stays readable on a sparse market while still showing the
+// open/high/low/close an area chart throws away.
 export function TerminalChart({ candles, priceLabel, onHover }: { candles: Candle[]; priceLabel: (value: number) => string; onHover: (candle: Candle | null) => void }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
-  const seriesRef = useRef<ISeriesApi<"Area"> | null>(null);
+  const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const candlesRef = useRef<Candle[]>(candles);
   candlesRef.current = candles;
@@ -40,28 +44,43 @@ export function TerminalChart({ candles, priceLabel, onHover }: { candles: Candl
     const container = containerRef.current;
     if (!container) return;
     const chart = createChart(container, {
-      layout: { background: { type: ColorType.Solid, color: "transparent" }, textColor: "#8b97a8", fontFamily: "\"JetBrains Mono\",ui-monospace,monospace", fontSize: 11, attributionLogo: false },
-      grid: { vertLines: { color: "#121926" }, horzLines: { color: "#121926" } },
-      rightPriceScale: { borderColor: "#161d29" },
-      timeScale: { borderColor: "#161d29", timeVisible: true, secondsVisible: false },
-      crosshair: { vertLine: { color: "rgba(38,217,138,.55)", labelBackgroundColor: "#153a2b" }, horzLine: { color: "rgba(38,217,138,.55)", labelBackgroundColor: "#153a2b" } },
+      layout: {
+        background: { type: ColorType.Solid, color: "transparent" },
+        textColor: "#68778c",
+        fontFamily: "\"JetBrains Mono\",ui-monospace,monospace",
+        fontSize: 10,
+        attributionLogo: false,
+      },
+      // Horizontal lines only. A full grid competes with the candles for
+      // attention at this candle width; price levels are what a trader
+      // actually reads off the background.
+      grid: { vertLines: { visible: false }, horzLines: { color: "rgba(112,132,157,.07)" } },
+      rightPriceScale: { borderColor: "rgba(112,132,157,.13)", entireTextOnly: true },
+      timeScale: { borderColor: "rgba(112,132,157,.13)", timeVisible: true, secondsVisible: false, rightOffset: 4, barSpacing: 9, minBarSpacing: 1 },
+      crosshair: {
+        vertLine: { color: "rgba(25,231,154,.4)", width: 1, style: 3, labelBackgroundColor: "#0d3527" },
+        horzLine: { color: "rgba(25,231,154,.4)", width: 1, style: 3, labelBackgroundColor: "#0d3527" },
+      },
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: true },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
       autoSize: true,
     });
-    // lineWidth 3 + curved corners (lightweight-charts' Area series draws a
-    // straight-segment polyline, not a spline — the "smoothness" comes from
-    // point density plus a soft gradient fill, same trick the Market card
-    // sparklines already use) reads as fluid at any zoom level instead of
-    // the jagged, thin line a lineWidth:1 chart gets at wide time ranges.
-    const series = chart.addSeries(AreaSeries, {
-      lineColor: UP, topColor: "rgba(38,217,138,.32)", bottomColor: "rgba(38,217,138,.02)",
-      lineWidth: 3, priceFormat: { type: "custom", formatter: priceLabel, minMove: 1e-12 },
-      crosshairMarkerRadius: 5, crosshairMarkerBorderColor: "#05070a", crosshairMarkerBorderWidth: 2,
+    const series = chart.addSeries(CandlestickSeries, {
+      upColor: UP_FILL,
+      downColor: DOWN_FILL,
+      // Borders carry the colour and the fills stay translucent, so a dense
+      // run of candles reads as structure rather than as a solid block.
+      borderUpColor: UP,
+      borderDownColor: DOWN,
+      wickUpColor: "rgba(25,231,154,.72)",
+      wickDownColor: "rgba(255,91,112,.72)",
+      priceFormat: { type: "custom", formatter: priceLabel, minMove: 1e-12 },
     });
-    const volume = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "volume", color: "rgba(38,217,138,.28)" });
-    volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    series.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.22 } });
+    // Volume sits in its own scale pinned to the bottom fifth, so it reads
+    // as a band under the price rather than as bars climbing through it.
+    const volume = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "volume", color: UP_FILL, base: 0 });
+    volume.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+    series.priceScale().applyOptions({ scaleMargins: { top: 0.1, bottom: 0.24 } });
     chartRef.current = chart;
     seriesRef.current = series;
     volumeRef.current = volume;
@@ -79,27 +98,36 @@ export function TerminalChart({ candles, priceLabel, onHover }: { candles: Candl
   useEffect(() => {
     if (!seriesRef.current || !volumeRef.current) return;
     const asTime = (seconds: number) => seconds as UTCTimestamp;
-    seriesRef.current.setData(candles.map((candle) => ({ time: asTime(candle.time), value: candle.close })));
-    // Trend color: green if this window's price is net up since its first
-    // point, red if net down — an area chart has one continuous fill, not
-    // per-bar coloring, so this is the equivalent signal a candle chart's
-    // green/red bars gave, just computed over the visible range instead of
-    // bar-by-bar (matches how the Market card sparklines already color).
-    const first = candles[0]?.close;
-    const last = candles.at(-1)?.close;
-    const up = first == null || last == null || last >= first;
-    const accent = up ? UP : DOWN;
-    seriesRef.current.applyOptions({
-      lineColor: accent,
-      topColor: up ? "rgba(38,217,138,.32)" : "rgba(255,79,106,.28)",
-      bottomColor: up ? "rgba(38,217,138,.02)" : "rgba(255,79,106,.02)",
-    });
-    volumeRef.current.setData(candles.map((candle, index) => {
-      const previousClose = index > 0 ? candles[index - 1].close : candle.open;
-      return { time: asTime(candle.time), value: candle.volume, color: candle.close >= previousClose ? "rgba(38,217,138,.32)" : "rgba(255,79,106,.32)" };
-    }));
+    seriesRef.current.setData(candles.map((candle) => ({
+      time: asTime(candle.time),
+      open: candle.open,
+      high: candle.high,
+      low: candle.low,
+      close: candle.close,
+    })));
+    volumeRef.current.setData(candles.map((candle) => ({
+      time: asTime(candle.time),
+      value: candle.volume,
+      // Colour by the candle's own direction rather than against the
+      // previous close: a doji in a quiet bucket has zero volume and no
+      // direction, and colouring it red because the last real trade was
+      // down put phantom red bars across otherwise empty stretches.
+      color: candle.close >= candle.open ? "rgba(25,231,154,.3)" : "rgba(255,91,112,.3)",
+    })));
     if (!hasFitRef.current && candles.length) {
-      chartRef.current?.timeScale().fitContent();
+      // Bar width is computed rather than fitted or fixed, because both
+      // extremes look broken. fitContent() stretches whatever candles exist
+      // across the whole panel, so a market with five buckets drew five
+      // candles a couple of hundred pixels wide. A hard barSpacing does the
+      // opposite: forty candles at nine pixels leave most of the panel empty
+      // with everything crammed against the right edge.
+      //
+      // Fill the width when there is room, clamped to a range where a candle
+      // still looks like a candle.
+      const width = containerRef.current?.clientWidth ?? 0;
+      const spacing = width > 0 ? Math.min(16, Math.max(4, Math.floor(width / (candles.length + 6)))) : 9;
+      chartRef.current?.timeScale().applyOptions({ barSpacing: spacing });
+      chartRef.current?.timeScale().scrollToRealTime();
       hasFitRef.current = true;
     }
   }, [candles]);

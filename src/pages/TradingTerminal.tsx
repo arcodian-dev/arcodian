@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Contract, formatEther } from "ethers";
 import SwapPanel from "../components/SwapPanel";
-import { TerminalChart, type Candle } from "../components/TerminalChart";
+import { TerminalChart } from "../components/TerminalChart";
+import { buildCandles, type CandlePoint } from "../candles";
 import { ARC_MAINNET } from "../config";
 import { arcProvider, CoinIcon, quoteDecimalsOf, rpcUrlsFor } from "../shared";
 // The scoped design system comes first so the older TradingTerminal.css,
@@ -55,27 +56,30 @@ function tradePrice(trade: MarketTrade | undefined, globalPool = false): number 
   return Number(trade.native) / Number(trade.tokens) * (globalPool ? 1e12 : 1);
 }
 
+// Raised from 500 to 2,000 once the chart became candles again. On a busy
+// market 500 trades is only about fifteen minutes, so a 5m chart had five
+// candles in it and a 4H chart had one — the timeframe buttons were there
+// but most of them had nothing to show. Rendering stays bounded elsewhere:
+// the chart keeps at most 160 buckets and the trade list renders 120 rows.
+const TAPE_HISTORY = 2_000;
+
 function mergeTrades(previous: MarketTrade[], incoming: MarketTrade[]): MarketTrade[] {
   return [...previous, ...incoming]
     .filter((trade, index, all) => all.findIndex((candidate) => candidate.tx === trade.tx && candidate.side === trade.side) === index)
     .sort((a, b) => (a.block || 0) - (b.block || 0))
-    .slice(-500);
+    .slice(-TAPE_HISTORY);
 }
 
-function buildCandles(trades: MarketTrade[], timeframe: string, globalPool = false): Candle[] {
-  const seconds = timeframe === "1m" ? 60 : timeframe === "5m" ? 300 : timeframe === "15m" ? 900 : timeframe === "1H" ? 3600 : 14400;
-  const buckets = new Map<number, Array<{ price: number; volume: number }>>();
-  for (const trade of trades) {
-    const price = tradePrice(trade, globalPool);
-    const timestamp = Number(trade.timestamp || 0);
-    if (!price || !timestamp) continue;
-    const bucket = Math.floor(timestamp / seconds) * seconds;
-    buckets.set(bucket, [...(buckets.get(bucket) || []), { price, volume: usdc(trade.native, globalPool ? 6 : 18) }]);
-  }
-  return [...buckets.entries()].sort(([a], [b]) => a - b).slice(-120).map(([time, points]) => {
-    const prices = points.map((point) => point.price);
-    return { time, open: prices[0], close: prices.at(-1) || prices[0], high: Math.max(...prices), low: Math.min(...prices), volume: points.reduce((sum, point) => sum + point.volume, 0) };
-  });
+// Trades -> candle points. The bucketing, gap filling and OHLC live in
+// src/candles.ts so this terminal and the coin terminal cannot drift apart
+// on what a candle means; both previously kept their own copy of the loop
+// and both had the same two bugs in it.
+function candlePoints(trades: MarketTrade[], quoteDecimals: number, globalPool = false): CandlePoint[] {
+  return trades.map((trade) => ({
+    timestamp: Number(trade.timestamp || 0),
+    price: tradePrice(trade, globalPool),
+    volume: usdc(trade.native, quoteDecimals),
+  }));
 }
 
 // A Radar-discovered token with liquidity spread across several external
@@ -101,7 +105,10 @@ function ChartEmptyState({ market }: { market: MarketRecord }) {
 }
 
 function MarketChart({ market, timeframe, trades }: { market: MarketRecord; timeframe: string; trades: MarketTrade[] }) {
-  const candles = useMemo(() => buildCandles(trades, timeframe, Boolean(market.globalPool)), [trades, timeframe, market.globalPool]);
+  const candles = useMemo(
+    () => buildCandles(candlePoints(trades, quoteDecimalsOf(market), Boolean(market.globalPool)), timeframe),
+    [trades, timeframe, market],
+  );
   return candles.length ? <TerminalChart candles={candles} priceLabel={(value) => value < 0.000001 ? value.toFixed(12) : value.toFixed(8)} onHover={() => undefined} /> : <ChartEmptyState market={market} />;
 }
 
@@ -396,9 +403,9 @@ export default function TradingTerminal({ account, activeProvider, chainId, conn
           <div className="trades">
           <div className="section-title">Live trades <span>{tapeTrades.length} indexed</span></div>
           <div className="trades-head trade-row"><span>Type</span><span>Price</span><span>Amount</span><span>Value</span><span>Wallet</span></div>
-          {/* tapeTrades holds up to 500 (mergeTrades' cap, needed so the
-              chart has enough history at wider timeframes) — rendering all
-              500 as DOM rows on every 1s tick is what made this list feel
+          {/* tapeTrades holds up to TAPE_HISTORY (needed so the wider
+              timeframes have enough history to chart) — rendering all of
+              them as DOM rows on every 1s tick is what made this list feel
               janky. Only the newest ~120 are ever visible in this panel
               anyway, so slice before mapping instead of after. */}
           <div className="trades-body">{tapeTrades.length ? [...tapeTrades].reverse().slice(0, 120).map((trade, index) => <div className="trade-row" key={`${trade.tx}-${index}`}><b className={trade.side === "BUY" ? "buy" : "sell"}>{trade.side}</b><span>{tradePrice(trade, Boolean(market.globalPool)) > 0 ? tradePrice(trade, Boolean(market.globalPool)).toFixed(8) : "—"}</span><span>{Number(trade.tokens) > 0 ? (Number(trade.tokens) / 1e18).toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—"} {market.symbol}</span><span>{money(usdc(trade.native, quoteDp))}</span><span className="wallet-cell">{trade.user.slice(0, 6)}…{trade.user.slice(-4)}</span></div>) : <ChartEmptyState market={market} />}</div>
