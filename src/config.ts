@@ -674,6 +674,39 @@ export const ARC_MAINNET_CONTRACTS = {
   // Arc transaction extensions.
   memo: "0x5294E9927c3306DcBaDb03fe70b92e01cCede505",
   multicall3From: "0x522fAf9A91c41c443c66765030741e4AaCe147D0",
+
+  // --- Arcodian's own EURC contracts, deployed 2026-09-16 ---------------
+  // Both became possible the same day, when Circle published Arc Mainnet's
+  // EURC. Deployed from the usual deployer (0x7D9b…40C2) and each verified
+  // on-chain afterwards by reading its own immutables back, not trusted from
+  // the deploy log.
+
+  // ArcFxPoolV2, the USDC/EURC desk. Wired to the real EURC and the treasury
+  // multisig (not the deployer EOA — that mistake is what forced ArcPay and
+  // two factories to be redeployed on 2026-09-05).
+  //
+  // ⚠️ It holds NO liquidity. Nobody has seeded it, and the deployer holds 0
+  // EURC, so it cannot quote anything yet. The FX surface stays testnet-only
+  // in the UI until this pool has real reserves — a live desk that quotes
+  // nothing reads as broken, not as empty.
+  fxPool: "0x506f61b6c287c616bb7ef827d2455b401373418f",
+
+  // ArcPumpFactoryEurcV11 — the EURC launch engine. Graduates into Uniswap
+  // V3 exactly like the live USDC V11 does; it reuses that factory's own
+  // v3Factory, positionManager and treasury, read off-chain at deploy time so
+  // the two engines cannot drift apart.
+  //
+  // Threshold is 3,000 EURC (not V11's 12,000) because EURC liquidity on Arc
+  // is still thin — the deepest external USDC/EURC pool held ~583 EURC on
+  // launch day, so a 12,000 graduation was unreachable. The curve's virtual
+  // reserve is scaled by the same factor (1,125 EURC against V11's 4,500), so
+  // the curve SHAPE is identical: same 13.4x run to graduation, same 72.7% of
+  // curve supply sold, same 27.3% burned.
+  //
+  // Not yet reachable from the UI: Create still forces USDC on mainnet, and
+  // the market indexer does not read this factory. Wiring those is its own
+  // change, deliberately not bundled with the deploy.
+  eurcPumpFactoryV11: "0x426e68f06207a3f3ef7aa261f3856e71746af7aa",
 } as const;
 
 export const BRIDGE_TESTNETS = [

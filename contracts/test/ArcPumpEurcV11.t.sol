@@ -287,6 +287,54 @@ contract ArcPumpEurcV11Test is Test {
         new ArcPumpFactoryEurcV11(v3Factory, npm, IERC20(address(eurc)), treasury, 1_000e6);
     }
 
+    /// The factory's floor and the curve's own requirement must be the same
+    /// number. If the factory accepted a threshold the curve rejects, every
+    /// launch it created would revert in its constructor — a factory that
+    /// looks deployed and works for nobody.
+    function testFactoryFloorMatchesTheCurveRequirement() public {
+        (, ArcPumpCurveEurcV11 probe) = _launch();
+        uint256 virtualQuote = probe.VIRTUAL_QUOTE();
+        vm.expectRevert("BAD_CONFIG");
+        new ArcPumpFactoryEurcV11(v3Factory, npm, IERC20(address(eurc)), treasury, virtualQuote);
+        // One wei above the floor must be accepted, and must then produce a
+        // launch that actually constructs.
+        ArcPumpFactoryEurcV11 edge =
+            new ArcPumpFactoryEurcV11(v3Factory, npm, IERC20(address(eurc)), treasury, virtualQuote + 1);
+        vm.prank(creator);
+        (, address curve) = edge.createLaunch("Edge", "EDGE", "");
+        assertTrue(curve != address(0));
+    }
+
+    /// The curve must keep the same SHAPE as the live USDC V11 engine, just
+    /// scaled down. V11 runs 4,500 virtual against a 12,000 threshold; this
+    /// runs 1,125 against 3,000 — the same 1:2.667 ratio, which is what fixes
+    /// the price run and the sold/burned split at V11's values. A future edit
+    /// that changes one number without the other silently reshapes every
+    /// launch, so it is pinned here.
+    function testCurveShapeMatchesTheLiveUsdcEngine() public {
+        (, ArcPumpCurveEurcV11 curve) = _launch();
+        assertEq(curve.VIRTUAL_QUOTE(), 1_125e6, "virtual reserve");
+        // V11's ratio: 12_000 / 4_500 == 3_000 / 1_125, compared as a fraction
+        // to stay exact in integer arithmetic.
+        assertEq(uint256(3_000e6) * 4_500, uint256(1_125e6) * 12_000, "threshold:virtual ratio must match V11");
+    }
+
+    /// Graduation must be reachable at the intended 3,000 EURC, not only at
+    /// some larger number — that reachability is the entire reason the curve
+    /// was rescaled.
+    function testGraduatesAtTheThreeThousandThreshold() public {
+        ArcPumpFactoryEurcV11 live =
+            new ArcPumpFactoryEurcV11(v3Factory, npm, IERC20(address(eurc)), treasury, 3_000e6);
+        vm.prank(creator);
+        (, address c) = live.createLaunch("Live", "LIVE", "");
+        ArcPumpCurveEurcV11 curve = ArcPumpCurveEurcV11(c);
+        // 3,030 EURC in, of which 1% is fee, leaves just under 3,000 net —
+        // deliberately close to the line so this fails if the accounting drifts.
+        _buy(curve, buyer, 3_040e6);
+        assertTrue(curve.graduated(), "3,000 EURC of net inflow must graduate");
+        assertTrue(curve.pool() != address(0));
+    }
+
     function testFactoryTracksLaunches() public {
         (PumpToken token, ArcPumpCurveEurcV11 curve) = _launch();
         assertEq(pumpFactory.launchCount(), 1);

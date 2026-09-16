@@ -6,6 +6,19 @@ import {IERC20} from "./ArcFxPool.sol";
 import {ErcPullFeeVault} from "./ArcPumpEurc.sol";
 import {IUniswapV3FactoryV10, IUniswapV3PoolV10, INonfungiblePositionManagerV10} from "./ArcPumpV10.sol";
 
+// The curve's virtual quote reserve, and therefore also the floor a launch's
+// graduation threshold has to clear. File-level so the curve and its factory
+// read the same number — a factory that accepts a threshold the curve then
+// rejects would deploy launches that revert on construction.
+//
+// 1,125 EURC (6 decimals) is V11's 4,500 scaled by the same factor as the
+// threshold (3,000 EURC against V11's 12,000 USDC). Keeping that ratio fixed
+// keeps the curve SHAPE identical to the live USDC engine — same 13.4x run
+// from launch to graduation, same 72.7% of curve supply sold, same 27.3%
+// burned — just at a lower entry point, which is what makes a 3,000
+// threshold reachable while EURC liquidity on Arc is still thin.
+uint256 constant EURC_VIRTUAL_QUOTE = 1_125_000_000;
+
 /// @notice The EURC mirror of ArcPumpV11: identical curve math, identical fee
 /// design, identical Uniswap V3 graduation (including the price-manipulation
 /// guard), with EURC as the quote currency instead of native USDC.
@@ -47,10 +60,8 @@ contract ArcPumpCurveEurcV11 is ErcPullFeeVault {
     uint256 public constant GRADUATION_FEE_BPS = 100;
     uint256 public constant CURVE_SUPPLY = 800_000_000 ether;
     uint256 public constant LP_RESERVE = 200_000_000 ether;
-    /// 4,500 EURC at 6 decimals — the same virtual reserve V11 uses (4_500
-    /// ether of 18-decimal native), so both engines price a launch identically
-    /// in units of their own quote currency.
-    uint256 public constant VIRTUAL_QUOTE = 4_500_000_000;
+    /// See EURC_VIRTUAL_QUOTE at file scope for why this number.
+    uint256 public constant VIRTUAL_QUOTE = EURC_VIRTUAL_QUOTE;
     uint256 public constant MINT_SLIPPAGE_BPS = 200;
 
     PumpToken public immutable token;
@@ -283,9 +294,9 @@ contract ArcPumpFactoryEurcV11 {
         require(
             address(v3Factory_) != address(0) && address(positionManager_) != address(0)
                 && address(quote_) != address(0) && treasury_ != address(0)
-                // 1,000 EURC at 6 decimals — the same floor V11 applies in its
-                // own quote units (1_000 ether of 18-decimal native).
-                && threshold_ > 1_000_000_000,
+                // Must clear the curve's own virtual reserve, or every launch
+                // this factory creates would revert in its constructor.
+                && threshold_ > EURC_VIRTUAL_QUOTE,
             "BAD_CONFIG"
         );
         v3Factory = v3Factory_;

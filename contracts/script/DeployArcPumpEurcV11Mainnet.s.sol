@@ -27,9 +27,11 @@ contract DeployArcPumpEurcV11Mainnet is Script {
     // the vault, and getting it wrong is what forced ArcPay and two factories
     // to be redeployed on 2026-09-05.
     address payable constant TREASURY = payable(0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF);
-    // 12,000 EURC at 6 decimals — the live USDC engine's 12,000, in this
-    // engine's own quote units.
-    uint256 constant THRESHOLD = 12_000e6;
+    // 3,000 EURC at 6 decimals. Deliberately NOT the live USDC engine's 12,000:
+    // EURC liquidity on Arc is still thin (the deepest pool held ~583 EURC on
+    // launch day), so a 12,000 graduation was unreachable. VIRTUAL_QUOTE is
+    // scaled by the same factor, so the curve shape is unchanged.
+    uint256 constant THRESHOLD = 3_000e6;
 
     function run() external returns (ArcPumpFactoryEurcV11 factory) {
         require(block.chainid == 5042, "NOT_ARC_MAINNET");

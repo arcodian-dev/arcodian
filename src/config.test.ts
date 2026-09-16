@@ -94,6 +94,14 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
     expect(ARC_MAINNET.rpcs).toContain("https://rpc.arc-scan.org/");
   });
 
+  it("pins Arcodian's own EURC contracts, deployed on launch day", () => {
+    // Verified on-chain after deploy by reading each contract's immutables
+    // back. The FX pool is deliberately recorded while still unseeded — the
+    // address is real, the liquidity is not.
+    expect(ARC_MAINNET_CONTRACTS.fxPool).toBe("0x506f61b6c287c616bb7ef827d2455b401373418f");
+    expect(ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11).toBe("0x426e68f06207a3f3ef7aa261f3856e71746af7aa");
+  });
+
   it("does not point public explorer links at Circle's SSO-gated explorer", () => {
     // explorer.arc.io 302s to circle.cloudflareaccess.com; linking a user
     // there sends them to a login wall instead of their transaction.
