@@ -112,12 +112,18 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
     expect(ARC_MAINNET_CONTRACTS.launchHookV12).toBe("0xe05D566f070Ac8508C3a4f4C15AA02dE100ec088");
     expect(BigInt(ARC_MAINNET_CONTRACTS.launchHookV12) & 0x3fffn).toBe(0x0088n);
     expect(ARC_MAINNET_CONTRACTS.v4PoolManager).toBe("0x8366a39CC670B4001A1121B8F6A443A643e40951");
-    expect(ARC_MAINNET_CONTRACTS.universalRouter).toBe("0x6049c9a0e26405c0985f9e3685c87d0ae917f82b");
+    expect(ARC_MAINNET_CONTRACTS.v4PositionManager).toBe("0x6049c9a0e26405c0985f9e3685c87d0ae917f82b");
   });
 
-  it("creates new launches on the newest engine", () => {
-    expect(ACTIVE_LAUNCH_FACTORY).toBe(ARC_MAINNET_CONTRACTS.launchFactoryV12);
-    expect(ACTIVE_ENGINE_VERSION).toBe(12);
+  it("never routes Create to the V12 factory, which prices a launch at zero", () => {
+    expect(ACTIVE_LAUNCH_FACTORY).not.toBe(ARC_MAINNET_CONTRACTS.launchFactoryV12);
+  });
+
+  it("launches on V13 with a hook whose address carries its permissions", () => {
+    expect(ACTIVE_LAUNCH_FACTORY).toBe("0xED603cE15aE9648EE52954ddAD2e160B63E87E11");
+    expect(ACTIVE_ENGINE_VERSION).toBe(13);
+    expect(BigInt(ARC_MAINNET_CONTRACTS.launchHookV13) & 0x3fffn).toBe(0x0088n);
+    expect(ARC_MAINNET_CONTRACTS.v4Router).toBe("0xb865dB1cC95b05Ee939b74779C6996173da8fb48");
   });
 
   it("does not point public explorer links at Circle's SSO-gated explorer", () => {

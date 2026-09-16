@@ -13,7 +13,7 @@ import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type Candle } from "../candles";
 import { findBestExternalV3Route } from "../routingReads";
 import { ScreenerTable, DEFAULT_SCREENER_FILTERS, type ScreenerFilters } from "../components/ScreenerTable";
-import { ACTIVE_LAUNCH_FACTORY } from "../config";
+import { ACTIVE_ENGINE_VERSION, ACTIVE_LAUNCH_FACTORY, V13_POOL_FEE, V13_TICK_SPACING } from "../config";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -1040,6 +1040,21 @@ const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", 
 // TradingTerminal.tsx's CreatorFeeSection and Profile.tsx's CreatorFeeChip —
 // three independent surfaces, one shared rule). Silently renders nothing
 // for a coin on an older engine (creatorFeesAccrued() reverts there).
+/** The Uniswap V4 pool key of a V13 launch. A V4 pool has no address; this
+ *  whole key is its identity, and every field is fixed by the factory. */
+function v13PoolKey(tokenAddress: string) {
+  const usdc = ARC_USDC_ERC20;
+  const tokenIsZero = BigInt(tokenAddress) < BigInt(usdc);
+  return {
+    key: [tokenIsZero ? tokenAddress : usdc, tokenIsZero ? usdc : tokenAddress, V13_POOL_FEE, V13_TICK_SPACING, ARC_MAINNET_CONTRACTS.launchHookV13] as const,
+    tokenIsZero,
+  };
+}
+const V4_ROUTER_ABI = [
+  "function quoteExactInputSingle((address,address,uint24,int24,address),bool,uint256) returns(uint256)",
+  "function swapExactInputSingle((address,address,uint24,int24,address),bool,uint256,uint256,uint256) returns(uint256)",
+];
+
 function CreatorFeeCard({ asset, account, activeArc, activeProvider }: {
   asset: LaunchAsset;
   account: string;
@@ -1123,6 +1138,11 @@ function TradingDesk({
   // V9-graduated real Uniswap V3 pool — the two need entirely different
   // quote/execution paths (ArcPair.swap() vs SwapRouter.exactInputSingle()).
   const [pairIsV3, setPairIsV3] = useState(Boolean(asset.globalPool && asset.pair));
+  // A V13 launch trades in a Uniswap V4 pool from its first block. There is
+  // no curve to read and no reserve to run constant-product maths on, so its
+  // quote comes from the router's own exact on-chain quote instead.
+  const isPoolEngine = Number(asset.engineVersion) >= 13;
+  const [poolQuote, setPoolQuote] = useState(0n);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const [eurcBalance, setEurcBalance] = useState(0n);
@@ -1217,7 +1237,31 @@ function TradingDesk({
         ? ((x * sellInput) / (inventory + sellInput) * 9995n) / 10000n
         : ((x - (x * inventory) / (inventory + sellInput)) * 99n) / 100n
       : 0n;
-  const quote = rawQuote > reserve && side === "sell" ? 0n : rawQuote;
+  const quote = isPoolEngine ? poolQuote : rawQuote > reserve && side === "sell" ? 0n : rawQuote;
+  useEffect(() => {
+    if (!isPoolEngine || amountWei <= 0n) { setPoolQuote(0n); return; }
+    let alive = true;
+    // Debounced: the quote runs a real swap in an eth_call, so it is not
+    // fired on every keystroke.
+    const timer = window.setTimeout(async () => {
+      try {
+        const { key, tokenIsZero } = v13PoolKey(asset.address);
+        const buying = side === "buy";
+        // Input is currency0 when buying with USDC as currency0, or selling
+        // the token as currency0.
+        const zeroForOne = buying ? !tokenIsZero : tokenIsZero;
+        const amountIn = buying ? amountWei / 10n ** 12n : amountWei;
+        if (amountIn <= 0n) { if (alive) setPoolQuote(0n); return; }
+        const router = new Contract(ARC_MAINNET_CONTRACTS.v4Router, V4_ROUTER_ABI, arcProvider(ARC_MAINNET));
+        const out = await router.quoteExactInputSingle.staticCall(key, zeroForOne, amountIn) as bigint;
+        // Sells return 6-decimal USDC; everything this view formats is 18.
+        if (alive) setPoolQuote(buying ? out : out * 10n ** 12n);
+      } catch {
+        if (alive) setPoolQuote(0n);
+      }
+    }, 250);
+    return () => { alive = false; window.clearTimeout(timer); };
+  }, [isPoolEngine, amountWei, side, asset.address]);
   const minimumReceived = quote > 0n
     ? (quote * BigInt(Math.floor((100 - Number(slippage || 0)) * 100))) / 10000n
     : 0n;
@@ -1229,6 +1273,19 @@ function TradingDesk({
   const route = routeFor(holdingCurrency, liveAsset);
 
   async function refreshOnchain(provider: BrowserProvider | ReturnType<typeof arcProvider>) {
+    if (isPoolEngine) {
+      // Pool state for a V13 launch is derived by the indexer from the V4
+      // PoolManager; calling curve getters on an empty curve address would
+      // throw on every refresh.
+      setGraduated(Boolean(asset.graduated));
+      setPair("");
+      setPairIsV3(false);
+      setReserve(BigInt(asset.reserve || 0));
+      setInventory(BigInt(asset.inventory || 0));
+      const tokenReader = new Contract(asset.address, ["function balanceOf(address) view returns(uint256)"], provider);
+      if (account) setBalance(await tokenReader.balanceOf(account) as bigint);
+      return;
+    }
     const isEurc = asset.quoteKind === 1;
     // Both ArcPair quote assets use 6 decimals. Curve USDC reserves are native
     // 18-dec values, but after graduation reserve0/reserve1 are ERC-20 units.
@@ -1474,6 +1531,7 @@ function TradingDesk({
       setStatus("Enter a valid amount and 0.1–20% slippage.");
       return;
     }
+    if (isPoolEngine) return tradePool();
     setBusy(true);
     setTxHash("");
     setTradeStage("quote");
@@ -1768,6 +1826,72 @@ function TradingDesk({
       setBusy(false);
     }
   }
+  /**
+   * Buy or sell a V13 launch through Arcodian's V4 router.
+   *
+   * Reads — the fresh quote and the allowance — go through Arcodian's own
+   * RPC; the wallet only signs. The fresh quote is taken immediately before
+   * signing and the slippage floor is computed from it, so the displayed
+   * quote going stale cannot turn into an unprotected trade.
+   */
+  async function tradePool() {
+    if (!activeProvider) { connect(); return; }
+    setBusy(true);
+    setTxHash("");
+    setTradeStage("quote");
+    setStatus("Refreshing quote and preparing wallet confirmation…");
+    try {
+      await ensureWalletChain(activeProvider, activeArc);
+      const provider = new BrowserProvider(activeProvider as never);
+      const signer = await provider.getSigner();
+      const owner = await signer.getAddress();
+      const read = arcProvider(activeArc);
+      const buying = side === "buy";
+      const { key, tokenIsZero } = v13PoolKey(asset.address);
+      const zeroForOne = buying ? !tokenIsZero : tokenIsZero;
+      const inputToken = buying ? ARC_USDC_ERC20 : asset.address;
+      const amountIn = buying ? amountWei / 10n ** 12n : amountWei;
+      if (amountIn <= 0n) throw new Error("Amount too small (min 0.000001 USDC).");
+      if (!buying && amountWei > balance) throw new Error("Token balance is too low.");
+
+      const routerRead = new Contract(ARC_MAINNET_CONTRACTS.v4Router, V4_ROUTER_ABI, read);
+      const fresh = await routerRead.quoteExactInputSingle.staticCall(key, zeroForOne, amountIn) as bigint;
+      if (fresh <= 0n) throw new Error("NO_LIQUIDITY");
+      const minOut = (fresh * BigInt(Math.floor((100 - Number(slippage)) * 100))) / 10000n;
+
+      const erc20 = ["function allowance(address,address) view returns(uint256)", "function approve(address,uint256) returns(bool)"];
+      const allowance = await new Contract(inputToken, erc20, read).allowance(owner, ARC_MAINNET_CONTRACTS.v4Router) as bigint;
+      if (allowance < amountIn) {
+        setTradeStage("approval");
+        setStatus(`Approve ${buying ? "USDC" : asset.symbol} spending in your wallet.`);
+        await (await new Contract(inputToken, erc20, signer).approve(ARC_MAINNET_CONTRACTS.v4Router, amountIn)).wait();
+      }
+
+      const router = new Contract(ARC_MAINNET_CONTRACTS.v4Router, V4_ROUTER_ABI, signer);
+      const deadline = Math.floor(Date.now() / 1000) + 600;
+      const tx = await router.swapExactInputSingle(key, zeroForOne, amountIn, minOut, deadline);
+      setTradeStage("submitted");
+      setTxHash(tx.hash);
+      writeActivity({ id: tx.hash, account, kind: buying ? "BUY" : "SELL", status: "submitted", title: `${buying ? "Buy" : "Sell"} ${asset.symbol}`, detail: `${amount} ${buying ? "USDC" : asset.symbol} · Uniswap V4`, txHash: tx.hash, chainIn: activeArc.name.replaceAll(" ", "_"), chainOut: activeArc.name.replaceAll(" ", "_"), rail: "arc", createdAt: Date.now(), updatedAt: Date.now() });
+      setStatus("Transaction submitted. Waiting for Arc confirmation…");
+      await tx.wait();
+      patchActivity(tx.hash, { status: "completed", detail: `${buying ? "Buy" : "Sell"} confirmed on ${activeArc.name}` });
+      optimisticTapeUntil.current = Date.now() + 15_000;
+      const tokens = buying ? fresh : amountWei;
+      const native = buying ? amountWei : fresh * 10n ** 12n;
+      setLiveTrades((current) => [{ side: (buying ? "BUY" : "SELL") as "BUY" | "SELL", amount: native, tokens }, ...current].slice(0, 12));
+      setChartTrades((current) => [...current, { side: (buying ? "BUY" : "SELL") as "BUY" | "SELL", block: Number.MAX_SAFE_INTEGER, timestamp: Math.floor(Date.now() / 1000), tx: tx.hash, user: account, native: native.toString(), tokens: tokens.toString() }].slice(-500));
+      await refreshOnchain(read);
+      setTradeStage("confirmed");
+      setStatus(`Trade confirmed on ${activeArc.name}.`);
+    } catch (error) {
+      setTradeStage("error");
+      const rawMessage = String((error as { message?: unknown })?.message || "").toLowerCase();
+      setStatus(rawMessage.includes("insufficient funds") ? "USDC balance is too low to cover this trade and network fee." : rawMessage.includes("toolittlereceived") ? "Price moved beyond your slippage before the trade landed. Nothing was spent — try again." : describeTxError(error));
+    } finally {
+      setBusy(false);
+    }
+  }
   const pct = graduated ? 100 : Math.min(100, Number((reserve * 10000n) / asset.threshold) / 100);
   const positionInput = graduated ? (balance * 9975n) / 10000n : balance;
   const sellValue = balance && inventory
@@ -1776,14 +1900,18 @@ function TradingDesk({
       : ((x - (x * inventory) / (inventory + balance)) * 99n) / 100n
     : 0n;
   const pnl = sellValue - netCost;
-  const marketCap = asset.globalPool
+  const marketCap = isPoolEngine
+    ? BigInt(asset.marketCap || "0")
+    : asset.globalPool
     ? BigInt(asset.marketCap || "0") * 10n ** 12n
     : inventory
       ? (x * 1_000_000_000_000_000_000_000_000_000n) / inventory
       : 0n;
   // Constant-product pairs hold equal value on both sides. `reserve` is the
   // normalized quote side, so Dexscreener-style pool liquidity is 2x quote.
-  const dexLiquidity = asset.globalPool
+  const dexLiquidity = isPoolEngine
+    ? BigInt(asset.liquidity || "0")
+    : asset.globalPool
     ? BigInt(asset.liquidity || asset.reserve || "0") * 10n ** 12n
     : graduated ? reserve * 2n : reserve;
   const burnedPct = asset.lpSupply && BigInt(asset.lpSupply) > 0n
@@ -2203,7 +2331,7 @@ function Launch({
   // graduates at 12,000, so this can no longer be a literal in the copy.
   const graduationLabel = graduationUnitsFor(isMainnet, quoteChoice).toLocaleString("en-US");
   // A V12 launch has no graduation to describe — it opens its pool at once.
-  const launchesStraightToPool = isMainnet && quoteChoice === "USDC";
+  const launchesStraightToPool = isMainnet && quoteChoice === "USDC" && ACTIVE_ENGINE_VERSION >= 13;
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
@@ -2290,7 +2418,7 @@ function Launch({
       const factoryAddress = (isEurc ? eurcFactory : usdcFactory).toLowerCase();
       // V12 has no curve and no graduation: createLaunch returns the token
       // and a V4 pool id, and the coin is tradeable from that block.
-      const isPoolLaunch = isMainnet && !isEurc;
+      const isPoolLaunch = isMainnet && !isEurc && ACTIVE_ENGINE_VERSION >= 13;
       const factory = new Contract(
         factoryAddress,
         ARC_PUMP_FACTORY_ABI,

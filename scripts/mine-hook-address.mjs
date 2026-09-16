@@ -37,7 +37,10 @@ const args = AbiCoder.defaultAbiCoder().encode(
 );
 const initCodeHash = keccak256(concat([creation, args]));
 
-let salt = 0n;
+// SALT_START skips salts already spent: CREATE2 with the same salt and init
+// code lands on the same address, and a second deploy there simply fails.
+// The V12 hook took salt 0x1c with these exact constructor arguments.
+let salt = BigInt(process.env.SALT_START || "0");
 const started = Date.now();
 for (;;) {
   const saltHex = `0x${salt.toString(16).padStart(64, "0")}`;

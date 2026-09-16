@@ -752,18 +752,54 @@ export const ARC_MAINNET_CONTRACTS = {
   // protocolFeesAccrued and protocolFeeController. NOT the address V4 uses on
   // Ethereum — that one has no code here.
   v4PoolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
-  v4PositionManager: "0x20eead6db6b3d0a4491e9073119dd0ebff166acc",
-  // The Universal Router, identified from real traffic rather than assumed:
-  // it carried 3,408 of the last 3,490 V4 swaps on Arc and exposes the
-  // router's own msgSender()/poolManager() pair.
-  universalRouter: "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b",
+  // Uniswap v4's position manager — identified by its own name() ("Uniswap v4
+  // Positions NFT") and ~47,000 minted positions. An earlier version of this
+  // file labelled it the Universal Router on the strength of a count that
+  // turned out to be of ModifyLiquidity events, not swaps; the event topic
+  // had been copied rather than computed. Nothing depended on the label —
+  // Arcodian trades through its own v4Router below.
+  v4PositionManager: "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b",
+
+  // --- V13: the live launch engine --------------------------------------
+  // V12 with the launch price fixed. V12 opened its pool at the extreme
+  // tick, where a token is worth effectively nothing, so the first buy of
+  // any size took the entire supply — a 0.1 USDC quote on its only launch
+  // returned 989,999,999 of 990,000,000 tokens. Caught by quoting before
+  // the first trade; nobody but us ever launched on it, and it is hidden.
+  //
+  // V13 opens at ~0.000005 USDC per token, a ~$4,995 launch FDV, which is
+  // the V11 curve's starting point. Proven on mainnet: 1 USDC buys 197,547
+  // tokens (0.02% of the pool), and a real 0.1 USDC buy through the router
+  // below received exactly its quote and paid exactly 1% — 500 base units to
+  // the creator, 500 to the treasury. Its shape tracks V11 closely: at V11's
+  // $75.6k graduation FDV, V13 has sold 74.3% of the pool against V11's
+  // 72.7%.
+  launchFactoryV13: "0xED603cE15aE9648EE52954ddAD2e160B63E87E11",
+  // A new hook, not the V12 one: a hook binds its factory once and
+  // self-locks, and V12's is bound to V12 forever. Mined to end in 0x0088.
+  launchHookV13: "0xE5eAbBf405c69A7c495c4F67EFaA870868908088",
+  // Exact-input swaps and exact quotes on V4 pools with one plain ERC-20
+  // approval. The quote runs the real swap and reverts with the result, so
+  // it includes the hook's 1% exactly as the trade will.
+  v4Router: "0xb865dB1cC95b05Ee939b74779C6996173da8fb48",
 } as const;
+
+/// V13 pool parameters, fixed by the factory. A V4 pool is identified by
+/// this whole key, not by an address.
+export const V13_POOL_FEE = 3000;
+export const V13_TICK_SPACING = 60;
+/// Quote raised at which a V13 launch is shown as graduated. V13 has no real
+/// graduation — its liquidity is in a Uniswap V4 pool from the first block
+/// and locked by construction — so this is a milestone, set where the V11
+/// curve graduated so the two read the same.
+export const V13_GRADUATION_USDC = 12_000;
 
 /// The factory Create uses. Older factories stay in ARC_MAINNET_CONTRACTS so
 /// coins launched there remain readable and tradeable — a launch cannot be
 /// migrated between factories — but they are no longer offered for new ones.
-export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV12;
-export const ACTIVE_ENGINE_VERSION = 12;
+// Never V12 — see launchFactoryV13 for why.
+export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV13;
+export const ACTIVE_ENGINE_VERSION = 13;
 
 export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",

@@ -10,7 +10,7 @@
 // server-side scan on a timer, browsers just fetch the resulting JSON) but
 // trimmed to mainnet's simpler shape: USDC-only factories, with legacy
 // factories retained so existing user positions remain readable.
-import { Contract, JsonRpcProvider } from "ethers";
+import { Contract, JsonRpcProvider, keccak256, concat, zeroPadValue, toBeHex } from "ethers";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -60,7 +60,11 @@ const FACTORIES = [
   // no curve at all: createLaunch opens a Uniswap V4 pool in the same
   // transaction, so a launch is read from the factory's own event and the
   // pool's state rather than from a bonding curve's getters.
-  { address: process.env.ARC_MAINNET_FACTORY_V12 || "0x95b4d7CCbd0D13aF4ba2CCd1Dd037C30B9eD76C2", fromBlock: 21_128_000, kind: "v4" },
+  // V12 (0x95b4d7CC…) is deliberately NOT indexed. It opened pools at a price
+  // of effectively zero, so its one launch — our own test — can be bought
+  // out entirely for pennies; listing it would advertise exactly that.
+  // V13 is the live pool engine: the same design with the launch price fixed.
+  { address: process.env.ARC_MAINNET_FACTORY_V13 || "0xED603cE15aE9648EE52954ddAD2e160B63E87E11", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V13_FROM || 21154804), kind: "v4" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
@@ -300,47 +304,148 @@ const v4FactoryAbi = [
   "function launchCount() view returns(uint256)",
   "function tokenByLaunch(uint256) view returns(address)",
   "function poolByLaunch(uint256) view returns(bytes32)",
+  "function hook() view returns(address)",
+  "event LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
 ];
 const V4_POOL_MANAGER = process.env.ARC_V4_POOL_MANAGER || "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+// keccak256("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)").
+// Computed, not copied: 0xf208f491… — which an earlier version used — is
+// ModifyLiquidity, and with the pool id as topic1 it matched the launch's own
+// liquidity seeding and decoded tick bounds as a trade.
+const V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f";
+const V4_TRADES_VERSION = 2;
+const poolManagerAbi = ["function extsload(bytes32) view returns(bytes32)"];
+const Q96 = 2n ** 96n;
+// V13's launch ticks and the usable tick bounds for spacing 60.
+const V13_LAUNCH_TICK = 398_400;
+const MIN_USABLE_TICK = -887_220;
+const MAX_USABLE_TICK = 887_220;
+const V13_GRADUATION = 12_000n * 10n ** 18n; // normalized 18-dec, a milestone only
+const sqrtAtTick = (tick) => BigInt(Math.floor(Math.sqrt(1.0001 ** tick) * 2 ** 96));
 
 /**
- * A V12 launch, read from the factory and the V4 PoolManager.
+ * V13 launches, read from the factory and the V4 PoolManager.
  *
- * There is no curve to ask for a reserve, and a V4 pool is not a contract
- * with a balance — the PoolManager holds every pool's tokens together, so
- * "how much is in this pool" cannot be read as a token balance the way it can
- * for a V3 pool. Until the tape learns to follow V4 Swap events by pool id,
- * this reports the launch itself honestly: it exists, it is tradeable, and
- * its numbers fill in from trades rather than being guessed at.
+ * A V4 pool is not a contract with a balance — the PoolManager holds every
+ * pool's tokens together — so what is in "this pool" cannot be read as a
+ * token balance the way a V3 pool's can. It is derived instead from the
+ * pool's own state (sqrt price and liquidity, via extsload) and the single
+ * full-range position the factory seeded, which is exact for a V13 pool
+ * until someone else adds liquidity to it.
+ *
+ * Trades come from the PoolManager's Swap events filtered by pool id. One
+ * correction is applied: Swap is emitted with the amount that actually
+ * reached the pool, after the launch hook has taken its 1% of the input, so
+ * the input side is grossed back up to what the trader actually spent.
  */
-async function indexV4Launches(FACTORY, latestBlock) {
+async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
   const factory = new Contract(FACTORY, v4FactoryAbi, provider);
+  const manager = new Contract(V4_POOL_MANAGER, poolManagerAbi, provider);
   const count = Number(await factory.launchCount());
+  const created = new Map();
+  try {
+    for (const log of await factory.queryFilter(factory.filters.LaunchCreated(), fromBlock, latestBlock)) {
+      created.set(String(log.args.token).toLowerCase(), { creator: log.args.creator, block: log.blockNumber });
+    }
+  } catch (error) {
+    console.error(`V13 LaunchCreated scan failed: ${String(error).slice(0, 90)}`);
+  }
+  const blockTime = new Map();
+  const timeOf = async (block) => {
+    if (!blockTime.has(block)) blockTime.set(block, Number((await provider.getBlock(block))?.timestamp || 0));
+    return blockTime.get(block);
+  };
+
   const rows = [];
   for (let id = 1; id <= count; id++) {
     try {
       const [address, poolId] = await Promise.all([factory.tokenByLaunch(id), factory.poolByLaunch(id)]);
+      const old = previous.get(String(address).toLowerCase());
       const token = new Contract(address, tokenAbi, provider);
-      const [name, symbol, image, pooled] = await Promise.all([
-        token.name(), token.symbol(),
-        token.imageURI().catch(() => ""),
-        token.balanceOf(V4_POOL_MANAGER).catch(() => 0n),
-      ]);
+      const [name, symbol, image] = old
+        ? [old.name, old.symbol, old.image]
+        : await Promise.all([token.name(), token.symbol(), token.imageURI().catch(() => "")]);
+      const tokenIsZero = BigInt(address) < BigInt(USDC);
+
+      const stateSlot = keccak256(concat([poolId, zeroPadValue(toBeHex(6), 32)]));
+      const liquiditySlot = zeroPadValue(toBeHex(BigInt(stateSlot) + 3n), 32);
+      const [slot0, liquidityWord] = await Promise.all([manager.extsload(stateSlot), manager.extsload(liquiditySlot)]);
+      const sqrtP = BigInt(slot0) & ((1n << 160n) - 1n);
+      const L = BigInt(liquidityWord) & ((1n << 128n) - 1n);
+
+      let raised6 = 0n, tokensInPool = 0n, priceX = 0;
+      if (sqrtP > 0n) {
+        const ratio = Number(sqrtP) / 2 ** 96;
+        if (tokenIsZero) {
+          const sqrtLower = sqrtAtTick(-V13_LAUNCH_TICK), sqrtUpper = sqrtAtTick(MAX_USABLE_TICK);
+          raised6 = sqrtP > sqrtLower ? (L * (sqrtP - sqrtLower)) / Q96 : 0n;
+          tokensInPool = (L * Q96 * (sqrtUpper - sqrtP)) / (sqrtP * sqrtUpper);
+          priceX = ratio * ratio * 1e12; // USDC per token
+        } else {
+          const sqrtLower = sqrtAtTick(MIN_USABLE_TICK), sqrtUpper = sqrtAtTick(V13_LAUNCH_TICK);
+          raised6 = sqrtUpper > sqrtP ? (L * Q96 * (sqrtUpper - sqrtP)) / (sqrtP * sqrtUpper) : 0n;
+          tokensInPool = (L * (sqrtP - sqrtLower)) / Q96;
+          priceX = ratio > 0 ? 1e12 / (ratio * ratio) : 0;
+        }
+      }
+
+      // Trades since the last cursor, by pool id.
+      // Trades written before the Swap topic was corrected are not trades —
+      // they are the launch's own ModifyLiquidity decoded as one. A row
+      // without the current version marker is rebuilt from the launch block
+      // instead of carrying them forward.
+      const current = Number(old?.v4TradesVersion) === V4_TRADES_VERSION;
+      let trades = current ? [...(old?.trades || [])] : [];
+      const cursor = current ? Math.max(fromBlock, Number(old?.indexedBlock || 0) + 1) : fromBlock;
+      try {
+        const logs = await provider.getLogs({ address: V4_POOL_MANAGER, topics: [V4_SWAP_TOPIC, poolId], fromBlock: cursor, toBlock: latestBlock });
+        for (const log of logs) {
+          const data = log.data.slice(2);
+          const word = (i) => BigInt(`0x${data.slice(i * 64, (i + 1) * 64)}`);
+          const signed = (v) => (v >= 1n << 255n ? v - (1n << 256n) : v);
+          const amount0 = signed(word(0)), amount1 = signed(word(1));
+          const quoteDelta = tokenIsZero ? amount1 : amount0;
+          const tokenDelta = tokenIsZero ? amount0 : amount1;
+          const buy = quoteDelta < 0n;
+          const abs = (v) => (v < 0n ? -v : v);
+          // Gross the input side back up by the hook's 1%.
+          const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
+          const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+          const tx = await provider.getTransaction(log.transactionHash).catch(() => null);
+          trades.push({
+            side: buy ? "BUY" : "SELL", block: log.blockNumber, tx: log.transactionHash,
+            user: tx?.from || "", native: (quoteGross * 10n ** 12n).toString(), tokens: tokensGross.toString(),
+            timestamp: await timeOf(log.blockNumber),
+          });
+        }
+      } catch (error) {
+        console.error(`V13 swaps for ${symbol} unreadable: ${String(error).slice(0, 90)}`);
+      }
+      trades = trades
+        .filter((trade, index, all) => all.findIndex((c) => c.tx === trade.tx && c.side === trade.side) === index)
+        .sort((a, b) => a.block - b.block)
+        .slice(-1000);
+
+      const meta = created.get(String(address).toLowerCase());
+      const reserve = raised6 * 10n ** 12n;
+      const marketCap = BigInt(Math.floor(priceX * 1e9 * 1e6)) * 10n ** 12n; // USDC 18-dec
       rows.push({
-        address, curve: "", pair: poolId, pool: poolId, poolId, engineVersion: 12,
+        address, curve: "", pair: "", pool: poolId, poolId, engineVersion: 13,
         quoteKind: 0, currency: "USDC", quoteDecimals: 18,
-        name, symbol, image, creator: "",
-        // Graduated in the sense every consumer means by it: trading in a
-        // real pool rather than on a curve.
-        graduated: true, progress: 100, factory: FACTORY,
-        dex: "Uniswap V4", venue: "Uniswap V4", risk: "Uniswap V4", type: "Launch",
-        reserve: "0", virtualReserve: "0", threshold: "0", inventory: pooled.toString(),
-        lpSupply: "0", lpBurned: "0",
-        tradeCount: 0, holderCount: 0, volume: "0", volume24h: "0", priceChange24h: null,
-        createdAt: 0, trades: [],
+        name, symbol, image, creator: meta?.creator || old?.creator || "",
+        graduated: reserve >= V13_GRADUATION,
+        progress: Number((reserve * 10_000n) / V13_GRADUATION) / 100 > 100 ? 100 : Number((reserve * 10_000n) / V13_GRADUATION) / 100,
+        factory: FACTORY, dex: "Uniswap V4", venue: "Uniswap V4", risk: "Uniswap V4", type: "Launch",
+        reserve: reserve.toString(), virtualReserve: "0", threshold: V13_GRADUATION.toString(),
+        inventory: tokensInPool.toString(), marketCap: marketCap.toString(), liquidity: (reserve * 2n).toString(),
+        price: priceX, lpSupply: "0", lpBurned: "0", indexedBlock: latestBlock, v4TradesVersion: V4_TRADES_VERSION,
+        tradeCount: trades.length, holderCount: new Set(trades.map((t) => String(t.user).toLowerCase())).size,
+        volume: trades.reduce((sum, t) => sum + BigInt(t.native), 0n).toString(),
+        createdAt: meta ? await timeOf(meta.block) : Number(old?.createdAt || 0),
+        trades,
       });
     } catch (error) {
-      console.error(`V12 launch ${id} unreadable: ${String(error).slice(0, 90)}`);
+      console.error(`V13 launch ${id} unreadable: ${String(error).slice(0, 90)}`);
     }
   }
   return rows;
@@ -348,7 +453,8 @@ async function indexV4Launches(FACTORY, latestBlock) {
 
 const perFactory = await Promise.all(FACTORIES.map(async ({ address: FACTORY, fromBlock: deployBlock, kind }) => {
   if (kind === "v4") {
-    const launches = await indexV4Launches(FACTORY, latestBlock);
+    const previousRows = new Map((previous?.launches || []).map((row) => [String(row.address).toLowerCase(), row]));
+    const launches = await indexV4Launches(FACTORY, latestBlock, deployBlock, previousRows);
     return { address: FACTORY, kind, indexedBlock: latestBlock, launches };
   }
   const fromBlock = previousByFactory.has(FACTORY.toLowerCase())
@@ -870,7 +976,11 @@ for (const item of launchesOut) {
   ).size;
   const last = priced.at(-1);
   const inventory = BigInt(item.inventory || 0);
-  if (last && inventory > 0n && BigInt(last.tokens) > 0n) {
+  // A V13 row's market cap comes from its pool's price against the full
+  // supply. This recompute multiplies by `inventory`, which for a V13 pool is
+  // the tokens still in the pool rather than the supply, so it would quietly
+  // report something smaller and different.
+  if (Number(item.engineVersion) !== 13 && last && inventory > 0n && BigInt(last.tokens) > 0n) {
     item.marketCap = ((BigInt(last.native) * inventory) / BigInt(last.tokens)).toString();
   }
 }

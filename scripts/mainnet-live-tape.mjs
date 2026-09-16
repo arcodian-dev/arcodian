@@ -97,6 +97,13 @@ async function runWithTimeout(task, timeoutMs) {
 
 // venue address(lower) -> { token, symbol, type: "curve" | "pool", quoteIs0 }
 let venues = new Map();
+// V13 launches trade in Uniswap V4 pools, which have no address to watch —
+// every V4 pool emits its Swap from the PoolManager, told apart by pool id.
+// poolId(lowercase) -> { token, symbol, tokenIsZero }
+let v4Pools = new Map();
+const V4_POOL_MANAGER = "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+// keccak256("Swap(bytes32,address,int128,int128,uint160,uint128,int24,uint24)")
+const V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f";
 // Caches a pool's token0() across loadVenues() calls so a graduated launch
 // (whose mainnet-market-index.json record carries no token0 field) only
 // costs one extra RPC call the first time it's ever seen, not every 15s.
@@ -168,6 +175,13 @@ async function loadVenues() {
     next.set(String(pool.pool).toLowerCase(), { token: pool.address, symbol: pool.symbol, type: "pool", quoteIs0: globalQuotes[index] });
   }
   venues = next;
+  const nextV4 = new Map();
+  for (const launch of index.launches || []) {
+    if (Number(launch.engineVersion) >= 13 && launch.poolId && launch.address) {
+      nextV4.set(String(launch.poolId).toLowerCase(), { token: launch.address, symbol: launch.symbol, tokenIsZero: BigInt(launch.address) < BigInt(USDC) });
+    }
+  }
+  v4Pools = nextV4;
   // Migrate tape rows written by older versions that trusted Radar's
   // token0 metadata. For reversed pools, those rows have native/tokens
   // swapped; correct them once the pool's on-chain orientation is known.
@@ -219,14 +233,21 @@ async function tick() {
   const latest = await provider.getBlockNumber();
   if (!lastBlock) lastBlock = Math.max(0, latest - 2_000);
   if (latest - lastBlock > MAX_CATCHUP_BLOCKS) lastBlock = latest - MAX_CATCHUP_BLOCKS;
-  if (latest <= lastBlock || !venues.size) return;
+  if (latest <= lastBlock || (!venues.size && !v4Pools.size)) return;
   const addresses = [...venues.keys()];
   const logs = [];
   for (let start = lastBlock + 1; start <= latest; start += ADDRESS_LOG_CHUNK_BLOCKS) {
     const end = Math.min(latest, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
     logs.push(...await provider.getLogs({ address: addresses, fromBlock: start, toBlock: end }));
   }
-  const blockNumbers = [...new Set(logs.map((log) => log.blockNumber))];
+  const v4Logs = [];
+  if (v4Pools.size) {
+    for (let start = lastBlock + 1; start <= latest; start += ADDRESS_LOG_CHUNK_BLOCKS) {
+      const end = Math.min(latest, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
+      v4Logs.push(...await provider.getLogs({ address: V4_POOL_MANAGER, topics: [V4_SWAP_TOPIC, [...v4Pools.keys()]], fromBlock: start, toBlock: end }));
+    }
+  }
+  const blockNumbers = [...new Set([...logs, ...v4Logs].map((log) => log.blockNumber))];
   const blockTimes = new Map(await Promise.all(blockNumbers.map(async (blockNumber) => {
     const block = await provider.getBlock(blockNumber);
     return [blockNumber, Number(block?.timestamp || 0)];
@@ -257,7 +278,31 @@ async function tick() {
       }];
     } catch { return []; }
   });
-  trades = [...trades, ...fresh]
+  // V4 amounts are from the swapper's side: negative was paid into the pool.
+  // Swap is emitted after the launch hook has taken its 1% of the input, so
+  // the input side is grossed back up to what the trader actually spent, and
+  // the quote is normalized to 18 decimals like every other launch row.
+  const v4Fresh = [];
+  for (const log of v4Logs) {
+    const pool = v4Pools.get(String(log.topics[1]).toLowerCase());
+    if (!pool) continue;
+    const data = log.data.slice(2);
+    const signed = (i) => { const v = BigInt(`0x${data.slice(i * 64, (i + 1) * 64)}`); return v >= 1n << 255n ? v - (1n << 256n) : v; };
+    const amount0 = signed(0), amount1 = signed(1);
+    const quoteDelta = pool.tokenIsZero ? amount1 : amount0;
+    const tokenDelta = pool.tokenIsZero ? amount0 : amount1;
+    const buy = quoteDelta < 0n;
+    const abs = (v) => (v < 0n ? -v : v);
+    const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
+    const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+    const tx = await provider.getTransaction(log.transactionHash).catch(() => null);
+    v4Fresh.push({
+      token: pool.token, symbol: pool.symbol, side: buy ? "BUY" : "SELL", block: log.blockNumber, tx: log.transactionHash,
+      user: tx?.from || "", native: (quoteGross * 10n ** 12n).toString(), tokens: tokensGross.toString(),
+      timestamp: blockTimes.get(log.blockNumber) || 0,
+    });
+  }
+  trades = [...trades, ...fresh, ...v4Fresh]
     .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
     .sort((a, b) => a.block - b.block)
     .slice(-500);
