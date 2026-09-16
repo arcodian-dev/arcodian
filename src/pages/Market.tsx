@@ -1057,7 +1057,7 @@ function poolKeyFor(tokenAddress: string, engineVersion: number) {
       tokenIsZero ? usdc : tokenAddress,
       v14 ? V14_POOL_FEE : V13_POOL_FEE,
       V13_TICK_SPACING,
-      v14 ? ARC_MAINNET_CONTRACTS.launchHookV14 : ARC_MAINNET_CONTRACTS.launchHookV13,
+      engineVersion >= 15 ? ARC_MAINNET_CONTRACTS.launchHookV15 : v14 ? ARC_MAINNET_CONTRACTS.launchHookV14 : ARC_MAINNET_CONTRACTS.launchHookV13,
     ] as const,
     tokenIsZero,
   };

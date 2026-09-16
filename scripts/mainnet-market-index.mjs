@@ -39,7 +39,7 @@ const QUOTE_SCALE = 10n ** 12n;
 // so a fresh factory was the only fix). Both stay indexed: the old one keeps
 // its one live launch ("Architects") readable, the new one gets every
 // launch going forward.
-const MIN_LISTED_ENGINE = Number(process.env.MIN_LISTED_ENGINE || 14);
+const MIN_LISTED_ENGINE = Number(process.env.MIN_LISTED_ENGINE || 15);
 const FACTORIES = [
   { address: process.env.ARC_MAINNET_FACTORY_V9_LEGACY || "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066", fromBlock: 13_190_000, kind: "v3" },
   { address: process.env.ARC_MAINNET_FACTORY_V9 || "0x6e1d1a09b07a4022B535269434C16A3452e195f9", fromBlock: 13_501_954, kind: "v3" },
@@ -68,6 +68,8 @@ const FACTORIES = [
   { address: process.env.ARC_MAINNET_FACTORY_V13 || "0xED603cE15aE9648EE52954ddAD2e160B63E87E11", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V13_FROM || 21154804), kind: "v4", engine: 13 },
   // V14: fees in USDC on both sides, 0% LP tier, optional launch buy.
   { address: process.env.ARC_MAINNET_FACTORY_V14 || "0x4B71169F63A36d819421F10C0436A6A7d3C7253f", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V14_FROM || 21168443), kind: "v4", engine: 14 },
+  // V15: V14 plus the 1% USDC graduation fee at 12,000 USDC, no supply fee.
+  { address: process.env.ARC_MAINNET_FACTORY_V15 || "0xDFE3e7C6e139860d88f13FCCB6A1d9dCEE2211e2", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V15_FROM || 21174759), kind: "v4", engine: 15 },
 ].filter((factory) => factory.address)
   // Only the current engine is listed. Coins from older factories keep
   // trading onchain, but the market shows the newest engine only — none of
@@ -313,6 +315,7 @@ const v4FactoryAbi = [
   "function tokenByLaunch(uint256) view returns(address)",
   "function poolByLaunch(uint256) view returns(bytes32)",
   "function hook() view returns(address)",
+  "function graduatedLaunch(uint256) view returns(bool)",
   "event LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
 ];
 const V4_POOL_MANAGER = process.env.ARC_V4_POOL_MANAGER || "0x8366a39CC670B4001A1121B8F6A443A643e40951";
@@ -512,14 +515,18 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
         .slice(-1000);
 
       const meta = created.get(String(address).toLowerCase());
+      // V15 graduates onchain (and takes its 1% then, which leaves the pool
+      // just under the line), so its own flag is the truth. Earlier pool
+      // engines only ever had the milestone.
+      const graduatedOnchain = engine >= 15 ? await factory.graduatedLaunch(id).catch(() => false) : false;
       const reserve = raised6 * 10n ** 12n;
       const marketCap = BigInt(Math.floor(priceX * 1e9 * 1e6)) * 10n ** 12n; // USDC 18-dec
       rows.push({
         address, curve: "", pair: "", pool: poolId, poolId, engineVersion: engine,
         quoteKind: 0, currency: "USDC", quoteDecimals: 18,
         name, symbol, image, creator: meta?.creator || old?.creator || "",
-        graduated: reserve >= V13_GRADUATION,
-        progress: Number((reserve * 10_000n) / V13_GRADUATION) / 100 > 100 ? 100 : Number((reserve * 10_000n) / V13_GRADUATION) / 100,
+        graduated: engine >= 15 ? Boolean(graduatedOnchain) : reserve >= V13_GRADUATION,
+        progress: graduatedOnchain ? 100 : Math.min(100, Number((reserve * 10_000n) / V13_GRADUATION) / 100),
         factory: FACTORY, dex: "Uniswap V4", venue: "Uniswap V4", risk: "Uniswap V4", type: "Launch",
         reserve: reserve.toString(), virtualReserve: "0", threshold: V13_GRADUATION.toString(),
         inventory: tokensInPool.toString(), marketCap: marketCap.toString(), liquidity: (reserve * 2n).toString(),

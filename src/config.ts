@@ -792,6 +792,16 @@ export const ARC_MAINNET_CONTRACTS = {
   // Mined to end in 0x20CC: beforeInitialize (factory-only pools),
   // beforeSwap + afterSwap with return deltas (the fee on either side).
   launchHookV14: "0x57A1B0DFBda6a8568ebA6cC92678c572DEe520CC",
+  // V15, deployed 2026-09-16 at block 21,174,759 — the live pool engine.
+  // V14 plus the fee model the curve engines had: nothing is taken from the
+  // token supply at launch (the whole supply goes into the pool), and a
+  // one-time 1% graduation fee is charged in USDC by the swap that carries
+  // the pool past 12,000 USDC — 1% of the position is removed, its USDC goes
+  // to the treasury and its tokens are burned.
+  launchFactoryV15: "0xDFE3e7C6e139860d88f13FCCB6A1d9dCEE2211e2",
+  // Same permission bits as V14 (0x20CC); also calls the factory after each
+  // swap until the pool graduates.
+  launchHookV15: "0x82AA4c459DB78C58fF279439bEDe03697C80A0Cc",
 } as const;
 
 /// V13 pool parameters, fixed by the factory. A V4 pool is identified by
@@ -809,8 +819,8 @@ export const V13_GRADUATION_USDC = 12_000;
 /// coins launched there remain readable and tradeable — a launch cannot be
 /// migrated between factories — but they are no longer offered for new ones.
 // Never V12 — see launchFactoryV13 for why.
-export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV14;
-export const ACTIVE_ENGINE_VERSION = 14;
+export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV15;
+export const ACTIVE_ENGINE_VERSION = 15;
 
 export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",
