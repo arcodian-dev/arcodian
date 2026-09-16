@@ -48,7 +48,7 @@ const IRIS_TESTNET = "https://iris-api-sandbox.circle.com/v2";
 const IRIS_MAINNET = "https://iris-api.circle.com/v2";
 const irisFor = (chainId: number) => isMainnetChain(chainId) ? IRIS_MAINNET : IRIS_TESTNET;
 
-export type Attestation = { status: string; ready: boolean; message: string; attestation: string; amount?: string };
+export type Attestation = { status: string; ready: boolean; message: string; attestation: string; amount?: string; expirationBlock?: string; finalityThresholdExecuted?: number };
 export type PendingClaim = { burnHash: string; fromChainId: number; toChainId: number; amount?: string; recipient?: string; createdAt?: number };
 export type BridgeHistoryItem = PendingClaim & { status: "pending" | "completed" | "failed"; mintHash?: string; updatedAt: number; note?: string };
 
@@ -85,10 +85,50 @@ export async function fetchCctpAttestation(sourceChainId: number, burnHash: stri
       message: message.message || "",
       attestation: typeof message.attestation === "string" ? message.attestation : "",
       amount: message.decodedMessage?.decodedMessageBody?.amount,
+      // A CCTP v2 message attested at soft finality carries an
+      // expirationBlock on the DESTINATION chain, past which
+      // MessageTransmitter refuses it ("Message expired and must be
+      // re-signed"). Attested at hard finality it is 0, meaning no expiry.
+      // Circle keeps serving the stale signature after it lapses, so the
+      // only way to tell a claimable transfer from one that will revert is
+      // to read this field — see claimBlockReason below.
+      expirationBlock: message.decodedMessage?.decodedMessageBody?.expirationBlock,
+      finalityThresholdExecuted: Number(message.decodedMessage?.finalityThresholdExecuted) || undefined,
     };
   } catch {
     return null;
   }
+}
+
+/**
+ * Why this claim cannot be sent right now, as a sentence for the user, or
+ * null when it can be sent.
+ *
+ * Exists because of a real, expensive failure mode found 2026-09-16, the day
+ * Circle started attesting messages destined for Arc. Transfers burned while
+ * Arc was still unattested had been signed as Fast Transfers, and a Fast
+ * Transfer attestation expires at a fixed destination block. Circle's API
+ * happily keeps serving those expired signatures with status "complete", so
+ * everything upstream looks ready — but MessageTransmitter rejects them, and
+ * because the claim is sent with an explicit gasLimit (skipping ethers' own
+ * estimateGas), the revert is not caught until the wallet simulates it. The
+ * user sees a confirm dialog that spins and never opens, or pays gas for a
+ * transaction that was always going to fail.
+ *
+ * Nothing on our side can fix such a transfer: a valid signature can only
+ * come from Circle re-attesting the message at hard finality. The funds are
+ * not lost while that is pending — the burn is recorded on chain, the nonce
+ * is unused, and the message stays mintable forever; only the signature
+ * expired, not the transfer.
+ */
+export function claimBlockReason(attestation: Attestation, headBlock?: number | bigint | null): string | null {
+  if (!attestation.ready) return `Circle is still confirming this transfer (${attestation.status}). Try again shortly.`;
+  const expiration = Number(attestation.expirationBlock ?? 0);
+  if (!Number.isFinite(expiration) || expiration === 0) return null;
+  if (headBlock === null || headBlock === undefined) return null;
+  const head = Number(headBlock);
+  if (!Number.isFinite(head) || head <= expiration) return null;
+  return "Circle signed this transfer as a Fast Transfer and that signature expired before Arc could accept it. Your USDC is not lost — the burn is on chain and still mintable — but only Circle can issue a fresh signature, so there is nothing to sign yet. This page re-checks automatically.";
 }
 
 /**

@@ -77,14 +77,18 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
     expect(ARC_MAINNET_CONTRACTS.multicall3From).toBe("0x522fAf9A91c41c443c66765030741e4AaCe147D0");
   });
 
-  it("leads with Circle's own RPC and keeps the log-capable endpoint next", () => {
-    // rpc.mainnet.arc.io refuses many-address eth_getLogs filters outright;
-    // blockdaemon is the only official endpoint that serves them, so it has
-    // to sit immediately behind the default rather than at the back of the
-    // list. See the measured limits recorded in config.ts.
-    expect(ARC_MAINNET.rpc).toBe("https://rpc.mainnet.arc.io");
-    expect(ARC_MAINNET.rpcs[0]).toBe("https://rpc.mainnet.arc.io");
-    expect(ARC_MAINNET.rpcs[1]).toBe("https://rpc.blockdaemon.mainnet.arc.io");
+  it("leads with the endpoints that do not rate-limit a busy page", () => {
+    // Circle's own rpc.mainnet.arc.io and QuickNode's each rejected over
+    // half of 60 eth_calls fired in ~1.5s with "rate limit exceeded" —
+    // roughly what one bridge or portfolio page does across its reads, and
+    // it surfaces to a user as a read that never resolves. Blockdaemon and
+    // drpc served 60/60. Blockdaemon leads because it ALSO is the only
+    // official endpoint that serves many-address eth_getLogs. See the
+    // measured numbers recorded in config.ts.
+    expect(ARC_MAINNET.rpc).toBe("https://rpc.blockdaemon.mainnet.arc.io");
+    expect(ARC_MAINNET.rpcs[0]).toBe("https://rpc.blockdaemon.mainnet.arc.io");
+    expect(ARC_MAINNET.rpcs[1]).toBe("https://rpc.drpc.mainnet.arc.io");
+    expect(ARC_MAINNET.rpcs).toContain("https://rpc.mainnet.arc.io");
     // Arcscan stays reachable as a fallback — it was degraded on launch day,
     // not wrong.
     expect(ARC_MAINNET.rpcs).toContain("https://rpc.arc-scan.org/");

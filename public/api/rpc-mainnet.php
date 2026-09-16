@@ -54,20 +54,18 @@ if ($body === '' || strlen($body) > 262144) {
 // They are kept because none of the official endpoints serves a
 // many-address eth_getLogs except blockdaemon, and arc-scan does when it is
 // healthy (~92,000-block ranges), so they are still worth having last.
+// Only the two endpoints that survive sustained traffic are primary. Firing
+// 60 eth_calls in ~1.5s, blockdaemon and drpc served 60/60 while
+// rpc.mainnet.arc.io served 29/60 and quicknode 26/60, the rest coming back
+// "rate limit exceeded" — and this proxy concentrates EVERY browser's reads
+// onto one server IP, so it hits those limits far harder than any single
+// visitor would. The two rate-limited official endpoints are demoted to
+// fallbacks rather than dropped: they are Circle's own and answer fine at
+// lower volume.
 $primary = [
-  [
-    'name' => 'arc-official',
-    'url' => 'https://rpc.mainnet.arc.io',
-    'headers' => ['Content-Type: application/json'],
-  ],
   [
     'name' => 'arc-blockdaemon',
     'url' => 'https://rpc.blockdaemon.mainnet.arc.io',
-    'headers' => ['Content-Type: application/json'],
-  ],
-  [
-    'name' => 'arc-quicknode',
-    'url' => 'https://rpc.quicknode.mainnet.arc.io',
     'headers' => ['Content-Type: application/json'],
   ],
   [
@@ -77,6 +75,16 @@ $primary = [
   ],
 ];
 $fallback = [
+  [
+    'name' => 'arc-official',
+    'url' => 'https://rpc.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
+  [
+    'name' => 'arc-quicknode',
+    'url' => 'https://rpc.quicknode.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
   [
     'name' => 'arc-scan',
     'url' => 'https://rpc.arc-scan.org/',

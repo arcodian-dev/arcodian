@@ -36,6 +36,7 @@ import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import {
   CCTP_DOMAIN,
   MESSAGE_TRANSMITTER_ABI,
+  claimBlockReason,
   fetchCctpAttestation,
   fetchCctpFee,
   clearPendingClaim,
@@ -639,12 +640,38 @@ export default function Wallet({
         throw new Error(
           `Circle is still confirming (${attestation.status}). Try again shortly.`,
         );
+      // Check the destination will actually accept this before asking anyone
+      // to sign. The claim is sent with an explicit gasLimit, which skips
+      // ethers' estimateGas, so without this the first thing that notices a
+      // doomed claim is the wallet's own simulation — which presents as a
+      // confirm dialog that spins forever, or as gas paid for a guaranteed
+      // revert. Two layers, cheapest first: claimBlockReason reads Circle's
+      // own expirationBlock and explains the common case in plain words,
+      // then a staticCall catches anything else the contract would reject.
+      // Read the head block of the DESTINATION chain — the expiry is measured
+      // there, not on whichever network the wallet happens to be connected to.
+      const headBlock = await new JsonRpcProvider(to.rpc).getBlockNumber().catch(() => null);
+      const blocked = claimBlockReason(attestation, headBlock);
+      if (blocked) throw new Error(blocked);
       const claimSigner = await signerFor(to.id);
       const transmitter = new Contract(
         messageTransmitterFor(to.id),
         MESSAGE_TRANSMITTER_ABI,
         claimSigner,
       );
+      setStatus(`Checking the destination will accept this claim…`);
+      try {
+        await transmitter.receiveMessage.staticCall(attestation.message, attestation.attestation);
+      } catch (simulated) {
+        const reason = simulated instanceof Error ? simulated.message : String(simulated);
+        if (/expired|re-signed/i.test(reason)) {
+          throw new Error(claimBlockReason({ ...attestation, expirationBlock: "1" }, Number.MAX_SAFE_INTEGER) as string);
+        }
+        if (!/already been received|nonce already used|already used/i.test(reason)) {
+          throw new Error(`The destination rejected this claim, so nothing was sent and no gas was spent: ${describeTxError(simulated)}`);
+        }
+        throw simulated;
+      }
       setStatus(`Claiming on ${chainLabel(to.id)}…`);
       const tx = await transmitter.receiveMessage(
         attestation.message,

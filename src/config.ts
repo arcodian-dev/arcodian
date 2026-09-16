@@ -437,9 +437,21 @@ const THIRDWEB_RPC = THIRDWEB_CLIENT_ID ? `https://5042.rpc.thirdweb.com/${THIRD
 //                             1,100 addresses, no complaint
 //   rpc.quicknode.mainnet…    ~2,900-block cap, same many-address refusal
 //   rpc.drpc.mainnet…         fastest of all, but a 100-block log cap
-// Blockdaemon therefore sits second, directly behind the fast general
-// default, so a log query the first endpoint refuses lands immediately on
-// the one endpoint that can serve it instead of walking the whole list.
+// Ordering is set by a second measurement that matters more than latency:
+// sustained rate limits. Firing 60 eth_calls in ~1.5s (well within what a
+// single bridge or portfolio page does across its reads) —
+//   rpc.blockdaemon.mainnet…  60/60 served
+//   rpc.drpc.mainnet…         60/60 served
+//   rpc.mainnet.arc.io        29/60 served, 31 "rate limit exceeded"
+//   rpc.quicknode.mainnet…    26/60 served, 34 "rate limit exceeded"
+// Circle's own endpoint and QuickNode's reject over half the traffic of one
+// busy page, which surfaces to a user as a read that never resolves — the
+// claim button that spins forever instead of opening the wallet. So
+// blockdaemon leads (no rate limiting AND the only endpoint that serves the
+// many-address, wide-range getLogs the market/portfolio/tape reads make),
+// drpc follows (no rate limiting, fastest round trip, but a 100-block log
+// cap), and the two rate-limited endpoints sit behind them as capacity
+// rather than as the front door.
 const ARC_OFFICIAL_RPC = "https://rpc.mainnet.arc.io";
 const ARC_BLOCKDAEMON_RPC = "https://rpc.blockdaemon.mainnet.arc.io";
 const ARC_QUICKNODE_RPC = "https://rpc.quicknode.mainnet.arc.io";
@@ -453,7 +465,7 @@ const ARC_DRPC_RPC = "https://rpc.drpc.mainnet.arc.io";
 // serves ~92,000-block log ranges when healthy, so it stays as a late
 // fallback instead of being removed.
 const ARC_SCAN_RPC = "https://rpc.arc-scan.org/";
-const ARC_MAINNET_RPC = import.meta.env.VITE_ARC_MAINNET_RPC || ARC_OFFICIAL_RPC;
+const ARC_MAINNET_RPC = import.meta.env.VITE_ARC_MAINNET_RPC || ARC_BLOCKDAEMON_RPC;
 
 export const ARC_MAINNET = {
   id: 5042,
@@ -477,9 +489,9 @@ export const ARC_MAINNET = {
   // console. rpc.arc-scan.org added 2026-09-12, see above.
   rpcs: [
     ARC_MAINNET_RPC,
-    ARC_BLOCKDAEMON_RPC,
-    ARC_QUICKNODE_RPC,
     ARC_DRPC_RPC,
+    ARC_OFFICIAL_RPC,
+    ARC_QUICKNODE_RPC,
     ARC_SCAN_RPC,
     THIRDWEB_RPC,
     "https://warp-arc-production.up.railway.app/rpc",
