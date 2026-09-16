@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { formatEther, formatUnits } from "ethers";
-import { CoinIcon, imageUrl } from "../shared";
+import { CoinIcon, imageUrl, quoteAmount as sharedQuoteAmount } from "../shared";
 import { navHref } from "../config";
 
 /**
@@ -37,6 +37,7 @@ type Launch = {
   volume: bigint;
   volume24h: bigint;
   globalPool: boolean;
+  quoteDecimals?: number;
   holderCount: number;
   tradeCount: number;
   graduated: boolean;
@@ -144,8 +145,14 @@ function sparkFrom(trades: Trade[]): string {
 }
 
 /** Quote amounts are 18-dec for USDC-native curves and 6-dec for EURC ones. */
-function quoteAmount(value: bigint, currency: string, globalPool = false): number {
-  return Number(globalPool || currency === "EURC" ? formatUnits(value, 6) : formatEther(value));
+// Kept as a thin local wrapper over the shared helper so every call site
+// below reads unchanged. The inference this used to do lives in
+// quoteDecimalsOf now, as a fallback behind the index's own quoteDecimals —
+// which matters because Arc Mainnet's EURC launches are normalized to 18
+// decimals by the indexer, so "currency is EURC therefore 6" is no longer
+// true for them.
+function quoteAmount(value: bigint, currency: string, globalPool = false, quoteDecimals?: number): number {
+  return sharedQuoteAmount(value, { currency, globalPool, quoteDecimals });
 }
 
 function money(value: number, currency: string): string {
@@ -204,6 +211,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           reserve: string; threshold: string; graduated: boolean;
           volume: string; volume24h?: string; tradeCount: number; holderCount: number;
           globalPool?: boolean;
+          quoteDecimals?: number;
           trades?: Array<{ native: string; tokens: string }>;
         }>;
       };
@@ -213,6 +221,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           address: item.address, symbol: item.symbol, name: item.name, image: item.image, currency: "USDC",
           reserve, threshold, volume: BigInt(item.volume || "0"), volume24h: BigInt(item.volume24h || "0"),
           globalPool: Boolean(item.globalPool),
+        quoteDecimals: typeof item.quoteDecimals === "number" ? item.quoteDecimals : undefined,
           holderCount: item.holderCount, tradeCount: item.tradeCount,
           graduated: item.graduated, progress: item.graduated ? 100 : Number(reserve * 10_000n / (threshold || 1n)) / 100,
           spark: sparkFrom((item.trades || []).map((trade) => ({ side: "buy", native: trade.native, tokens: trade.tokens }))),
@@ -224,7 +233,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
         coins: rows.length,
         trades: rows.reduce((sum, row) => sum + row.tradeCount, 0),
         holders: rows.reduce((sum, row) => sum + row.holderCount, 0),
-        volume: rows.reduce((sum, row) => sum + quoteAmount(row.volume, row.currency, row.globalPool), 0),
+        volume: rows.reduce((sum, row) => sum + quoteAmount(row.volume, row.currency, row.globalPool, row.quoteDecimals), 0),
         graduated: rows.filter((row) => row.graduated).length,
       });
     })().catch(() => { if (alive) { setFailed(true); setLaunches([]); } });
@@ -236,8 +245,8 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
   // market at the top forever and made the number look like live liquidity.
   const ranked = useMemo(
     () => [...launches].sort((a, b) => {
-      const av = quoteAmount(a.volume24h, a.currency, a.globalPool);
-      const bv = quoteAmount(b.volume24h, b.currency, b.globalPool);
+      const av = quoteAmount(a.volume24h, a.currency, a.globalPool, a.quoteDecimals);
+      const bv = quoteAmount(b.volume24h, b.currency, b.globalPool, b.quoteDecimals);
       return bv - av || b.tradeCount - a.tradeCount;
     }),
     [launches],
@@ -278,7 +287,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
               {ranked.slice(0, 40).map((row) => (
                 <span key={`${copy}-${row.address}`}>
                   <b>{row.symbol}</b>
-                  <small>{money(quoteAmount(row.volume24h, row.currency, row.globalPool), row.currency)} 24h</small>
+                  <small>{money(quoteAmount(row.volume24h, row.currency, row.globalPool, row.quoteDecimals), row.currency)} 24h</small>
                   <em>{row.progress.toFixed(1)}%</em>
                 </span>
               ))}
@@ -372,7 +381,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 {row.spark
                   ? <svg viewBox="0 0 120 34" aria-hidden="true"><polyline points={row.spark} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   : <span className="lp-nospark">{row.tradeCount} confirmed trade{row.tradeCount === 1 ? "" : "s"}</span>}
-                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume24h, row.currency, row.globalPool), row.currency)}</b><small>24h · {row.globalPool ? "External" : `${row.progress.toFixed(1)}%`}</small></span>
+                <span className="lp-mini-num"><b>{money(quoteAmount(row.volume24h, row.currency, row.globalPool, row.quoteDecimals), row.currency)}</b><small>24h · {row.globalPool ? "External" : `${row.progress.toFixed(1)}%`}</small></span>
               </button>
             ))
           ) : (
@@ -434,7 +443,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
                 <small>{row.name}</small>
               </span>
             </span>
-            <span className="lp-right lp-num">{money(quoteAmount(row.volume, row.currency, row.globalPool), row.currency)}</span>
+            <span className="lp-right lp-num">{money(quoteAmount(row.volume, row.currency, row.globalPool, row.quoteDecimals), row.currency)}</span>
             <span className="lp-right lp-num">{row.holderCount}</span>
             <span className="lp-right lp-num lp-hide-sm">{row.tradeCount}</span>
             <span className="lp-right lp-hide-sm lp-prog">

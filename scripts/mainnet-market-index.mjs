@@ -118,6 +118,16 @@ const curveAbiV2 = [
   "event Bought(address indexed buyer,uint256 nativeIn,uint256 tokensOut,uint256 protocolFee)",
   "event Sold(address indexed seller,uint256 tokensIn,uint256 nativeOut,uint256 protocolFee)",
 ];
+// Every row carries the number of decimals its quote amounts are expressed
+// in, instead of leaving each consumer to infer it. Inference is what broke:
+// a launch curve settles in native USDC at 18 decimals, while an external V3
+// pool's balances and swap amounts are the ERC-20 USDC view at 6 — so 1,014
+// of 1,114 rows had their reserve and volume rendered through formatEther in
+// the Market screener and came out as 0.00. Architects, for one, was showing
+// 0.00 against a real 123,890 USDC of liquidity and 260,875 USDC of volume.
+// Landing.tsx had independently grown its own quoteAmount() helper to work
+// around this, which is how two surfaces ended up disagreeing about the same
+// row. One explicit field, read by everyone, ends that.
 const curveAbiV3Eurc = [
   "function ENGINE_VERSION() view returns(uint8)",
   "function CURVE_SUPPLY() view returns(uint256)",
@@ -321,7 +331,7 @@ async function indexGlobalV3Pools() {
         const last = priced.at(-1);
         const row = {
           address: tokenAddress, pool, curve: "", pair: pool, globalPool: true, dex: venue.dex, venue: venue.dex,
-          feeTier: Number(parsed.args.fee), token0, token1, quoteKind: 0, currency: "USDC", name, symbol, image, creator: "",
+          feeTier: Number(parsed.args.fee), token0, token1, quoteKind: 0, currency: "USDC", quoteDecimals: 6, name, symbol, image, creator: "",
           reserve: usdcBalance.toString(), virtualReserve: "0", threshold: "1", inventory: tokenBalance.toString(), graduated: true,
           factory: venue.address, tradeCount: trades.length, holderCount: new Set(trades.map((trade) => trade.user.toLowerCase())).size,
           volume: trades.reduce((sum, trade) => sum + BigInt(trade.native), 0n).toString(), volume5m: volumeFor(300).toString(), volume10m: volumeFor(600).toString(), volume1h: volumeFor(3600).toString(), volume24h: volumeFor(86400).toString(),
@@ -448,7 +458,7 @@ async function indexRadarGlobalTokens(existingPools) {
     return {
       ...(old || {}),
       address: item.address, pool: resolvedPool, pair: resolvedPool, globalPool: true, radarIndexed: true,
-        dex: venue, venue, feeTier: resolvedFeeTier, token0, token1, quoteKind: 0, currency: "USDC",
+        dex: venue, venue, feeTier: resolvedFeeTier, token0, token1, quoteKind: 0, currency: "USDC", quoteDecimals: 6,
         name: item.name || item.symbol || "Unknown", symbol: item.symbol || "—", image: item.icon || old?.image || "", creator: item.deployer || "",
         reserve: quoteUnits(item.liquidityUsdc / 2), virtualReserve: "0", threshold: "1", inventory: "0", graduated: true,
         factory: "radar-index", tradeCount: Number(item.txns24 || 0), holderCount: Number(item.traders24 || 0),
@@ -600,6 +610,9 @@ return Promise.all(seeds.map(async ({ address, curve, previousMarket }) => {
   const priceChange24h = changeFor(pricedTrades, now, 86400);
   return {
     address, curve, pair, engineVersion, quoteKind: isEurc ? 1 : 0, currency: isEurc ? "EURC" : "USDC",
+    // 18 even for EURC: toWei() above already normalized this row's amounts
+    // from EURC's 6 decimals, so what is written out really is 18-decimal.
+    quoteDecimals: 18,
     lpSupply: lpSupply.toString(), lpBurned: lpBurned.toString(),
     name, symbol, image, creator,
     reserve: reserve.toString(), virtualReserve: virtualReserve.toString(), threshold: threshold.toString(), inventory: inventory.toString(),
@@ -763,6 +776,19 @@ const payload = {
   pools: globalPools,
   indexedAt: new Date().toISOString(), indexedBlock: latestBlock, launches: launchesOut, recentTrades,
 };
+
+// Stamp quoteDecimals on every row on the way out, including ones carried
+// over from a previous run's state. Setting it only where a row is built
+// from scratch left 1,109 of 1,114 rows without it, because an external pool
+// that has not changed is reused rather than rebuilt — so the field would
+// have taken until each pool's next trade to appear, which for a quiet pool
+// is never.
+for (const row of payload.launches) {
+  if (typeof row.quoteDecimals !== "number") row.quoteDecimals = row.globalPool ? 6 : row.currency === "EURC" ? 6 : 18;
+}
+for (const row of payload.pools || []) {
+  if (typeof row.quoteDecimals !== "number") row.quoteDecimals = 6;
+}
 await mkdir(dirname(OUTPUT), { recursive: true });
 await writeFile(`${OUTPUT}.tmp`, JSON.stringify(payload), { mode: 0o644 });
 await rename(`${OUTPUT}.tmp`, OUTPUT);

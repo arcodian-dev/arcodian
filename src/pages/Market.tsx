@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
 import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, graduationUnitsFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
+import { quoteAmount, quoteDecimalsOf } from "../shared";
 import { CurrencyToggle, loadDisplayCurrency } from "../components/CurrencyToggle";
 import { CostLine } from "../components/CostLine";
 import { TerminalChart, type Candle } from "../components/TerminalChart";
@@ -94,13 +95,13 @@ function displayMarketCap(item: LaunchAsset): number {
 function displayLiquidity(item: LaunchAsset): number {
   return item.globalPool
     ? globalUsdc(item.liquidity || item.reserve)
-    : Number(formatEther(BigInt(item.liquidity || item.reserve.toString())));
+    : quoteAmount(item.liquidity || item.reserve.toString(), item);
 }
 
 function displayVolume24h(item: LaunchAsset): number {
   return item.globalPool
     ? globalUsdc(item.volume24h || "0")
-    : Number(formatEther(BigInt(item.volume24h || item.volume || "0")));
+    : quoteAmount(item.volume24h || item.volume || "0", item);
 }
 
 // V10 keeps the 200M-token graduation allocation in the curve contract, but
@@ -840,7 +841,7 @@ export default function Screener({
               </span>
               <span className="mt-num">{compactNumber(displayMarketCap(item))} <small>USDC</small></span>
               <span className="mt-num">{convert(
-                Number(formatEther(BigInt(item.volume24h || item.volume || "0"))),
+                quoteAmount(item.volume24h || item.volume || "0", item),
                 currencyOf(item),
                 displayCurrency,
                 fxRate,
@@ -922,7 +923,7 @@ export default function Screener({
               ) : "progress" in item ? (
                 <>
                   <div className="coin-discovery-metrics">
-                    <span><small>All-time volume</small><b>{Number(formatEther(BigInt(item.volume || "0"))).toLocaleString(undefined, { maximumFractionDigits: 2 })} {item.currency || "USDC"}</b></span>
+                    <span><small>All-time volume</small><b>{quoteAmount(item.volume || "0", item).toLocaleString(undefined, { maximumFractionDigits: 2 })} {item.currency || "USDC"}</b></span>
                     <span><small>Holders</small><b>{item.holderCount || 0}</b></span>
                     <span><small>24h</small><b className={pctClass(item.priceChange24h)}>{pctText(item.priceChange24h)}</b></span>
                   </div>
@@ -945,7 +946,7 @@ export default function Screener({
                       <div className="progress-bar">
                         <i style={{ width: `${Math.min(100, item.progress)}%` }} />
                       </div>
-                      <small className="progress-amount">{Number(formatEther(item.reserve)).toLocaleString(undefined, { maximumFractionDigits: 2 })} of {Number(formatEther(item.threshold)).toLocaleString(undefined, { maximumFractionDigits: 0 })} {item.currency || "USDC"} raised</small>
+                      <small className="progress-amount">{quoteAmount(item.reserve, item).toLocaleString(undefined, { maximumFractionDigits: 2 })} of {quoteAmount(item.threshold, item).toLocaleString(undefined, { maximumFractionDigits: 0 })} {item.currency || "USDC"} raised</small>
                     </>
                   )}
                   <button>Open {item.symbol} market →</button>
@@ -1128,7 +1129,10 @@ function TradingDesk({
   const [chartTrades, setChartTrades] = useState<NonNullable<LaunchAsset["trades"]>>(asset.trades || []);
   // Canonical launch curves use Arc native USDC (18 decimals) on both
   // networks. Only Radar/global ERC-20 pool records use 6-decimal USDC.
-  const quoteDecimals = asset.globalPool ? 6 : 18;
+  // Was `asset.globalPool ? 6 : 18`, which had no answer for an EURC curve.
+  // The index states the row's decimals now; quoteDecimalsOf falls back to
+  // the old inference only for rows written before it did.
+  const quoteDecimals = quoteDecimalsOf(asset);
   const formatTradeQuote = (value: bigint) => Number(formatUnits(value, quoteDecimals));
   const formatTradeToken = (value: bigint) => Number(formatEther(value));
   const tradePrice = (native: bigint, tokens: bigint) => {

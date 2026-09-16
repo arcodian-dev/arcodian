@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { FallbackProvider, JsonRpcProvider, Network, parseEther } from "ethers";
+import { FallbackProvider, JsonRpcProvider, Network, formatUnits, parseEther } from "ethers";
 import { ARC, ARC_MAINNET } from "./config";
 
 export type WalletOption = { info: EIP6963ProviderInfo; provider: EthereumProvider };
@@ -16,6 +16,7 @@ export type LaunchAsset = {
   pair?: string;
   pool?: string;
   globalPool?: boolean;
+  quoteDecimals?: number;
   dex?: string;
   venue?: string;
   feeTier?: number;
@@ -189,6 +190,33 @@ export function normalizeSocial(value: string, type: "twitter" | "discord") {
 // to whichever URL is actually healthy, it rejects the network entirely
 // over the one that failed its probe. One URL we fully control beats three
 // where we only control one.
+/**
+ * How many decimals a market row's quote amounts (reserve, volume, threshold,
+ * a trade's `native`) are expressed in.
+ *
+ * Never guess this. A launch curve settles in Arc's native USDC at 18
+ * decimals; an external V3 pool reports the ERC-20 USDC view at 6. Rendering
+ * the second through formatEther is a factor of a trillion, and it does not
+ * look like a bug — it looks like a market with no liquidity. That is exactly
+ * what shipped: 1,014 of 1,114 rows showed 0.00 in the Market screener, among
+ * them one holding 123,890 USDC.
+ *
+ * The index now states it per row. The fallbacks below only cover rows written
+ * before it did: a globalPool row is 6, and an EURC row from the older
+ * testnet index is 6 because that index did not normalize.
+ */
+export function quoteDecimalsOf(row: { quoteDecimals?: number; globalPool?: boolean; currency?: string }): number {
+  if (typeof row.quoteDecimals === "number") return row.quoteDecimals;
+  if (row.globalPool) return 6;
+  if (row.currency === "EURC") return 6;
+  return 18;
+}
+
+/** A market row's quote amount as a number, in whole units of its quote. */
+export function quoteAmount(value: bigint | string | number | undefined, row: { quoteDecimals?: number; globalPool?: boolean; currency?: string }): number {
+  return Number(formatUnits(BigInt(value ?? 0), quoteDecimalsOf(row)));
+}
+
 export function rpcUrlsFor(chain: { rpc: string; rpcs?: readonly string[]; walletRpc?: string }): string[] {
   return [chain.walletRpc || chain.rpc];
 }
