@@ -8,6 +8,8 @@ import {IHooks} from "v4-core/src/interfaces/IHooks.sol";
 import {PoolKey} from "v4-core/src/types/PoolKey.sol";
 import {PoolId, PoolIdLibrary} from "v4-core/src/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "v4-core/src/types/Currency.sol";
+
+using CurrencyLibrary for Currency;
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
 import {PoolSwapTest} from "v4-core/src/test/PoolSwapTest.sol";
 import {PoolModifyLiquidityTest} from "v4-core/src/test/PoolModifyLiquidityTest.sol";
@@ -236,12 +238,38 @@ contract ArcodianLaunchHookTest is Test {
     // --- invariant ---------------------------------------------------------
 
     /// The hook must never owe out more of a currency than it holds.
+    ///
+    /// What it holds is ERC-6909 claims inside the PoolManager, not ERC-20 in
+    /// its own balance — the fee is minted as claims because beforeSwap runs
+    /// before the trader settles, so there is nothing in the manager to take
+    /// yet. The claims become real tokens in claim().
     function testFuzzHookStaysSolvent(uint96 a, uint96 b) public {
         uint256 first = uint256(a) % 500 ether;
         uint256 second = uint256(b) % 500 ether;
         if (first > 1e6) _swap(trader, true, first);
         if (second > 1e6) _swap(trader, false, second);
-        assertGe(tokenA.balanceOf(address(hook)), hook.claimable(creator, currency0) + hook.claimable(treasury, currency0));
-        assertGe(tokenB.balanceOf(address(hook)), hook.claimable(creator, currency1) + hook.claimable(treasury, currency1));
+        assertGe(
+            manager.balanceOf(address(hook), currency0.toId()),
+            hook.claimable(creator, currency0) + hook.claimable(treasury, currency0),
+            "currency0 claims cover what is owed"
+        );
+        assertGe(
+            manager.balanceOf(address(hook), currency1.toId()),
+            hook.claimable(creator, currency1) + hook.claimable(treasury, currency1),
+            "currency1 claims cover what is owed"
+        );
+    }
+
+    /// And a claim really does hand over the underlying token, not a claim.
+    function testClaimRedeemsClaimsForTheRealToken() public {
+        _swap(trader, true, 1_000 ether);
+        uint256 owed = hook.claimable(treasury, currency0);
+        assertGt(owed, 0);
+        uint256 before = Currency.unwrap(currency0) == address(tokenA) ? tokenA.balanceOf(treasury) : tokenB.balanceOf(treasury);
+        vm.prank(treasury);
+        hook.claim(currency0);
+        uint256 after_ = Currency.unwrap(currency0) == address(tokenA) ? tokenA.balanceOf(treasury) : tokenB.balanceOf(treasury);
+        assertEq(after_ - before, owed, "paid in the real ERC-20");
+        assertEq(manager.balanceOf(address(hook), currency0.toId()), hook.claimable(creator, currency0), "claims burned on withdrawal");
     }
 }

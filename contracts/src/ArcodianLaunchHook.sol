@@ -9,6 +9,8 @@ import {Currency} from "v4-core/src/types/Currency.sol";
 import {BalanceDelta} from "v4-core/src/types/BalanceDelta.sol";
 import {BeforeSwapDelta, toBeforeSwapDelta} from "v4-core/src/types/BeforeSwapDelta.sol";
 import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation.sol";
+import {IUnlockCallback} from "v4-core/src/interfaces/callback/IUnlockCallback.sol";
+import {CurrencyLibrary} from "v4-core/src/types/Currency.sol";
 
 /// @notice The fee mechanism for Arcodian launches that trade in an open
 /// Uniswap V4 pool.
@@ -32,8 +34,9 @@ import {SwapParams, ModifyLiquidityParams} from "v4-core/src/types/PoolOperation
 /// pull-claimed. A V3 pool could not have done this — its fee goes to
 /// liquidity providers, and fee-on-transfer tokens, the usual workaround, are
 /// not tradeable on V3 at all.
-contract ArcodianLaunchHook is IHooks {
+contract ArcodianLaunchHook is IHooks, IUnlockCallback {
     using PoolIdLibrary for PoolKey;
+    using CurrencyLibrary for Currency;
 
     /// Total per-trade fee, in basis points. Matches the curve engines.
     uint256 public constant TRADE_FEE_BPS = 100;
@@ -42,8 +45,13 @@ contract ArcodianLaunchHook is IHooks {
     uint256 public constant CREATOR_FEE_BPS = 50;
 
     IPoolManager public immutable poolManager;
-    address public immutable factory;
     address payable public immutable treasury;
+    /// The factory allowed to bind creators. Not immutable because the
+    /// factory needs the hook's address in its own constructor and the hook
+    /// needs the factory's — one of them has to be set second. Settable
+    /// exactly once, by the deployer, and only before any launch exists.
+    address public factory;
+    address private immutable deployer;
 
     /// The creator entitled to a pool's creator share. Set once, by the
     /// factory, when the launch is created.
@@ -57,6 +65,8 @@ contract ArcodianLaunchHook is IHooks {
 
     error NotPoolManager();
     error NotFactory();
+    error FactoryAlreadySet();
+    error NotDeployer();
     error AlreadyRegistered();
     error NothingToClaim();
 
@@ -66,10 +76,22 @@ contract ArcodianLaunchHook is IHooks {
     }
 
     constructor(IPoolManager poolManager_, address factory_, address payable treasury_) {
-        require(address(poolManager_) != address(0) && factory_ != address(0) && treasury_ != address(0), "ZERO");
+        require(address(poolManager_) != address(0) && treasury_ != address(0), "ZERO");
         poolManager = poolManager_;
-        factory = factory_;
         treasury = treasury_;
+        factory = factory_;
+        deployer = msg.sender;
+    }
+
+    /// @notice Bind the factory, once.
+    /// @dev Self-locking: after this the deployer has no remaining privilege
+    /// over the hook at all. A factory that could be changed later would let
+    /// whoever changed it register pools and take the creator share.
+    function setFactory(address factory_) external {
+        if (msg.sender != deployer) revert NotDeployer();
+        if (factory != address(0)) revert FactoryAlreadySet();
+        require(factory_ != address(0), "ZERO_FACTORY");
+        factory = factory_;
     }
 
     /// @notice Binds a pool to the creator who launched it.
@@ -109,8 +131,16 @@ contract ArcodianLaunchHook is IHooks {
         if (fee == 0) return (IHooks.beforeSwap.selector, toBeforeSwapDelta(0, 0), 0);
 
         Currency input = params.zeroForOne ? key.currency0 : key.currency1;
-        // Pull the fee out of the pool into this contract's own balance.
-        poolManager.take(input, address(this), fee);
+        // Mint ERC-6909 claims rather than take() the real token.
+        //
+        // beforeSwap runs before the trader has settled anything, so on a
+        // fresh launch the PoolManager holds none of the input currency yet
+        // and take() underflows — which is exactly what the first version of
+        // this did, and it failed on the very first buy. mint() is pure
+        // accounting against the swap's own delta, so it works whatever the
+        // manager's balance happens to be at that instant. The claims are
+        // redeemed for the real token in claim() below.
+        poolManager.mint(address(this), input.toId(), fee);
 
         PoolId poolId = key.toId();
         uint256 creatorCut = (amountIn * CREATOR_FEE_BPS) / 10_000;
@@ -139,8 +169,19 @@ contract ArcodianLaunchHook is IHooks {
         uint256 amount = claimable[msg.sender][currency];
         if (amount == 0) revert NothingToClaim();
         claimable[msg.sender][currency] = 0;
-        currency.transfer(msg.sender, amount);
+        // Redeeming ERC-6909 claims for the real token needs the manager
+        // unlocked, so the withdrawal goes through unlockCallback.
+        poolManager.unlock(abi.encode(currency, msg.sender, amount));
         emit Claimed(msg.sender, currency, amount);
+    }
+
+    /// @inheritdoc IUnlockCallback
+    function unlockCallback(bytes calldata data) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert NotPoolManager();
+        (Currency currency, address recipient, uint256 amount) = abi.decode(data, (Currency, address, uint256));
+        poolManager.burn(address(this), currency.toId(), amount);
+        poolManager.take(currency, recipient, amount);
+        return "";
     }
 
     // --- unused hook entry points -----------------------------------------
