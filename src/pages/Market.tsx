@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, verifyMessage } from "ethers";
-import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_MAINNET_ENGINE_VERSION, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, ENGINE_VERSION, EURC_PUMP_FACTORY_ADDRESS, graduationUnitsFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
+import { BrowserProvider, Contract, JsonRpcProvider, Network, formatEther, formatUnits, parseEther, parseUnits, verifyMessage } from "ethers";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_USDC_ERC20, CROSS_BUY_ROUTER_ADDRESS, EURC_PUMP_FACTORY_ADDRESS, graduationUnitsFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS, TOKENS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { quoteAmount, quoteDecimalsOf } from "../shared";
 // The coin terminal shares the trading terminal's design tokens and panel
@@ -13,7 +13,7 @@ import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type Candle } from "../candles";
 import { findBestExternalV3Route } from "../routingReads";
 import { ScreenerTable, DEFAULT_SCREENER_FILTERS, type ScreenerFilters } from "../components/ScreenerTable";
-import { ACTIVE_ENGINE_VERSION, ACTIVE_LAUNCH_FACTORY, V13_POOL_FEE, V13_TICK_SPACING } from "../config";
+import { ACTIVE_ENGINE_VERSION, ACTIVE_LAUNCH_FACTORY, V13_POOL_FEE, V13_TICK_SPACING, V14_POOL_FEE } from "../config";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -355,6 +355,10 @@ export default function Screener({
           }
         }
       } catch { /* Fall through to canonical RPC reads. */ }
+      // Mainnet lists the current engine only, and only the index knows
+      // which launches those are; the chain scan below reads the retired
+      // curve factories. A stale index keeps what is already on screen.
+      if (isMainnet) return;
       const loadedGroups = await Promise.all(
         [activeFactory, ...activeLegacyFactories].map(
           async (factoryAddress) => {
@@ -739,9 +743,9 @@ export default function Screener({
         <button role="tab" aria-selected={marketView === "arena"} className={marketView === "arena" ? "active" : ""} onClick={() => setMarketView("arena")}><span>02</span> Coin Arena <small>Weekly onchain contest</small></button>
       </div>
       <section className="market-proof-strip" aria-label="Canonical market proof">
-        <span><small>ENGINE</small><b>v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</b></span>
-        <span><small>FACTORIES</small><b>{isMainnet ? "USDC canonical" : "USDC + EURC canonical"}</b></span>
-        <span><small>GRADUATION</small><b>12,000 stablecoin reserve</b></span>
+        <span><small>VENUE</small><b>{isMainnet ? "Uniswap V4 · live at launch" : "Bonding curve"}</b></span>
+        <span><small>TRADING FEE</small><b>{isMainnet ? "1% in USDC · half to creator" : "1% · half to creator"}</b></span>
+        <span><small>GRADUATION</small><b>12,000 USDC milestone</b></span>
         <a href="/contracts">Verify deployment →</a>
       </section>
       {marketView === "arena" && <div className="arena-workspace">
@@ -1040,16 +1044,28 @@ const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", 
 // TradingTerminal.tsx's CreatorFeeSection and Profile.tsx's CreatorFeeChip —
 // three independent surfaces, one shared rule). Silently renders nothing
 // for a coin on an older engine (creatorFeesAccrued() reverts there).
-/** The Uniswap V4 pool key of a V13 launch. A V4 pool has no address; this
- *  whole key is its identity, and every field is fixed by the factory. */
-function v13PoolKey(tokenAddress: string) {
+/** The Uniswap V4 pool key of a V13/V14 launch. A V4 pool has no address;
+ *  this whole key is its identity, and every field is fixed by the factory
+ *  that made it — V14 pools use a 0% LP tier and their own hook. */
+function poolKeyFor(tokenAddress: string, engineVersion: number) {
   const usdc = ARC_USDC_ERC20;
   const tokenIsZero = BigInt(tokenAddress) < BigInt(usdc);
+  const v14 = engineVersion >= 14;
   return {
-    key: [tokenIsZero ? tokenAddress : usdc, tokenIsZero ? usdc : tokenAddress, V13_POOL_FEE, V13_TICK_SPACING, ARC_MAINNET_CONTRACTS.launchHookV13] as const,
+    key: [
+      tokenIsZero ? tokenAddress : usdc,
+      tokenIsZero ? usdc : tokenAddress,
+      v14 ? V14_POOL_FEE : V13_POOL_FEE,
+      V13_TICK_SPACING,
+      v14 ? ARC_MAINNET_CONTRACTS.launchHookV14 : ARC_MAINNET_CONTRACTS.launchHookV13,
+    ] as const,
     tokenIsZero,
   };
 }
+const V14_FACTORY_ABI = [
+  "function createLaunch(string,string,string,uint256,uint256) returns(address,bytes32,uint256)",
+  "event LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
+];
 const V13_FACTORY_ABI = [
   "function createLaunch(string,string,string) returns(address,bytes32)",
   "event LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
@@ -1254,7 +1270,7 @@ function TradingDesk({
     // fired on every keystroke.
     const timer = window.setTimeout(async () => {
       try {
-        const { key, tokenIsZero } = v13PoolKey(asset.address);
+        const { key, tokenIsZero } = poolKeyFor(asset.address, Number(asset.engineVersion));
         const buying = side === "buy";
         // Input is currency0 when buying with USDC as currency0, or selling
         // the token as currency0.
@@ -1276,7 +1292,7 @@ function TradingDesk({
     : 0n;
   const insufficientBalance = side === "sell" && amountWei > balance;
   const venueFeeLabel = isPoolEngine
-    ? "1% launch fee (half to creator) + 0.30% LP"
+    ? Number(asset.engineVersion) >= 14 ? "1% in USDC · half to creator" : "1% launch fee (half to creator) + 0.30% LP"
     : graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
@@ -1860,7 +1876,7 @@ function TradingDesk({
       const owner = await signer.getAddress();
       const read = arcProvider(activeArc);
       const buying = side === "buy";
-      const { key, tokenIsZero } = v13PoolKey(asset.address);
+      const { key, tokenIsZero } = poolKeyFor(asset.address, Number(asset.engineVersion));
       const zeroForOne = buying ? !tokenIsZero : tokenIsZero;
       const inputToken = buying ? ARC_USDC_ERC20 : asset.address;
       const amountIn = buying ? amountWei / 10n ** 12n : amountWei;
@@ -1947,8 +1963,8 @@ function TradingDesk({
     ? Number((asset as { price?: number }).price || 0) || lastPrice
     : inventory > 0n ? Number(x) / Number(inventory) : lastPrice;
   const rawExecutionPrice = quote > 0n && amountWei > 0n ? side === "buy" ? Number(amountWei) / Number(quote) : Number(quote) / Number(amountWei) : 0;
-  // Fees on a V13 swap: 1% launch hook plus the pool's own 0.30% LP tier.
-  const poolFeeFactor = 0.99 * 0.997;
+  // Fees on a pool swap: the hook's 1%, plus the 0.30% LP tier on V13 pools.
+  const poolFeeFactor = Number(asset.engineVersion) >= 14 ? 0.99 : 0.99 * 0.997;
   const averageExecutionPrice = isPoolEngine ? (side === "buy" ? rawExecutionPrice * poolFeeFactor : rawExecutionPrice / poolFeeFactor) : rawExecutionPrice;
   const priceImpact = spotPrice > 0 && averageExecutionPrice > 0 ? Math.abs(averageExecutionPrice - spotPrice) / spotPrice * 100 : 0;
   const priceLabel = (price: number) => price > 0 && price < .000001 ? price.toFixed(12).replace(/0+$/, "") : price.toLocaleString(undefined, { maximumFractionDigits: 8 });
@@ -2025,7 +2041,7 @@ function TradingDesk({
   // the token allocation is complete, but exclude it from the wallet
   // concentration safety signal. Otherwise every pre-graduation coin would
   // report its unsold curve inventory as the "top holder" by definition.
-  const topExternalHolder = asset.topHolders?.find((holder) => !holder.kind)
+  const topExternalHolder = asset.topHolders?.find((holder) => !holder.kind || holder.kind === "creator")
   const topHolderShare = topExternalHolder
     ? Number((BigInt(topExternalHolder.balance) * 10_000n) / totalSupplyWei) / 100
     : null;
@@ -2206,7 +2222,7 @@ function TradingDesk({
                           <td style={{ color: "var(--muted)" }}>{index + 1}</td>
                           <td>
                             <a className="orbit-wallet" href={`${activeArc.explorer}/address/${holder.address}`} target="_blank" rel="noreferrer">
-                              {holder.kind === "bonding_curve" ? "Bonding curve" : holder.kind === "liquidity_pool" ? "Liquidity pool" : short(holder.address)}
+                              {holder.kind === "bonding_curve" ? "Bonding curve" : holder.kind === "liquidity_pool" ? "Liquidity pool (locked)" : holder.kind === "treasury" ? "Arcodian treasury · launch fee" : holder.kind === "creator" ? `Creator · ${short(holder.address)}` : short(holder.address)}
                             </a>
                           </td>
                           <td>{Number(formatEther(BigInt(holder.balance))).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
@@ -2347,6 +2363,8 @@ function Launch({
   const [symbol, setSymbol] = useState("");
   const [image, setImage] = useState("");
   const [twitter, setTwitter] = useState("");
+  // Optional USDC the creator buys with in the launch transaction (V14+).
+  const [launchBuy, setLaunchBuy] = useState("");
   const [discord, setDiscord] = useState("");
   const [quoteChoice, setQuoteChoice] = useState<"USDC" | "EURC">("USDC");
   // Arc Mainnet's EURC engine graduates at 3,000 where every other engine
@@ -2445,11 +2463,36 @@ function Launch({
       // carries a curve address, so its topic is different and parsing the
       // receipt with the curve ABI finds nothing — which silently skipped
       // saving the creator's X and Discord links on every pool launch.
+      const isV14Launch = isPoolLaunch && ACTIVE_ENGINE_VERSION >= 14;
       const factory = new Contract(
         factoryAddress,
-        isPoolLaunch ? V13_FACTORY_ABI : ARC_PUMP_FACTORY_ABI,
+        isV14Launch ? V14_FACTORY_ABI : isPoolLaunch ? V13_FACTORY_ABI : ARC_PUMP_FACTORY_ABI,
         signer,
       );
+      // The launch buy is paid in USDC's ERC-20 view (6 decimals) and pulled
+      // by the factory, so it needs an exact approval before the launch. No
+      // slippage floor is needed: the pool does not exist until this very
+      // transaction creates it, so nobody can trade ahead of the creator.
+      const initialBuy = isV14Launch && Number(launchBuy) > 0 ? parseUnits(launchBuy, 6) : 0n;
+      const launchArgs = isV14Launch
+        ? [name.trim(), symbol.toUpperCase(), image, initialBuy, 0n]
+        : [name.trim(), symbol.toUpperCase(), image];
+      if (initialBuy > 0n) {
+        const owner = await signer.getAddress();
+        const usdc = new Contract(ARC_USDC_ERC20, [
+          "function balanceOf(address) view returns(uint256)",
+          "function allowance(address,address) view returns(uint256)",
+          "function approve(address,uint256) returns(bool)",
+        ], signer);
+        const [usdcBalance, allowance] = await Promise.all([usdc.balanceOf(owner), usdc.allowance(owner, factoryAddress)]);
+        // Leave room for gas: on Arc the same USDC pays for it.
+        if (usdcBalance < initialBuy + 100_000n) throw new Error(`Not enough USDC for a ${launchBuy} USDC launch buy plus gas.`);
+        if (allowance < initialBuy) {
+          setStatus(`Approve ${launchBuy} USDC for your launch buy in your wallet.`);
+          const approval = await usdc.approve(factoryAddress, initialBuy);
+          await approval.wait();
+        }
+      }
       // Mobile OKX may run its own eth_estimateGas against a stale/busy
       // endpoint even after the chain switch succeeds. Use exactly one
       // canonical RPC for this preflight; the market read fallback is not
@@ -2464,11 +2507,7 @@ function Launch({
       let gasPrice: bigint;
       try {
         const creator = await signer.getAddress();
-        const data = factory.interface.encodeFunctionData("createLaunch", [
-          name.trim(),
-          symbol.toUpperCase(),
-          image,
-        ]);
+        const data = factory.interface.encodeFunctionData("createLaunch", launchArgs);
         const estimated = await canonical.estimateGas({
           from: creator,
           to: factoryAddress,
@@ -2476,7 +2515,10 @@ function Launch({
         });
         gasLimit = (estimated * 125n) / 100n;
         const feeData = await canonical.getFeeData();
-        gasPrice = feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n;
+        // Headroom over the quoted price: this is a legacy transaction with a
+        // fixed price, and Arc's base fee moved from 98 to 125 gwei within
+        // minutes during a launch test, leaving it pending indefinitely.
+        gasPrice = ((feeData.gasPrice ?? feeData.maxFeePerGas ?? 0n) * 160n) / 100n;
         if (gasPrice <= 0n) throw new Error("Canonical RPC returned no usable gas price.");
       } finally {
         canonical.destroy();
@@ -2487,11 +2529,7 @@ function Launch({
       // the signing prompt. Send a fully-populated legacy transaction so the
       // wallet has no fee or gas estimation work left to perform.
       const nonce = await signer.getNonce("pending");
-      const data = factory.interface.encodeFunctionData("createLaunch", [
-        name.trim(),
-        symbol.toUpperCase(),
-        image,
-      ]);
+      const data = factory.interface.encodeFunctionData("createLaunch", launchArgs);
       const tx = await signer.sendTransaction({
         type: 0,
         chainId: activeArc.id,
@@ -2578,13 +2616,13 @@ function Launch({
         {/* Derived from ENGINE_VERSION rather than written by hand — this
             label read "v5" through the whole of v6 and v7. V8 has no suite
             contract, so the link points at the launch factory itself. */}
-        <span>● Arcodian v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION} market engine live</span>
+        <span>● Arcodian launch factory live</span>
         <a
-          href={`${activeArc.explorer}/address/${activeFactory}`}
+          href={`${activeArc.explorer}/address/${isMainnet ? ACTIVE_LAUNCH_FACTORY : activeFactory}`}
           target="_blank"
           rel="noreferrer"
         >
-          {short(activeFactory)} ↗
+          {short(isMainnet ? ACTIVE_LAUNCH_FACTORY : activeFactory)} ↗
         </a>
       </div>
       <div className="studio-steps">
@@ -2600,7 +2638,7 @@ function Launch({
               ? "One wallet confirmation creates a fixed-supply token and opens its Uniswap V4 pool in the same transaction. Liquidity is permanent — the position has no withdrawal path at all."
               : `One wallet confirmation creates a fixed-supply token and its live bonding curve. At ${graduationLabel} ${quoteChoice}, liquidity graduates automatically to ARC DEX.`}</p>
         </div>
-        <span className="launch-network"><i/> Canonical v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</span>
+        <span className="launch-network"><i/> {activeArc.name}</span>
       </div>
       <div className="pump-flow">
         <span>
@@ -2663,6 +2701,13 @@ function Launch({
           <span>Discord <i>Optional</i></span>
           <input value={discord} maxLength={120} onChange={(event) => setDiscord(event.target.value)} placeholder="discord.gg/your-community" />
         </label>
+        {launchesStraightToPool && ACTIVE_ENGINE_VERSION >= 14 && (
+          <label>
+            <span>Launch buy · USDC <i>Optional</i></span>
+            <input value={launchBuy} inputMode="decimal" maxLength={12} onChange={(event) => setLaunchBuy(event.target.value.replace(/[^0-9.]/g, ""))} placeholder="0" />
+            <small>Buy your own coin in the launch transaction, before anyone else can. The USDC goes into the pool, so scanners and buy bots show real liquidity from the first block. Same 1% fee as any buy.</small>
+          </label>
+        )}
         <div className="launch-section-title launch-section-media"><span>03</span><div><b>Token artwork</b><small>Square image · stored publicly</small></div><i className={image ? "done" : ""}>{image ? "✓" : "Required"}</i></div>
         <label className={`image-field ${image ? "has-image" : ""}`}>
           <span className="upload-icon">{image ? "✓" : "↑"}</span>

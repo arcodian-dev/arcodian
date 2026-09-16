@@ -106,7 +106,7 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
 
 // Contracts arcexplorer cannot index (CREATE2 deployments), verified on
 // Sourcify instead. Exact creation + runtime match, checked 2026-09-16.
-const SOURCIFY_VERIFIED = new Set([ARC_MAINNET_CONTRACTS.launchHookV13.toLowerCase()]);
+const SOURCIFY_VERIFIED = new Set([ARC_MAINNET_CONTRACTS.launchHookV13.toLowerCase(), ARC_MAINNET_CONTRACTS.launchHookV14.toLowerCase()]);
 
 export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () => void; openFaq: () => void; openCanary: () => void }) {
   const [checks, setChecks] = useState<Array<{ label: string; value: string; ok: boolean }>>([]);
@@ -155,6 +155,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
   useEffect(() => {
     let alive = true;
     const addresses = [
+      ARC_MAINNET_CONTRACTS.launchFactoryV14,
       ARC_MAINNET_CONTRACTS.launchFactoryV13,
       ARC_MAINNET_CONTRACTS.v4Router,
       ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11,
@@ -191,9 +192,9 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Launchpad & market",
       note: "Every coin created on Arcodian is launched, traded and graduated by these. Source is published on the explorer — the same published ABI an external buyer bot reads from a pasted address.",
       cards: [
-        ["Launch Factory · V13 (live)", ARC_MAINNET_CONTRACTS.launchFactoryV13, "Every new coin launches here. It opens a real Uniswap V4 pool in the same transaction, so a coin is indexable and buyable by anyone — external routers, scanners, Telegram buy bots — from the block it is created. Liquidity is single-sided: the pool is seeded with the token alone at a ~$5,000 launch valuation, the same starting point as the V11 curve, and the USDC side fills as people buy — so launching costs the creator nothing beyond gas. The position belongs to the factory, and the factory has no code path that removes it."],
-        ["Launch Fee Hook · V13", ARC_MAINNET_CONTRACTS.launchHookV13, "Takes 1% of every swap through a V13 pool and splits it evenly between the launch's creator and the treasury, both pull-claimed. Uniswap V4 reads a hook's permissions from the low bits of its own address, so this one was mined to end in 0x0088. Because the PoolManager calls it on every swap regardless of who started it, the fee reaches trades from routers that have never heard of Arcodian. Deployed through CREATE2 to get that address, which arcexplorer does not index as a contract — so its source is published on Sourcify instead, as an exact match of both creation and runtime bytecode."],
-        ["V4 Router", ARC_MAINNET_CONTRACTS.v4Router, "What arcodian.fun trades V13 pools through. One ordinary token approval, a slippage floor and a deadline on every swap, and quotes computed by running the real swap and reverting — so the quote you see already includes the 1% hook fee, exactly as the trade will. Holds nothing between calls."],
+        ["Launch Factory · V14 (live)", ARC_MAINNET_CONTRACTS.launchFactoryV14, "Every new coin launches here. It opens a real Uniswap V4 pool in the same transaction, so a coin is indexable and buyable by anyone — external routers, scanners, Telegram buy bots — from the block it is created. The pool is seeded with 99% of the supply at a ~$5,000 launch valuation and the USDC side fills as people buy, so launching costs nothing beyond gas. The creator can also buy in the launch transaction itself, which puts real USDC in the pool from the first block and cannot be sniped ahead of. The pool uses a 0% LP tier, so a trade costs exactly the 1% below. The position belongs to the factory, and the factory has no code path that removes it."],
+        ["Launch Fee Hook · V14", ARC_MAINNET_CONTRACTS.launchHookV14, "Takes 1% of every swap through a V14 pool — always in USDC, from the USDC going in on a buy and the USDC coming out on a sell, exact-input or exact-output — and splits it evenly between the launch's creator and the treasury, both pull-claimed. Only the factory can open a pool on it. Uniswap V4 reads a hook's permissions from its own address, so this one was mined to end in 0x20CC; deployed through CREATE2 for that, which arcexplorer does not index, so its source is published on Sourcify as an exact match."],
+        ["V4 Router", ARC_MAINNET_CONTRACTS.v4Router, "What arcodian.fun trades V4 launch pools through. One ordinary token approval, a slippage floor and a deadline on every swap, and quotes computed by running the real swap and reverting — so the quote you see already includes the 1% hook fee, exactly as the trade will. Holds nothing between calls."],
         ["Launch Factory · EURC (V11)", ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11, "The bonding-curve engine, quoted in Circle's Arc Mainnet EURC. Still the EURC path — there is no V12 EURC engine yet. Graduation threshold is 3,000 EURC rather than 12,000 because EURC liquidity on Arc is still thin, with the curve's virtual reserve scaled to match."],
         ["Swap Router", ARC_MAINNET_CONTRACTS.marketRouter, "The route the swap surface executes through across Arcodian's own pools."],
         ["Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority so a launch's liquidity cannot be front-run at the moment it graduates."],
@@ -248,6 +249,8 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Superseded launch engines",
       note: "Kept live and readable because a launch cannot be migrated between factories — coins that launched on these still trade normally. New coins do not go here.",
       cards: [
+        ["Launch Factory · V13", ARC_MAINNET_CONTRACTS.launchFactoryV13, "Superseded by V14. Same pool launch, but its hook took the sell-side fee in the token rather than USDC and its pools sit in the 0.30% LP tier, which accrues to a position nobody can collect from. Coins launched here keep trading normally."],
+        ["Launch Fee Hook · V13", ARC_MAINNET_CONTRACTS.launchHookV13, "The fee hook of V13 pools, bound to them permanently. Source published on Sourcify (exact match)."],
         ["Launch Factory · V12 — do not use", ARC_MAINNET_CONTRACTS.launchFactoryV12, "Withdrawn before any public launch. It opened pools at a price of effectively zero, so the first buy of any size could take a launch's entire supply — caught by quoting before the first trade. Its only launch was Arcodian's own test. Replaced by V13, which differs only in the launch price."],
         ["Launch Factory · USDC (V11)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, "Bonding curve with a 1% trading fee split with the creator and a one-time 1% graduation fee, graduating into a Uniswap V3 pool at 12,000 USDC. Superseded because a coin on a curve has no pool for an external scanner or buy bot to index until it graduates."],
         ["Launch Factory · USDC (V10)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Superseded by V11."],

@@ -39,6 +39,7 @@ const QUOTE_SCALE = 10n ** 12n;
 // so a fresh factory was the only fix). Both stay indexed: the old one keeps
 // its one live launch ("Architects") readable, the new one gets every
 // launch going forward.
+const MIN_LISTED_ENGINE = Number(process.env.MIN_LISTED_ENGINE || 14);
 const FACTORIES = [
   { address: process.env.ARC_MAINNET_FACTORY_V9_LEGACY || "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066", fromBlock: 13_190_000, kind: "v3" },
   { address: process.env.ARC_MAINNET_FACTORY_V9 || "0x6e1d1a09b07a4022B535269434C16A3452e195f9", fromBlock: 13_501_954, kind: "v3" },
@@ -64,8 +65,15 @@ const FACTORIES = [
   // of effectively zero, so its one launch — our own test — can be bought
   // out entirely for pennies; listing it would advertise exactly that.
   // V13 is the live pool engine: the same design with the launch price fixed.
-  { address: process.env.ARC_MAINNET_FACTORY_V13 || "0xED603cE15aE9648EE52954ddAD2e160B63E87E11", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V13_FROM || 21154804), kind: "v4" },
-];
+  { address: process.env.ARC_MAINNET_FACTORY_V13 || "0xED603cE15aE9648EE52954ddAD2e160B63E87E11", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V13_FROM || 21154804), kind: "v4", engine: 13 },
+  // V14: fees in USDC on both sides, 0% LP tier, optional launch buy.
+  { address: process.env.ARC_MAINNET_FACTORY_V14 || "0x4B71169F63A36d819421F10C0436A6A7d3C7253f", fromBlock: Number(process.env.ARC_MAINNET_FACTORY_V14_FROM || 21168443), kind: "v4", engine: 14 },
+].filter((factory) => factory.address)
+  // Only the current engine is listed. Coins from older factories keep
+  // trading onchain, but the market shows the newest engine only — none of
+  // the older ones ever graduated, so no V3 pool of theirs can resurface as
+  // an external row either.
+  .filter((factory) => (factory.engine || 0) >= MIN_LISTED_ENGINE);
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
   // fromBlock was 10,700,000 — an arbitrary "recent enough" guess, not this
@@ -345,6 +353,8 @@ const sqrtAtTick = (tick) => {
 const TRANSFER_TOPIC = keccak256(Buffer.from("Transfer(address,address,uint256)"));
 const V13_HOLDERS_STATE = process.env.MAINNET_V13_HOLDERS || `${dirname(OUTPUT)}/mainnet-v13-holders.json`;
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+// Receives every pool launch's 1% supply fee; labelled in holder lists.
+const TREASURY = "0xf1cbe360b45f2e22ab74a2c434e5602f66105caf";
 const int24Packed = (tick) => toBeHex(BigInt.asUintN(24, BigInt(tick)), 3);
 
 /**
@@ -362,7 +372,7 @@ const int24Packed = (tick) => toBeHex(BigInt.asUintN(24, BigInt(tick)), 3);
  * reached the pool, after the launch hook has taken its 1% of the input, so
  * the input side is grossed back up to what the trader actually spent.
  */
-async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
+async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine = 13) {
   const holderState = await readFile(V13_HOLDERS_STATE, "utf8").then(JSON.parse).catch(() => ({}));
   const factory = new Contract(FACTORY, v4FactoryAbi, provider);
   const manager = new Contract(V4_POOL_MANAGER, poolManagerAbi, provider);
@@ -445,7 +455,13 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
       const topHolders = holding
         .sort(([, a], [, b]) => (a > b ? -1 : a < b ? 1 : 0))
         .slice(0, 10)
-        .map(([holder, balance]) => ({ address: holder, balance: balance.toString(), ...(holder === manager_ ? { kind: "liquidity_pool" } : {}) }));
+        .map(([holder, balance]) => ({
+          address: holder,
+          balance: balance.toString(),
+          ...(holder === manager_ ? { kind: "liquidity_pool" }
+            : holder === TREASURY ? { kind: "treasury" }
+            : holder === String(created.get(holderKey)?.creator || old?.creator || "").toLowerCase() ? { kind: "creator" } : {}),
+        }));
       const holderCount = holding.filter(([holder]) => holder !== manager_).length;
 
       // Trades since the last cursor, by pool id.
@@ -467,9 +483,14 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
           const tokenDelta = tokenIsZero ? amount0 : amount1;
           const buy = quoteDelta < 0n;
           const abs = (v) => (v < 0n ? -v : v);
-          // Gross the input side back up by the hook's 1%.
-          const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
-          const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+          // Swap reports what reached the pool, before the hook's 1%.
+          // V13 took it from the input side (sells paid in token); V14 takes
+          // it in USDC both ways, so a V14 seller received 99% of the USDC
+          // the pool paid out and sold exactly the tokens reported.
+          const quoteGross = buy
+            ? (abs(quoteDelta) * 10_000n) / 9_900n
+            : engine >= 14 ? (abs(quoteDelta) * 9_900n) / 10_000n : abs(quoteDelta);
+          const tokensGross = buy || engine >= 14 ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
           // Pool spot price right after this swap, from the event's own
           // sqrtPriceX96. Charted instead of native/tokens, which carries the
           // 1% hook fee on one side and made a round trip look like a crash.
@@ -494,7 +515,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
       const reserve = raised6 * 10n ** 12n;
       const marketCap = BigInt(Math.floor(priceX * 1e9 * 1e6)) * 10n ** 12n; // USDC 18-dec
       rows.push({
-        address, curve: "", pair: "", pool: poolId, poolId, engineVersion: 13,
+        address, curve: "", pair: "", pool: poolId, poolId, engineVersion: engine,
         quoteKind: 0, currency: "USDC", quoteDecimals: 18,
         name, symbol, image, creator: meta?.creator || old?.creator || "",
         graduated: reserve >= V13_GRADUATION,
@@ -517,10 +538,10 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
   return rows;
 }
 
-const perFactory = await Promise.all(FACTORIES.map(async ({ address: FACTORY, fromBlock: deployBlock, kind }) => {
+const perFactory = await Promise.all(FACTORIES.map(async ({ address: FACTORY, fromBlock: deployBlock, kind, engine }) => {
   if (kind === "v4") {
     const previousRows = new Map((previous?.launches || []).map((row) => [String(row.address).toLowerCase(), row]));
-    const launches = await indexV4Launches(FACTORY, latestBlock, deployBlock, previousRows);
+    const launches = await indexV4Launches(FACTORY, latestBlock, deployBlock, previousRows, engine);
     return { address: FACTORY, kind, indexedBlock: latestBlock, launches };
   }
   const fromBlock = previousByFactory.has(FACTORY.toLowerCase())
@@ -939,7 +960,8 @@ function dedupeCatalogByToken(items) {
   }
   return [...selected.values()];
 }
-const launchesOut = dedupeCatalogByToken([...perFactory.flatMap((f) => f.launches), ...globalPools].reverse());
+const launchesOut = dedupeCatalogByToken([...perFactory.flatMap((f) => f.launches), ...globalPools].reverse())
+  .filter((row) => row.globalPool || row.factory === "radar-index" || Number(row.engineVersion) >= MIN_LISTED_ENGINE);
 
 // mainnet-live-tape.mjs (a separate, dedicated 1-second-tick scanner) has
 // repeatedly proven to catch swaps on graduated pools that this heavy
@@ -1048,7 +1070,7 @@ for (const item of launchesOut) {
   // supply. This recompute multiplies by `inventory`, which for a V13 pool is
   // the tokens still in the pool rather than the supply, so it would quietly
   // report something smaller and different.
-  if (Number(item.engineVersion) !== 13 && last && inventory > 0n && BigInt(last.tokens) > 0n) {
+  if (Number(item.engineVersion) < 13 && last && inventory > 0n && BigInt(last.tokens) > 0n) {
     item.marketCap = ((BigInt(last.native) * inventory) / BigInt(last.tokens)).toString();
   }
 }

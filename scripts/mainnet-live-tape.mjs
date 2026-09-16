@@ -178,7 +178,7 @@ async function loadVenues() {
   const nextV4 = new Map();
   for (const launch of index.launches || []) {
     if (Number(launch.engineVersion) >= 13 && launch.poolId && launch.address) {
-      nextV4.set(String(launch.poolId).toLowerCase(), { token: launch.address, symbol: launch.symbol, tokenIsZero: BigInt(launch.address) < BigInt(USDC) });
+      nextV4.set(String(launch.poolId).toLowerCase(), { token: launch.address, symbol: launch.symbol, engine: Number(launch.engineVersion), tokenIsZero: BigInt(launch.address) < BigInt(USDC) });
     }
   }
   v4Pools = nextV4;
@@ -293,8 +293,11 @@ async function tick() {
     const tokenDelta = pool.tokenIsZero ? amount0 : amount1;
     const buy = quoteDelta < 0n;
     const abs = (v) => (v < 0n ? -v : v);
-    const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
-    const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+    // V14 takes a sell's 1% from the USDC out, V13 from the tokens in.
+    const quoteGross = buy
+      ? (abs(quoteDelta) * 10_000n) / 9_900n
+      : pool.engine >= 14 ? (abs(quoteDelta) * 9_900n) / 10_000n : abs(quoteDelta);
+    const tokensGross = buy || pool.engine >= 14 ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
     // Post-swap pool spot price (see mainnet-market-index.mjs).
     const sqrtAfter = Number(BigInt(`0x${data.slice(128, 192)}`)) / 2 ** 96;
     const spot = pool.tokenIsZero ? sqrtAfter * sqrtAfter * 1e12 : 1e12 / (sqrtAfter * sqrtAfter);

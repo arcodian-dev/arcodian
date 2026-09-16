@@ -38,7 +38,7 @@ export type LaunchAsset = {
   volume24h?: string;
   priceChange24h?: number;
   createdAt?: number;
-  topHolders?: Array<{ address: string; balance: string; kind?: "bonding_curve" | "liquidity_pool" }>;
+  topHolders?: Array<{ address: string; balance: string; kind?: "bonding_curve" | "liquidity_pool" | "creator" | "treasury" }>;
   trades?: Array<{ side: "BUY" | "SELL"; block: number; timestamp?: number; tx: string; user: string; native: string; tokens: string; price?: number }>;
   progress: number;
   reserve: bigint;

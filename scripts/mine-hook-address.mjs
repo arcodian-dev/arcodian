@@ -16,7 +16,11 @@ import { keccak256, getCreate2Address, AbiCoder, concat } from "ethers";
 
 const BEFORE_SWAP_FLAG = 1n << 7n;
 const BEFORE_SWAP_RETURNS_DELTA_FLAG = 1n << 3n;
-const TARGET = BEFORE_SWAP_FLAG | BEFORE_SWAP_RETURNS_DELTA_FLAG;
+// HOOK=V14 mines ArcodianLaunchHookV14: beforeInitialize (1 << 13),
+// beforeSwap, afterSwap (1 << 6), and both return-delta flags (1 << 3,
+// 1 << 2) -> 0x20CC. Its constructor also takes the quote currency.
+const V14 = process.env.HOOK === "V14" || process.env.HOOK === "V15";
+const TARGET = V14 ? 0x20ccn : BEFORE_SWAP_FLAG | BEFORE_SWAP_RETURNS_DELTA_FLAG;
 const MASK = (1n << 14n) - 1n;
 
 // Foundry's deterministic CREATE2 deployer, present on every EVM chain that
@@ -29,12 +33,22 @@ if (!poolManager || !treasury) {
   process.exit(1);
 }
 
-const artifact = JSON.parse(readFileSync("contracts/out-v4/ArcodianLaunchHook.sol/ArcodianLaunchHook.json", "utf8"));
+// V15's hook has the same permissions and constructor as V14's.
+const artifactPath = V14
+  ? `contracts/out-v4/ArcodianLaunchHook${process.env.HOOK}.sol/ArcodianLaunchHook${process.env.HOOK}.json`
+  : "contracts/out-v4/ArcodianLaunchHook.sol/ArcodianLaunchHook.json";
+const artifact = JSON.parse(readFileSync(artifactPath, "utf8"));
 const creation = artifact.bytecode.object;
-const args = AbiCoder.defaultAbiCoder().encode(
-  ["address", "address", "address"],
-  [poolManager, factory || "0x0000000000000000000000000000000000000000", treasury],
-);
+// The second argument is the hook's admin (older name: factory).
+const args = V14
+  ? AbiCoder.defaultAbiCoder().encode(
+    ["address", "address", "address", "address"],
+    [poolManager, factory, treasury, process.env.QUOTE || "0x3600000000000000000000000000000000000000"],
+  )
+  : AbiCoder.defaultAbiCoder().encode(
+    ["address", "address", "address"],
+    [poolManager, factory || "0x0000000000000000000000000000000000000000", treasury],
+  );
 const initCodeHash = keccak256(concat([creation, args]));
 
 // SALT_START skips salts already spent: CREATE2 with the same salt and init

@@ -782,12 +782,23 @@ export const ARC_MAINNET_CONTRACTS = {
   // approval. The quote runs the real swap and reverts with the result, so
   // it includes the hook's 1% exactly as the trade will.
   v4Router: "0xb865dB1cC95b05Ee939b74779C6996173da8fb48",
+  // V14, deployed 2026-09-16 at block 21,168,443 — the live pool engine.
+  // Same launch as V13 with three changes: the 1% trade fee is taken in USDC
+  // on buys AND sells (V13 charged sells in the token), the pool's LP tier
+  // is 0% (V13's 0.30% accrued to a position nobody can collect from), and
+  // the creator can buy in the launch transaction so the pool holds real
+  // USDC from its first block.
+  launchFactoryV14: "0x4B71169F63A36d819421F10C0436A6A7d3C7253f",
+  // Mined to end in 0x20CC: beforeInitialize (factory-only pools),
+  // beforeSwap + afterSwap with return deltas (the fee on either side).
+  launchHookV14: "0x57A1B0DFBda6a8568ebA6cC92678c572DEe520CC",
 } as const;
 
 /// V13 pool parameters, fixed by the factory. A V4 pool is identified by
 /// this whole key, not by an address.
 export const V13_POOL_FEE = 3000;
 export const V13_TICK_SPACING = 60;
+export const V14_POOL_FEE = 0;
 /// Quote raised at which a V13 launch is shown as graduated. V13 has no real
 /// graduation — its liquidity is in a Uniswap V4 pool from the first block
 /// and locked by construction — so this is a milestone, set where the V11
@@ -798,8 +809,8 @@ export const V13_GRADUATION_USDC = 12_000;
 /// coins launched there remain readable and tradeable — a launch cannot be
 /// migrated between factories — but they are no longer offered for new ones.
 // Never V12 — see launchFactoryV13 for why.
-export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV13;
-export const ACTIVE_ENGINE_VERSION = 13;
+export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV14;
+export const ACTIVE_ENGINE_VERSION = 14;
 
 export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",

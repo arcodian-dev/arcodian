@@ -120,8 +120,9 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
   });
 
   it("launches on V13 with a hook whose address carries its permissions", () => {
-    expect(ACTIVE_LAUNCH_FACTORY).toBe("0xED603cE15aE9648EE52954ddAD2e160B63E87E11");
-    expect(ACTIVE_ENGINE_VERSION).toBe(13);
+    expect(ACTIVE_LAUNCH_FACTORY).toBe("0x4B71169F63A36d819421F10C0436A6A7d3C7253f");
+    expect(ACTIVE_ENGINE_VERSION).toBe(14);
+    expect(BigInt(ARC_MAINNET_CONTRACTS.launchHookV14) & 0x3fffn).toBe(0x20ccn);
     expect(BigInt(ARC_MAINNET_CONTRACTS.launchHookV13) & 0x3fffn).toBe(0x0088n);
     expect(ARC_MAINNET_CONTRACTS.v4Router).toBe("0xb865dB1cC95b05Ee939b74779C6996173da8fb48");
   });
