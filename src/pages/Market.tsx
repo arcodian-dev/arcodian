@@ -1197,9 +1197,14 @@ function TradingDesk({
     setVerified(null);
     if (!isMainnet) return;
     let alive = true;
-    fetch(`/api/verify-status.php?address=${asset.address}`)
+    // arcexplorer.org is the mainnet explorer; verify-status.php still asks the
+    // old testnet explorer and can only ever answer null for a mainnet token.
+    fetch(`/api/verified.php?addresses=${asset.address}`)
       .then((response) => response.ok ? response.json() : null)
-      .then((data: { verified?: boolean | null } | null) => { if (alive) setVerified(data?.verified ?? null); })
+      .then((data: { contracts?: Record<string, { verified?: boolean }> } | null) => {
+        const row = data?.contracts?.[asset.address.toLowerCase()];
+        if (alive) setVerified(row ? Boolean(row.verified) : null);
+      })
       .catch(() => { if (alive) setVerified(null); });
     return () => { alive = false; };
   }, [asset.address, isMainnet]);
