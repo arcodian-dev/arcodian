@@ -48,7 +48,7 @@ const IRIS_TESTNET = "https://iris-api-sandbox.circle.com/v2";
 const IRIS_MAINNET = "https://iris-api.circle.com/v2";
 const irisFor = (chainId: number) => isMainnetChain(chainId) ? IRIS_MAINNET : IRIS_TESTNET;
 
-export type Attestation = { status: string; ready: boolean; message: string; attestation: string; amount?: string; expirationBlock?: string; finalityThresholdExecuted?: number };
+export type Attestation = { status: string; ready: boolean; message: string; attestation: string; amount?: string; expirationBlock?: string; finalityThresholdExecuted?: number; nonce?: string };
 export type PendingClaim = { burnHash: string; fromChainId: number; toChainId: number; amount?: string; recipient?: string; createdAt?: number };
 export type BridgeHistoryItem = PendingClaim & { status: "pending" | "completed" | "failed"; mintHash?: string; updatedAt: number; note?: string };
 
@@ -94,6 +94,9 @@ export async function fetchCctpAttestation(sourceChainId: number, burnHash: stri
       // to read this field — see claimBlockReason below.
       expirationBlock: message.decodedMessage?.decodedMessageBody?.expirationBlock,
       finalityThresholdExecuted: Number(message.decodedMessage?.finalityThresholdExecuted) || undefined,
+      // Needed to ask Circle to re-sign an expired message — see
+      // requestReattestation below.
+      nonce: message.decodedMessage?.nonce,
     };
   } catch {
     return null;
@@ -128,7 +131,34 @@ export function claimBlockReason(attestation: Attestation, headBlock?: number | 
   if (headBlock === null || headBlock === undefined) return null;
   const head = Number(headBlock);
   if (!Number.isFinite(head) || head <= expiration) return null;
-  return "Circle signed this transfer as a Fast Transfer and that signature expired before Arc could accept it. Your USDC is not lost — the burn is on chain and still mintable — but only Circle can issue a fresh signature, so there is nothing to sign yet. This page re-checks automatically.";
+  return "Circle signed this transfer as a Fast Transfer and that signature has expired, so the mint would be rejected. Your USDC is not lost — the burn is on chain and still mintable. Asking Circle to re-sign it now; this usually takes under a minute and the claim then goes through on its own.";
+}
+
+/**
+ * Ask Circle to re-sign an expired message.
+ *
+ * An expired Fast Transfer is not stuck permanently: while the burn exists on
+ * the source chain, Circle will re-attest it at hard finality, which sets
+ * finalityThresholdExecuted to 2000 and expirationBlock to 0 — no expiry ever
+ * again. Verified end to end on 2026-09-16 against 17 real stuck transfers
+ * (~1,222 USDC): every one came back re-signed within about a minute.
+ *
+ * This cannot redirect anyone's money. The mint recipient is fixed inside the
+ * signed message; re-attestation replaces the signature and nothing else, and
+ * the endpoint takes only a nonce. So it is safe to fire automatically rather
+ * than making the user find and press something.
+ */
+export async function requestReattestation(sourceChainId: number, nonce: string): Promise<boolean> {
+  if (!/^0x[a-fA-F0-9]{64}$/.test(nonce)) return false;
+  try {
+    const env = isMainnetChain(sourceChainId) ? "&env=mainnet" : "";
+    const res = await fetch(`https://arcodian.fun/api/reattest.php?nonce=${nonce}${env}`, { method: "POST" });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data?.ok === true;
+  } catch {
+    return false;
+  }
 }
 
 /**

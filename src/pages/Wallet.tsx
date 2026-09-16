@@ -38,6 +38,7 @@ import {
   MESSAGE_TRANSMITTER_ABI,
   claimBlockReason,
   fetchCctpAttestation,
+  requestReattestation,
   fetchCctpFee,
   clearPendingClaim,
   messageTransmitterFor,
@@ -652,7 +653,22 @@ export default function Wallet({
       // there, not on whichever network the wallet happens to be connected to.
       const headBlock = await new JsonRpcProvider(to.rpc).getBlockNumber().catch(() => null);
       const blocked = claimBlockReason(attestation, headBlock);
-      if (blocked) throw new Error(blocked);
+      if (blocked) {
+        // An expired signature is recoverable without the user doing
+        // anything: Circle re-signs the message at hard finality on request,
+        // after which it never expires again. Fire that here rather than
+        // telling someone their transfer is stuck — the auto-claim poller
+        // picks it up on its next tick and completes the mint by itself.
+        if (attestation.nonce && Number(attestation.expirationBlock ?? 0) !== 0) {
+          const asked = await requestReattestation(from.id, attestation.nonce);
+          setStatus(asked
+            ? `${blocked} Re-signing requested — this claim will complete on its own shortly.`
+            : `${blocked} The re-signing request did not go through; it will be retried automatically.`);
+          setAutoClaim(true);
+          return;
+        }
+        throw new Error(blocked);
+      }
       const claimSigner = await signerFor(to.id);
       const transmitter = new Contract(
         messageTransmitterFor(to.id),
@@ -665,7 +681,12 @@ export default function Wallet({
       } catch (simulated) {
         const reason = simulated instanceof Error ? simulated.message : String(simulated);
         if (/expired|re-signed/i.test(reason)) {
-          throw new Error(claimBlockReason({ ...attestation, expirationBlock: "1" }, Number.MAX_SAFE_INTEGER) as string);
+          // The contract saw an expiry our own check missed (for instance the
+          // destination head block could not be read). Same recovery.
+          if (attestation.nonce) await requestReattestation(from.id, attestation.nonce);
+          setAutoClaim(true);
+          setStatus(claimBlockReason({ ...attestation, expirationBlock: "1" }, Number.MAX_SAFE_INTEGER) as string);
+          return;
         }
         if (!/already been received|nonce already used|already used/i.test(reason)) {
           throw new Error(`The destination rejected this claim, so nothing was sent and no gas was spent: ${describeTxError(simulated)}`);
