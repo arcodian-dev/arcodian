@@ -41,7 +41,9 @@ export function routeFor(holding: Currency, asset: LaunchAsset): Route {
 
 /** All-in fee for a route, in basis points. Displayed to the user verbatim. */
 export function totalFeeBps(route: Route, asset: LaunchAsset): number {
-  const venue = asset.graduated ? SWAP_FEE_BPS : CURVE_FEE_BPS;
+  // A V13 launch trades in its own Uniswap V4 pool from the first block:
+  // 1% launch hook plus the pool's 0.30% LP tier, graduated or not.
+  const venue = Number(asset.engineVersion) >= 13 ? 130 : asset.graduated ? SWAP_FEE_BPS : CURVE_FEE_BPS;
   return route === "cross" ? venue + FX_FEE_BPS : venue;
 }
 

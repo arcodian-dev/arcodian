@@ -1276,7 +1276,7 @@ function TradingDesk({
     : 0n;
   const insufficientBalance = side === "sell" && amountWei > balance;
   const venueFeeLabel = isPoolEngine
-    ? "1.00% pool fee · half to creator"
+    ? "1% launch fee (half to creator) + 0.30% LP"
     : graduated
     ? side === "buy" ? "0.30% ARC DEX fee" : "0.30% ARC DEX + protocol fee"
     : "1.00% bonding-curve fee";
@@ -1469,14 +1469,15 @@ function TradingDesk({
           const marketTrades = (tape.trades || []).filter((trade) => trade.token.toLowerCase() === asset.address.toLowerCase());
           consecutiveFailures = 0;
           setTapeHealth(tape.indexedAt && Date.now() - Date.parse(tape.indexedAt) <= 6_000 ? "live" : "delayed");
-          setChartTrades(
-            [...(asset.trades || []), ...marketTrades]
-              .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
-              .sort((a, b) => a.block - b.block)
-              .slice(-500),
-          );
+          // The tape only holds the latest few minutes; the table is built
+          // from indexed history plus the tape, or older fills vanish from it.
+          const merged = [...(asset.trades || []), ...marketTrades]
+            .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
+            .sort((a, b) => a.block - b.block)
+            .slice(-500);
+          setChartTrades(merged);
           if (marketTrades.length && Date.now() >= optimisticTapeUntil.current) {
-            setLiveTrades(marketTrades.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
+            setLiveTrades(merged.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
           }
         } else {
           const response = await fetch("/data/live-tape.json", { cache: "no-store" });
@@ -1488,14 +1489,15 @@ function TradingDesk({
           const marketTrades = (tape.trades || []).filter((trade) => trade.token.toLowerCase() === asset.address.toLowerCase());
           consecutiveFailures = 0;
           setTapeHealth(tape.indexedAt && Date.now() - Date.parse(tape.indexedAt) <= 5_000 ? "live" : "delayed");
-          setChartTrades(
-            [...(asset.trades || []), ...marketTrades]
-              .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
-              .sort((a, b) => a.block - b.block)
-              .slice(-500),
-          );
+          // The tape only holds the latest few minutes; the table is built
+          // from indexed history plus the tape, or older fills vanish from it.
+          const merged = [...(asset.trades || []), ...marketTrades]
+            .filter((trade, index, all) => all.findIndex((item) => item.tx === trade.tx && item.side === trade.side) === index)
+            .sort((a, b) => a.block - b.block)
+            .slice(-500);
+          setChartTrades(merged);
           if (marketTrades.length && Date.now() >= optimisticTapeUntil.current) {
-            setLiveTrades(marketTrades.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
+            setLiveTrades(merged.slice(-12).reverse().map((event) => ({ side: event.side, amount: BigInt(event.native), tokens: BigInt(event.tokens) })));
           }
         }
       } catch {
@@ -1928,7 +1930,7 @@ function TradingDesk({
   const burnedPct = asset.lpSupply && BigInt(asset.lpSupply) > 0n
     ? Number((BigInt(asset.lpBurned || "0") * 10_000n) / BigInt(asset.lpSupply)) / 100
     : 0;
-  const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: tradePrice(BigInt(trade.native), BigInt(trade.tokens)), volume: formatTradeQuote(BigInt(trade.native)) }));
+  const tradePrices = chartTrades.slice(-500).map((trade) => ({ timestamp: trade.timestamp || trade.block, price: trade.price && trade.price > 0 ? trade.price : tradePrice(BigInt(trade.native), BigInt(trade.tokens)), volume: formatTradeQuote(BigInt(trade.native)) }));
   // Shared with the trading terminal (src/candles.ts). This used to be its
   // own copy of the bucketing loop, with the same two bugs: empty buckets
   // were dropped, leaving holes in the series on any market that trades
@@ -1939,8 +1941,15 @@ function TradingDesk({
   // Price impact must compare execution against the current pool/curve spot
   // before the user's trade. Comparing against the previous trade made a
   // normal quote look like 18% impact after a large earlier buy.
-  const spotPrice = inventory > 0n ? Number(x) / Number(inventory) : lastPrice;
-  const averageExecutionPrice = quote > 0n && amountWei > 0n ? side === "buy" ? Number(amountWei) / Number(quote) : Number(quote) / Number(amountWei) : 0;
+  // A V13 pool has no curve reserves: spot is the pool price, and the hook's
+  // 1% is taken out of the execution price so impact means price movement.
+  const spotPrice = isPoolEngine
+    ? Number((asset as { price?: number }).price || 0) || lastPrice
+    : inventory > 0n ? Number(x) / Number(inventory) : lastPrice;
+  const rawExecutionPrice = quote > 0n && amountWei > 0n ? side === "buy" ? Number(amountWei) / Number(quote) : Number(quote) / Number(amountWei) : 0;
+  // Fees on a V13 swap: 1% launch hook plus the pool's own 0.30% LP tier.
+  const poolFeeFactor = 0.99 * 0.997;
+  const averageExecutionPrice = isPoolEngine ? (side === "buy" ? rawExecutionPrice * poolFeeFactor : rawExecutionPrice / poolFeeFactor) : rawExecutionPrice;
   const priceImpact = spotPrice > 0 && averageExecutionPrice > 0 ? Math.abs(averageExecutionPrice - spotPrice) / spotPrice * 100 : 0;
   const priceLabel = (price: number) => price > 0 && price < .000001 ? price.toFixed(12).replace(/0+$/, "") : price.toLocaleString(undefined, { maximumFractionDigits: 8 });
   useEffect(() => {

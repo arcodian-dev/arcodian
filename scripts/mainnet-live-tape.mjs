@@ -295,11 +295,14 @@ async function tick() {
     const abs = (v) => (v < 0n ? -v : v);
     const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
     const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+    // Post-swap pool spot price (see mainnet-market-index.mjs).
+    const sqrtAfter = Number(BigInt(`0x${data.slice(128, 192)}`)) / 2 ** 96;
+    const spot = pool.tokenIsZero ? sqrtAfter * sqrtAfter * 1e12 : 1e12 / (sqrtAfter * sqrtAfter);
     const tx = await provider.getTransaction(log.transactionHash).catch(() => null);
     v4Fresh.push({
       token: pool.token, symbol: pool.symbol, side: buy ? "BUY" : "SELL", block: log.blockNumber, tx: log.transactionHash,
       user: tx?.from || "", native: (quoteGross * 10n ** 12n).toString(), tokens: tokensGross.toString(),
-      timestamp: blockTimes.get(log.blockNumber) || 0,
+      price: spot, timestamp: blockTimes.get(log.blockNumber) || 0,
     });
   }
   trades = [...trades, ...fresh, ...v4Fresh]

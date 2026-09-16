@@ -313,15 +313,39 @@ const V4_POOL_MANAGER = process.env.ARC_V4_POOL_MANAGER || "0x8366a39CC670B4001A
 // ModifyLiquidity, and with the pool id as topic1 it matched the launch's own
 // liquidity seeding and decoded tick bounds as a trade.
 const V4_SWAP_TOPIC = "0x40e9cecb9f5f1f1c5b9c97dec2917b7ee92e57ba5563708daca94dd84ad7112f";
-const V4_TRADES_VERSION = 2;
+const V4_TRADES_VERSION = 3;
 const poolManagerAbi = ["function extsload(bytes32) view returns(bytes32)"];
 const Q96 = 2n ** 96n;
 // V13's launch ticks and the usable tick bounds for spacing 60.
 const V13_LAUNCH_TICK = 398_400;
-const MIN_USABLE_TICK = -887_220;
+// Matches the factory: (MIN_TICK / 60 + 1) * 60, where Solidity division
+// truncates toward zero — so -887_160, not the mirror of MAX.
+const MIN_USABLE_TICK = -887_160;
 const MAX_USABLE_TICK = 887_220;
 const V13_GRADUATION = 12_000n * 10n ** 18n; // normalized 18-dec, a milestone only
-const sqrtAtTick = (tick) => BigInt(Math.floor(Math.sqrt(1.0001 ** tick) * 2 ** 96));
+// TickMath.getSqrtPriceAtTick, exact. A float approximation is not good
+// enough here: a fresh pool sits exactly on its launch tick, and a few parts
+// per billion of float error read as phantom USDC raised.
+const sqrtAtTick = (tick) => {
+  const abs = BigInt(tick < 0 ? -tick : tick);
+  let ratio = (abs & 0x1n) !== 0n ? 0xfffcb933bd6fad37aa2d162d1a594001n : 0x100000000000000000000000000000000n;
+  const steps = [
+    0xfff97272373d413259a46990580e213an, 0xfff2e50f5f656932ef12357cf3c7fdccn, 0xffe5caca7e10e4e61c3624eaa0941cd0n,
+    0xffcb9843d60f6159c9db58835c926644n, 0xff973b41fa98c081472e6896dfb254c0n, 0xff2ea16466c96a3843ec78b326b52861n,
+    0xfe5dee046a99a2a811c461f1969c3053n, 0xfcbe86c7900a88aedcffc83b479aa3a4n, 0xf987a7253ac413176f2b074cf7815e54n,
+    0xf3392b0822b70005940c7a398e4b70f3n, 0xe7159475a2c29b7443b29c7fa6e889d9n, 0xd097f3bdfd2022b8845ad8f792aa5825n,
+    0xa9f746462d870fdf8a65dc1f90e061e5n, 0x70d869a156d2a1b890bb3df62baf32f7n, 0x31be135f97d08fd981231505542fcfa6n,
+    0x9aa508b5b7a84e1c677de54f3e99bc9n, 0x5d6af8dedb81196699c329225ee604n, 0x2216e584f5fa1ea926041bedfe98n,
+    0x48a170391f7dc42444e8fa2n,
+  ];
+  steps.forEach((factor, i) => { if ((abs & (1n << BigInt(i + 1))) !== 0n) ratio = (ratio * factor) >> 128n; });
+  if (tick > 0) ratio = ((1n << 256n) - 1n) / ratio;
+  return (ratio >> 32n) + (ratio % (1n << 32n) === 0n ? 0n : 1n);
+};
+const TRANSFER_TOPIC = keccak256(Buffer.from("Transfer(address,address,uint256)"));
+const V13_HOLDERS_STATE = process.env.MAINNET_V13_HOLDERS || `${dirname(OUTPUT)}/mainnet-v13-holders.json`;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const int24Packed = (tick) => toBeHex(BigInt.asUintN(24, BigInt(tick)), 3);
 
 /**
  * V13 launches, read from the factory and the V4 PoolManager.
@@ -339,6 +363,7 @@ const sqrtAtTick = (tick) => BigInt(Math.floor(Math.sqrt(1.0001 ** tick) * 2 ** 
  * the input side is grossed back up to what the trader actually spent.
  */
 async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
+  const holderState = await readFile(V13_HOLDERS_STATE, "utf8").then(JSON.parse).catch(() => ({}));
   const factory = new Contract(FACTORY, v4FactoryAbi, provider);
   const manager = new Contract(V4_POOL_MANAGER, poolManagerAbi, provider);
   const count = Number(await factory.launchCount());
@@ -368,26 +393,60 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
       const tokenIsZero = BigInt(address) < BigInt(USDC);
 
       const stateSlot = keccak256(concat([poolId, zeroPadValue(toBeHex(6), 32)]));
-      const liquiditySlot = zeroPadValue(toBeHex(BigInt(stateSlot) + 3n), 32);
-      const [slot0, liquidityWord] = await Promise.all([manager.extsload(stateSlot), manager.extsload(liquiditySlot)]);
+      // The factory's own position, not the pool's active liquidity. A fresh
+      // pool sits exactly on the edge of its single range, where Uniswap
+      // counts the position as out of range and active liquidity reads 0 —
+      // which made every untraded V13 coin show an empty pool and no holders.
+      const [tickLower, tickUpper] = tokenIsZero ? [-V13_LAUNCH_TICK, MAX_USABLE_TICK] : [MIN_USABLE_TICK, V13_LAUNCH_TICK];
+      const positionKey = keccak256(concat([FACTORY, int24Packed(tickLower), int24Packed(tickUpper), zeroPadValue("0x", 32)]));
+      const positionSlot = keccak256(concat([positionKey, zeroPadValue(toBeHex(BigInt(stateSlot) + 6n), 32)]));
+      const [slot0, positionWord] = await Promise.all([manager.extsload(stateSlot), manager.extsload(positionSlot)]);
       const sqrtP = BigInt(slot0) & ((1n << 160n) - 1n);
-      const L = BigInt(liquidityWord) & ((1n << 128n) - 1n);
+      const L = BigInt(positionWord) & ((1n << 128n) - 1n);
 
       let raised6 = 0n, tokensInPool = 0n, priceX = 0;
       if (sqrtP > 0n) {
         const ratio = Number(sqrtP) / 2 ** 96;
+        const sqrtLower = sqrtAtTick(tickLower), sqrtUpper = sqrtAtTick(tickUpper);
+        const clamped = sqrtP < sqrtLower ? sqrtLower : sqrtP > sqrtUpper ? sqrtUpper : sqrtP;
+        const amount0 = (L * Q96 * (sqrtUpper - clamped)) / clamped / sqrtUpper;
+        const amount1 = (L * (clamped - sqrtLower)) / Q96;
         if (tokenIsZero) {
-          const sqrtLower = sqrtAtTick(-V13_LAUNCH_TICK), sqrtUpper = sqrtAtTick(MAX_USABLE_TICK);
-          raised6 = sqrtP > sqrtLower ? (L * (sqrtP - sqrtLower)) / Q96 : 0n;
-          tokensInPool = (L * Q96 * (sqrtUpper - sqrtP)) / (sqrtP * sqrtUpper);
+          [tokensInPool, raised6] = [amount0, amount1];
           priceX = ratio * ratio * 1e12; // USDC per token
         } else {
-          const sqrtLower = sqrtAtTick(MIN_USABLE_TICK), sqrtUpper = sqrtAtTick(V13_LAUNCH_TICK);
-          raised6 = sqrtUpper > sqrtP ? (L * Q96 * (sqrtUpper - sqrtP)) / (sqrtP * sqrtUpper) : 0n;
-          tokensInPool = (L * (sqrtP - sqrtLower)) / Q96;
+          [tokensInPool, raised6] = [amount1, amount0];
           priceX = ratio > 0 ? 1e12 / (ratio * ratio) : 0;
         }
       }
+
+      // Holders from the token's own Transfer log, carried forward by cursor.
+      // A V4 pool's tokens sit in the PoolManager, which is labelled as the
+      // pool rather than counted as a holder.
+      const holderKey = String(address).toLowerCase();
+      const held = holderState[holderKey] ||= { block: Number(created.get(holderKey)?.block || fromBlock) - 1, balances: {} };
+      try {
+        const transfers = await provider.getLogs({ address, topics: [TRANSFER_TOPIC], fromBlock: held.block + 1, toBlock: latestBlock });
+        for (const log of transfers) {
+          const from = `0x${log.topics[1].slice(26)}`, to = `0x${log.topics[2].slice(26)}`;
+          const value = BigInt(log.data);
+          if (from !== ZERO_ADDRESS) held.balances[from] = (BigInt(held.balances[from] || 0) - value).toString();
+          held.balances[to] = (BigInt(held.balances[to] || 0) + value).toString();
+        }
+        held.block = latestBlock;
+      } catch (error) {
+        console.error(`V13 holders for ${symbol} unreadable: ${String(error).slice(0, 90)}`);
+      }
+      const manager_ = V4_POOL_MANAGER.toLowerCase();
+      const holding = Object.entries(held.balances)
+        .map(([holder, balance]) => [holder, BigInt(balance)])
+        // The factory keeps rounding dust from seeding; it is not a holder.
+        .filter(([holder, balance]) => balance > 0n && holder !== ZERO_ADDRESS && holder !== FACTORY.toLowerCase());
+      const topHolders = holding
+        .sort(([, a], [, b]) => (a > b ? -1 : a < b ? 1 : 0))
+        .slice(0, 10)
+        .map(([holder, balance]) => ({ address: holder, balance: balance.toString(), ...(holder === manager_ ? { kind: "liquidity_pool" } : {}) }));
+      const holderCount = holding.filter(([holder]) => holder !== manager_).length;
 
       // Trades since the last cursor, by pool id.
       // Trades written before the Swap topic was corrected are not trades —
@@ -411,11 +470,16 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
           // Gross the input side back up by the hook's 1%.
           const quoteGross = buy ? (abs(quoteDelta) * 10_000n) / 9_900n : abs(quoteDelta);
           const tokensGross = buy ? abs(tokenDelta) : (abs(tokenDelta) * 10_000n) / 9_900n;
+          // Pool spot price right after this swap, from the event's own
+          // sqrtPriceX96. Charted instead of native/tokens, which carries the
+          // 1% hook fee on one side and made a round trip look like a crash.
+          const sqrtAfter = Number(word(2)) / 2 ** 96;
+          const spot = tokenIsZero ? sqrtAfter * sqrtAfter * 1e12 : 1e12 / (sqrtAfter * sqrtAfter);
           const tx = await provider.getTransaction(log.transactionHash).catch(() => null);
           trades.push({
             side: buy ? "BUY" : "SELL", block: log.blockNumber, tx: log.transactionHash,
             user: tx?.from || "", native: (quoteGross * 10n ** 12n).toString(), tokens: tokensGross.toString(),
-            timestamp: await timeOf(log.blockNumber),
+            price: spot, timestamp: await timeOf(log.blockNumber),
           });
         }
       } catch (error) {
@@ -439,7 +503,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
         reserve: reserve.toString(), virtualReserve: "0", threshold: V13_GRADUATION.toString(),
         inventory: tokensInPool.toString(), marketCap: marketCap.toString(), liquidity: (reserve * 2n).toString(),
         price: priceX, lpSupply: "0", lpBurned: "0", indexedBlock: latestBlock, v4TradesVersion: V4_TRADES_VERSION,
-        tradeCount: trades.length, holderCount: new Set(trades.map((t) => String(t.user).toLowerCase())).size,
+        tradeCount: trades.length, holderCount, topHolders,
         volume: trades.reduce((sum, t) => sum + BigInt(t.native), 0n).toString(),
         createdAt: meta ? await timeOf(meta.block) : Number(old?.createdAt || 0),
         trades,
@@ -448,6 +512,8 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous) {
       console.error(`V13 launch ${id} unreadable: ${String(error).slice(0, 90)}`);
     }
   }
+  await writeFile(`${V13_HOLDERS_STATE}.tmp`, JSON.stringify(holderState));
+  await rename(`${V13_HOLDERS_STATE}.tmp`, V13_HOLDERS_STATE);
   return rows;
 }
 
@@ -965,6 +1031,8 @@ for (const item of launchesOut) {
   item.priceChange1h = changeFor(priced, nowSeconds, 3600) ?? changeFromHistory(item.priceHistory, nowSeconds, 3600, spotPrice);
   item.priceChange24h = changeFor(priced, nowSeconds, 86400) ?? changeFromHistory(item.priceHistory, nowSeconds, 86400, spotPrice);
   item.tradeCount = trades.length;
+  // V13 rows already carry holders read from the token's Transfer log.
+  if (Number(item.engineVersion) >= 13) continue;
   const inventoryHolder = item.graduated ? item.pair : item.curve;
   item.topHolders = holderSnapshot(trades, inventoryHolder, BigInt(item.inventory || 0), item.graduated ? "liquidity_pool" : "bonding_curve");
   // holderCount must be the real distinct-trader count, not topHolders.length:

@@ -11,7 +11,7 @@ import { arcProvider, CoinIcon, quoteDecimalsOf, rpcUrlsFor } from "../shared";
 import "./ArcodianTerminal.css";
 import "./TradingTerminal.css";
 
-type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string };
+type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string; price?: number };
 type MarketRecord = {
   address: string;
   name: string;
@@ -50,6 +50,8 @@ function money(value: number): string {
 }
 
 function tradePrice(trade: MarketTrade | undefined, globalPool = false): number {
+  // V4 pool trades carry the pool's post-swap spot price, fee-free.
+  if (trade?.price && trade.price > 0) return trade.price;
   if (!trade?.native || !trade.tokens || BigInt(trade.tokens) <= 0n) return 0;
   // Canonical launches have 18-decimal quote and token legs. Global pools
   // have a 6-decimal USDC quote leg, so normalize that ratio once.
