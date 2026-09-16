@@ -189,6 +189,42 @@ const ADDRESS_LOG_CHUNK_BLOCKS = Number(process.env.INDEX_ADDRESS_LOG_CHUNK_BLOC
 // trading, even seconds after a real buy/sell. `priced` must be sorted
 // ascending by time. Returns null (not 0) when there's no trade old enough
 // to serve as a baseline — genuinely unknown, not "no change".
+/**
+ * Hourly price samples, carried across runs.
+ *
+ * changeFor() needs a trade older than the window it is measuring, and on a
+ * busy market it never has one: the per-token trade list is capped at 1,000,
+ * and 1,000 trades can be a single hour. So priceChange1h and priceChange24h
+ * came out null for exactly the markets anyone would want them for — the
+ * screener's 24h column was empty on every row.
+ *
+ * Keeping 24 hours of raw trades would mean tens of thousands per token.
+ * One close per hour is enough to answer "what did this cost a day ago" and
+ * costs 26 numbers.
+ */
+function rollPriceHistory(previous, nowSeconds, price) {
+  const history = Array.isArray(previous) ? previous.filter((point) => point && Number.isFinite(point.t) && Number.isFinite(point.p)) : [];
+  if (!Number.isFinite(price) || price <= 0) return history.slice(-26);
+  const hour = Math.floor(nowSeconds / 3600) * 3600;
+  const last = history.at(-1);
+  if (last && last.t === hour) last.p = price;
+  else history.push({ t: hour, p: price });
+  // 26 keeps a full day plus the edges either side of it.
+  return history.filter((point) => point.t >= hour - 26 * 3600).slice(-26);
+}
+
+/** Percent change against the sample closest to `seconds` ago, or null. */
+function changeFromHistory(history, nowSeconds, seconds, currentPrice) {
+  if (!Array.isArray(history) || !history.length || !Number.isFinite(currentPrice) || currentPrice <= 0) return null;
+  const cutoff = nowSeconds - seconds;
+  // Only answer when a sample actually predates the window. Reporting the
+  // change since the oldest sample we happen to hold would label an hour of
+  // history as a day.
+  const before = [...history].reverse().find((point) => point.t <= cutoff);
+  if (!before || !before.p) return null;
+  return ((currentPrice - before.p) / before.p) * 100;
+}
+
 function changeFor(priced, now, seconds) {
   const last = priced.at(-1);
   if (!last) return null;
@@ -752,10 +788,17 @@ for (const item of launchesOut) {
   item.volume10m = volumeFor(600).toString();
   item.volume1h = volumeFor(3600).toString();
   item.volume24h = volumeFor(86400).toString();
+  const lastPriced = priced.at(-1);
+  const spotPrice = lastPriced && BigInt(lastPriced.tokens || 0) > 0n
+    ? Number(BigInt(lastPriced.native)) / Number(BigInt(lastPriced.tokens))
+    : 0;
+  item.priceHistory = rollPriceHistory(item.priceHistory, nowSeconds, spotPrice);
   item.priceChange5m = changeFor(priced, nowSeconds, 300);
   item.priceChange10m = changeFor(priced, nowSeconds, 600);
-  item.priceChange1h = changeFor(priced, nowSeconds, 3600);
-  item.priceChange24h = changeFor(priced, nowSeconds, 86400);
+  // Trades first, hourly samples as the fallback — the trade list is exact
+  // but only covers as far back as it covers.
+  item.priceChange1h = changeFor(priced, nowSeconds, 3600) ?? changeFromHistory(item.priceHistory, nowSeconds, 3600, spotPrice);
+  item.priceChange24h = changeFor(priced, nowSeconds, 86400) ?? changeFromHistory(item.priceHistory, nowSeconds, 86400, spotPrice);
   item.tradeCount = trades.length;
   const inventoryHolder = item.graduated ? item.pair : item.curve;
   item.topHolders = holderSnapshot(trades, inventoryHolder, BigInt(item.inventory || 0), item.graduated ? "liquidity_pool" : "bonding_curve");
@@ -791,6 +834,16 @@ const payload = {
 // is never.
 for (const row of payload.launches) {
   if (typeof row.quoteDecimals !== "number") row.quoteDecimals = row.globalPool ? 6 : row.currency === "EURC" ? 6 : 18;
+  // createdAt is a unix timestamp everywhere else in this payload. External
+  // pool rows used to receive a block height here, and rows written before
+  // that was fixed still carry one — a ~21,000,000 read as seconds since the
+  // epoch renders as "1970", which is why the screener's Age column was
+  // empty on every external market. Repair on the way out rather than
+  // waiting for each pool's next trade to rebuild it.
+  if (!row.createdAt || row.createdAt < 1_600_000_000) {
+    const firstTrade = (row.trades || []).find((trade) => Number(trade?.timestamp) > 1_600_000_000);
+    row.createdAt = Number(firstTrade?.timestamp || 0);
+  }
 }
 for (const row of payload.pools || []) {
   if (typeof row.quoteDecimals !== "number") row.quoteDecimals = 6;

@@ -12,6 +12,7 @@ import { CostLine } from "../components/CostLine";
 import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type Candle } from "../candles";
 import { findBestExternalV3Route } from "../routingReads";
+import { ScreenerTable, DEFAULT_SCREENER_FILTERS, type ScreenerFilters } from "../components/ScreenerTable";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -233,6 +234,8 @@ export default function Screener({
   const [filter, setFilter] = useState("All");
   const [sortKey, setSortKey] = useState<"volume" | "change" | "holders" | "progress" | "marketCap" | "liquidity" | null>(null);
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [view, setView] = useState<"screener" | "cards">("screener");
+  const [screenerFilters, setScreenerFilters] = useState<ScreenerFilters>(DEFAULT_SCREENER_FILTERS);
   const [marketView, setMarketView] = useState<"markets" | "arena">("markets");
   // Display currency is presentation only — it never reaches a contract call.
   const [displayCurrency, setDisplayCurrency] = useState<Currency>(loadDisplayCurrency);
@@ -814,16 +817,26 @@ export default function Screener({
         ))}
         <CurrencyToggle value={displayCurrency} onChange={setDisplayCurrency} />
       </div>
-      <div className="screener-sort-bar" aria-label="Global market sorting">
-        <span>Sort global markets:</span>
-        {([["marketCap", "Market cap"], ["liquidity", "Liquidity"], ["volume", "24h volume"]] as const).map(([key, label]) => (
-          <button key={key} className={sortKey === key ? "active" : ""} onClick={() => sortBy(key)}>{label}{sortMark(key)}</button>
-        ))}
+      <div className="screener-sort-bar" aria-label="Market view">
+        <span>View:</span>
+        <button className={view === "screener" ? "active" : ""} onClick={() => setView("screener")}>Screener</button>
+        <button className={view === "cards" ? "active" : ""} onClick={() => setView("cards")}>Cards</button>
+        {view === "cards" && <>
+          <span className="screener-sort-sep">Sort:</span>
+          {([["marketCap", "Market cap"], ["liquidity", "Liquidity"], ["volume", "24h volume"]] as const).map(([key, label]) => (
+            <button key={key} className={sortKey === key ? "active" : ""} onClick={() => sortBy(key)}>{label}{sortMark(key)}</button>
+          ))}
+        </>}
       </div>
       {loading ? (
         <div className="loading-board">
           Reading canonical factories onchain…
         </div>
+      ) : view === "screener" ? (
+        // The dense table is the default: 1,100+ markets are not comparable
+        // as cards, and market cap, liquidity, volume and the change columns
+        // are the whole reason to open a screener at all.
+        <ScreenerTable rows={rows.filter((row): row is LaunchAsset => "curve" in row) } filters={screenerFilters} onFilters={setScreenerFilters} onOpen={openMarketAsset} />
       ) : (
         <div className={["Launchpad", "New", "Trending"].includes(filter) ? "market-views prefer-cards" : "market-views"}>
         <div className="market-table-view" role="table" aria-label="Markets">

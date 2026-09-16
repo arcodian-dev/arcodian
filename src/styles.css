@@ -5337,3 +5337,162 @@ footer::before {
   white-space: nowrap;
   vertical-align: middle;
 }
+
+/* ---------- Market screener ----------
+   A dense table, because the card grid stopped working the moment the index
+   passed a thousand markets: comparing two tokens meant scrolling past
+   everything between them. Every column here reads a field the index already
+   produces — nothing in this view fetches. */
+
+.screener { display: flex; flex-direction: column; gap: 12px; }
+
+.screener-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(112, 132, 157, 0.14);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(13, 19, 28, 0.9), rgba(6, 9, 14, 0.92));
+}
+
+.screener-filters label { display: flex; flex-direction: column; gap: 5px; }
+
+.screener-filters label > span {
+  color: #68778c;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.screener-filters input,
+.screener-filters select {
+  min-width: 130px;
+  padding: 8px 10px;
+  border: 1px solid rgba(112, 132, 157, 0.2);
+  border-radius: 9px;
+  color: #f4f8ff;
+  background: rgba(255, 255, 255, 0.03);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 11px;
+  outline: none;
+}
+
+.screener-filters input:focus,
+.screener-filters select:focus { border-color: rgba(25, 231, 154, 0.45); }
+
+.screener-clear {
+  padding: 8px 12px;
+  border: 1px solid rgba(112, 132, 157, 0.2);
+  border-radius: 9px;
+  color: #c7d1df;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.screener-count {
+  margin-left: auto;
+  color: #68778c;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.screener-scroll { overflow-x: auto; }
+
+.screener-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.screener-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(112, 132, 157, 0.16);
+  color: #68778c;
+  background: #070a0f;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.screener-table thead th.num { text-align: right; }
+.screener-table thead th.sorted { color: #19e79a; }
+.screener-table thead th i { margin-left: 4px; font-style: normal; }
+.screener-table thead th.rank,
+.screener-table thead th.token,
+.screener-table thead th.trend,
+.screener-table thead th.venue { cursor: default; }
+
+.screener-table tbody tr {
+  border-bottom: 1px solid rgba(112, 132, 157, 0.07);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.screener-table tbody tr:hover { background: rgba(25, 231, 154, 0.045); }
+.screener-table td { padding: 9px 12px; color: #c7d1df; white-space: nowrap; }
+.screener-table td.num { text-align: right; }
+.screener-table td.mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+.screener-table td.rank { color: #445166; font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; }
+.screener-table td.up { color: #19e79a; }
+.screener-table td.down { color: #ff5b70; }
+.screener-table td.flat { color: #68778c; }
+
+.screener-coin { display: flex; align-items: center; gap: 9px; }
+.screener-coin img,
+.screener-coin svg { width: 24px; height: 24px; border-radius: 7px; object-fit: cover; }
+.screener-coin b { display: block; color: #f4f8ff; font-size: 12px; }
+.screener-coin small { display: block; max-width: 160px; overflow: hidden; color: #68778c; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+.screener-table td.trend { width: 90px; }
+.screener-table td.trend svg { width: 78px; height: 24px; fill: none; stroke-width: 1.6; }
+.screener-table td.trend svg.up polyline { stroke: #19e79a; }
+.screener-table td.trend svg.down polyline { stroke: #ff5b70; }
+.screener-table td.trend svg.flat polyline { stroke: #68778c; }
+.screener-table td.trend svg polyline { fill: none; stroke-width: 1.6; vector-effect: non-scaling-stroke; }
+.trend-empty { color: #445166; }
+
+.screener-table td.venue span {
+  padding: 3px 8px;
+  border: 1px solid rgba(112, 132, 157, 0.18);
+  border-radius: 999px;
+  color: #9aa8bb;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 9px;
+}
+
+.screener-empty { padding: 28px; color: #68778c; text-align: center; font-size: 12px; }
+
+.screener-more {
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid rgba(112, 132, 157, 0.18);
+  border-radius: 11px;
+  color: #c7d1df;
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.screener-sort-sep { margin-left: 10px; }
+
+@media (max-width: 900px) {
+  .screener-filters label,
+  .screener-filters input,
+  .screener-filters select { min-width: 0; flex: 1 1 140px; }
+  .screener-count { margin-left: 0; width: 100%; }
+}
