@@ -72,6 +72,27 @@ async function verify(address, path, name, input, profile = "default") {
   return { ok: false, error: "rate limited" };
 }
 
+// Returns the match type ("exact_match" / "match") or null. Already-verified
+// contracts answer 409, which counts as done.
+async function sourcify(address, identifier, input, creationTransactionHash) {
+  try {
+    const res = await fetch(`https://sourcify.dev/server/v2/verify/5042/${address}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ stdJsonInput: input, compilerVersion: COMPILER_BY_PROFILE.v4.replace(/^v/, ""), contractIdentifier: identifier, creationTransactionHash }),
+    });
+    if (res.status === 409) return "already";
+    if (!res.ok) return null;
+    const { verificationId } = await res.json();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await sleep(5_000);
+      const job = await (await fetch(`https://sourcify.dev/server/v2/verify/${verificationId}`)).json();
+      if (job.isJobCompleted) return job.contract?.match || null;
+    }
+  } catch {}
+  return null;
+}
+
 const done = (() => { try { return JSON.parse(readFileSync(STATE, "utf8")); } catch { return { contracts: {} }; } })();
 done.contracts ||= {};
 
@@ -150,6 +171,20 @@ for (const launch of launches) {
     console.error(`failed ${launch.symbol} ${launch.address}: ${result.error}`);
   }
   await sleep(9_000);
+
+  // Sourcify too, for V13 pool launches. Scanners and explorers other than
+  // arcexplorer read verification from Sourcify, and it matches contracts
+  // arcexplorer cannot index at all (the CREATE2-deployed launch hook).
+  if (Number(launch.engineVersion) >= 13 && tokenInputs.v4 && !done.contracts[address]?.sourcify) {
+    const creationTx = (await status(address))?.creationTx;
+    if (creationTx) {
+      const match = await sourcify(launch.address, "src/ArcPump.sol:PumpToken", tokenInputs.v4, creationTx);
+      if (match) {
+        done.contracts[address] = { ...(done.contracts[address] || {}), sourcify: match };
+        console.log(`sourcify ${launch.symbol} ${launch.address} (${match})`);
+      }
+    }
+  }
 
   // The launch's curve, using whichever engine produced it.
   const engine = Number(launch.engineVersion || 0);
