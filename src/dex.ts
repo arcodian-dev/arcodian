@@ -1,4 +1,4 @@
-import { ARC, ARC_EURC_ADDRESS } from "./config";
+import { ARC, ARC_EURC_ADDRESS, ARC_MAINNET_CONTRACTS } from "./config";
 
 /** The two fee tiers ArcPairFactory accepts, in basis points. */
 export type Tier = 10 | 30;
@@ -55,7 +55,12 @@ export function shortAddress(value: string): string {
  * addresses. There is deliberately no way to extend this set at runtime; see the
  * spec's "Token entry" section for why a grantable badge is refused.
  */
-const CIRCLE_ASSETS = [ARC.nativeToken, ARC_EURC_ADDRESS].map((a) => a.toLowerCase());
+// Both networks' EURC is listed because these are genuinely different
+// contracts at different addresses (Arc Mainnet EURC was published
+// 2026-09-16; before that only the testnet one existed) and this helper is
+// called from surfaces that can be looking at either network. Native USDC
+// is at the same fixed precompile address on both, so it needs one entry.
+const CIRCLE_ASSETS = [ARC.nativeToken, ARC_EURC_ADDRESS, ARC_MAINNET_CONTRACTS.eurc].map((a) => a.toLowerCase());
 export function isCircleAsset(address: string): boolean {
   return CIRCLE_ASSETS.includes(address.trim().toLowerCase());
 }

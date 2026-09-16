@@ -25,8 +25,17 @@ const ROUTERS = [
   { chainId: 10, domain: 2, address: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967", rpcs: ["https://optimism-rpc.publicnode.com", "https://mainnet.optimism.io"], fromBlock: 154938740, isArc: false },
   { chainId: 42161, domain: 3, address: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967", rpcs: ["https://arbitrum-one-rpc.publicnode.com", "https://arb1.arbitrum.io/rpc"], fromBlock: 489538042, isArc: false },
   { chainId: 8453, domain: 6, address: "0x274454aa0413b96651983c5efd6817cb30968e71", rpcs: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"], fromBlock: 49343417, isArc: false },
-  { chainId: 5042, domain: 26, address: "0xc35deb937f5056a0e034f10e21094878485caee7", rpcs: ["https://arc-rpc.stakeme.pro", "https://arcodian.fun/api/rpc-mainnet.php"], fromBlock: 13126352, isArc: true },
+  { chainId: 5042, domain: 26, address: "0xc35deb937f5056a0e034f10e21094878485caee7", rpcs: ["https://rpc.blockdaemon.mainnet.arc.io", "https://rpc.mainnet.arc.io", "https://arcodian.fun/api/rpc-mainnet.php"], fromBlock: 13126352, isArc: true },
 ];
+// Arc RPCs switched to Circle's official endpoints 2026-09-16, the day
+// docs.arc.io first published them. arc-rpc.stakeme.pro (the previous
+// primary) has been dead for a while — it answers every request with
+// "ARC_MAINNET is not enabled for this app", an Alchemy-side config problem
+// on the operator's end — so every single run was burning a full
+// network-detection retry on it ("JsonRpcProvider failed to detect network",
+// visible in this unit's journal on every tick) before falling through to
+// the proxy. Blockdaemon leads because this script's eth_getLogs calls are
+// range-heavy and it is the only Arc endpoint that serves wide ranges.
 const DOMAIN_TO_CHAIN = { 0: 1, 2: 10, 3: 42161, 6: 8453, 26: 5042 };
 
 // Arbitrum alone spans ~12.5M blocks since the router's deploy block at

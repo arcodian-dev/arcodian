@@ -22,9 +22,16 @@ export default function PortfolioPanel({ account, onConnect, onManagePool, chain
   const isMainnet = chainId == null || chainId === ARC_MAINNET.id;
   const activeArc = isMainnet ? ARC_MAINNET : ARC;
   const activeFactory = isMainnet ? ARC_MAINNET_CONTRACTS.marketPairFactory : ARC_PAIR_FACTORY_ADDRESS;
-  // Native USDC lives at the same fixed address on both networks; EURC only
-  // exists on testnet, so mainnet's holdings row is USDC-only.
-  const watchedTokens = isMainnet ? [ARC.nativeToken] : [ARC.nativeToken, ARC_EURC_ADDRESS];
+  // Native USDC lives at the same fixed address on both networks. EURC does
+  // not: Circle published the Arc Mainnet EURC contract on 2026-09-16 (the
+  // testnet address has no code on mainnet and vice versa), so each network
+  // gets its own. Before that date mainnet had no EURC at all and this row
+  // was USDC-only. Reading a balance is read-only and safe to enable the
+  // moment the token exists — unlike the FX/launchpad surfaces, which need
+  // Arcodian contracts deployed against this EURC first.
+  const watchedTokens = isMainnet
+    ? [ARC.nativeToken, ARC_MAINNET_CONTRACTS.eurc]
+    : [ARC.nativeToken, ARC_EURC_ADDRESS];
   const read = useMemo(() => arcProvider(activeArc), [activeArc]);
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [positions, setPositions] = useState<LpPosition[]>([]);

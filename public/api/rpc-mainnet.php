@@ -1,8 +1,9 @@
 <?php
-// Same-origin Arc Mainnet JSON-RPC proxy. No official Circle endpoint is
-// public yet (see contracts.mainnet.json) — every candidate below is a
-// third-party community node, independently verified live (eth_chainId ==
-// 0x13b2) 2026-08-30. arc-rpc.stakeme.pro, previously the primary, now
+// Same-origin Arc Mainnet JSON-RPC proxy. Circle's own endpoints went
+// public 2026-09-16 (see $primary below) and now lead the pool; the
+// third-party community nodes that carried this from 2026-08-30 until then,
+// each independently verified live (eth_chainId == 0x13b2), are kept behind
+// them as fallbacks. arc-rpc.stakeme.pro, previously the primary, now
 // answers "ARC_MAINNET is not enabled for this app" (an Alchemy-side app
 // config issue on their end, not ours) and is dropped entirely rather than
 // wasting a retry on a deterministic failure. Originally routed through
@@ -34,7 +35,48 @@ if ($body === '' || strlen($body) > 262144) {
   exit;
 }
 
-$endpoints = [
+// Circle's official Arc Mainnet endpoints, published on docs.arc.io
+// (arc/references/connect-to-arc) on 2026-09-16, the day of the public
+// mainnet launch — until then no official endpoint existed at all, which is
+// what the comment at the top of this file describes. All four verified
+// live from this server before the switch: correct chainId (0x13b2), real
+// head blocks, 0.12-0.50s round trip, and no failures across a 20-request
+// parallel burst.
+//
+// Split into primary/fallback instead of one shuffled pool. The official
+// four are shuffled among themselves to spread load (same reasoning as
+// before), but the legacy community endpoints stay in fixed order AFTER
+// them rather than being mixed in, because they are no longer equivalent:
+// on launch night arc-scan answered "temporarily out of capacity" /
+// "rate limiting requests from this client" / 503, railway-warp returned
+// 400, and thirdweb threw "could not coalesce error" — a shuffle that can
+// deal any of those first turns a healthy request into a retry round-trip.
+// They are kept because none of the official endpoints serves a
+// many-address eth_getLogs except blockdaemon, and arc-scan does when it is
+// healthy (~92,000-block ranges), so they are still worth having last.
+$primary = [
+  [
+    'name' => 'arc-official',
+    'url' => 'https://rpc.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
+  [
+    'name' => 'arc-blockdaemon',
+    'url' => 'https://rpc.blockdaemon.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
+  [
+    'name' => 'arc-quicknode',
+    'url' => 'https://rpc.quicknode.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
+  [
+    'name' => 'arc-drpc',
+    'url' => 'https://rpc.drpc.mainnet.arc.io',
+    'headers' => ['Content-Type: application/json'],
+  ],
+];
+$fallback = [
   [
     'name' => 'arc-scan',
     'url' => 'https://rpc.arc-scan.org/',
@@ -51,28 +93,8 @@ $endpoints = [
     'headers' => ['Content-Type: application/json'],
   ],
 ];
-// arc-scan (rpc.arc-scan.org) added 2026-09-12 — Arcscan's own mainnet RPC,
-// verified live: correct chainId, real recent blocks, full CORS, handles a
-// many-address eth_getLogs fine, ~0.3-1.2s round trip (comparable to or
-// better than the other two). Listed first but still shuffled with the
-// rest below, same as always.
-// baracat (arc-mainnet-rpc.baracat.meme) dropped 2026-08-02 — caught ~65
-// blocks behind the other two endpoints while still answering every eth_call
-// with a stale-but-HTTP-200 result, which (combined with a fixed try-order
-// that always hit it first) permanently masked fresher data no matter how
-// many times a read was retried. radar-railway (radar-api-rpc.up.railway.app)
-// removed 2026-08-30 — that Railway app no longer exists ("Application not
-// found", a deterministic 404 on every single request), so it had been
-// silently burning a full connect-timeout on every proxied call whenever
-// shuffle() picked it first, for however long it's been dead. thirdweb's
-// public anonymous endpoint added as a second, independently-hosted
-// candidate (works without a client ID, unlike VITE_THIRDWEB_CLIENT_ID
-// elsewhere in this codebase) — occasionally rate-limited/errors on its own,
-// which is fine, it just falls through to railway-warp same as any other
-// failed candidate. Shuffling spreads load across both instead of pinning
-// to whichever is listed first, same pattern as the testnet proxy (rpc.php)
-// already uses.
-shuffle($endpoints);
+shuffle($primary);
+$endpoints = array_merge($primary, $fallback);
 
 $attempts = 4;
 for ($i = 0; $i < $attempts; $i++) {

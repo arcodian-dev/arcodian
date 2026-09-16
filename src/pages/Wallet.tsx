@@ -777,9 +777,11 @@ export default function Wallet({
   // Arc. There's no explorer/indexer API that enumerates arbitrary token
   // balances for Arc yet (checked directly against arc.exploreme.pro —
   // 404, not implemented), so this checks the tokens Arcodian itself
-  // actually knows about: EURC (Arc Testnet only, no mainnet contract yet)
-  // and every token launched through the active network's own pump
-  // factory. Cheap on mainnet right now since very few tokens exist there.
+  // actually knows about: EURC — which exists on BOTH networks as of
+  // 2026-09-16, when Circle published the Arc Mainnet contract, at a
+  // different address per network — and every token launched through the
+  // active network's own pump factory. Cheap on mainnet right now since very
+  // few tokens exist there.
   useEffect(() => {
     if (!walletAccount || !onArc) { setHoldings([]); return; }
     let cancelled = false;
@@ -794,11 +796,12 @@ export default function Wallet({
       : [PUMP_FACTORY_ADDRESS];
     (async () => {
       const found: Array<{ symbol: string; name: string; balance: string; address: string }> = [];
-      if (!isArcMainnetChain) {
+      {
+        const eurcAddress = isArcMainnetChain ? ARC_MAINNET_CONTRACTS.eurc : ARC_EURC_ADDRESS;
         try {
-          const eurc = new Contract(ARC_EURC_ADDRESS, ["function balanceOf(address) view returns(uint256)"], provider);
+          const eurc = new Contract(eurcAddress, ["function balanceOf(address) view returns(uint256)"], provider);
           const value = (await eurc.balanceOf(walletAccount)) as bigint;
-          if (value > 0n) found.push({ symbol: "EURC", name: "Euro Coin", balance: formatUnits(value, 6), address: ARC_EURC_ADDRESS });
+          if (value > 0n) found.push({ symbol: "EURC", name: "Euro Coin", balance: formatUnits(value, 6), address: eurcAddress });
         } catch { /* skip on read failure */ }
       }
       const seenTokens = new Set<string>();

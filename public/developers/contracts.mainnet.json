@@ -72,7 +72,7 @@
     "note": "Mirrors testnet v10 economics (12,000 USDC threshold, 1% curve fee) — not independently re-derived for mainnet, just carried over for parity."
   },
   "deferredUntilOfficialAddressesExist": {
-    "eurc": "No official Arc mainnet EURC address published by Circle as of 2026-07-30 (docs.arc.io still says mainnet addresses are not yet available). Blocks: EURC pump factory, stablecoin FX pool, ArcLendV2 collateral.",
+    "eurc": "RESOLVED 2026-09-16: Circle published the Arc Mainnet EURC contract at 0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1 on docs.arc.io, verified independently on chain 5042 (eth_getCode returns real bytecode; name() and symbol() both read EURC, decimals() 6). The testnet address 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a has no code on mainnet. This unblocks the EURC pump factory, the stablecoin FX pool and ArcLendV2 collateral at the Circle dependency level — each still needs its own Arcodian mainnet deployment against this address, and ArcLendV2 additionally still needs a mainnet Pyth oracle, which does not exist.",
     "pythOracle": "No official Arc mainnet Pyth contract address found. Blocks: ArcLendV2 (needs EUR/USD price feed).",
     "erc8004IdentityRegistry": "Testnet address 0x8004A818...BD9e has no code on mainnet — the canonical ERC-8004 reference registries have not been deployed to chain 5042 by anyone yet. Blocks: ArcAgentPassport, ArcAgentPayFactoryV4, ArcAgentJobsV2 (constructor hard-reverts on a zero passport address), Reputation/Validation integration."
   },

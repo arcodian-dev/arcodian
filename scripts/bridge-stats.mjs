@@ -33,7 +33,7 @@ const ROUTERS = [
   { chainId: 10, address: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967", rpcs: ["https://optimism-rpc.publicnode.com", "https://mainnet.optimism.io"], fromBlock: 154938740, direction: "in" },
   { chainId: 42161, address: "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967", rpcs: ["https://arbitrum-one-rpc.publicnode.com", "https://arb1.arbitrum.io/rpc"], fromBlock: 489538042, direction: "in" },
   { chainId: 8453, address: "0x274454aa0413b96651983c5efd6817cb30968e71", rpcs: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"], fromBlock: 49343417, direction: "in" },
-  { chainId: 5042, address: "0xc35deb937f5056a0e034f10e21094878485caee7", rpcs: ["https://arc-rpc.stakeme.pro"], fromBlock: 13126352, direction: "out" },
+  { chainId: 5042, address: "0xc35deb937f5056a0e034f10e21094878485caee7", rpcs: ["https://rpc.blockdaemon.mainnet.arc.io", "https://rpc.mainnet.arc.io", "https://arcodian.fun/api/rpc-mainnet.php"], fromBlock: 13126352, direction: "out" },
 ];
 // direction is named from Arc's point of view: a router on Ethereum/OP/ARB/Base
 // only ever bridges INTO Arc; the Arc router only ever bridges OUT of Arc.

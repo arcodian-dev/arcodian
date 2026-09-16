@@ -353,12 +353,25 @@ export const V5_TESTNET_DEPLOY = {
   threshold: "4500",
 } as const;
 
-// Arc Mainnet, chain 5042. Phase 1 (2026-07-30): USDC-only contracts —
-// EURC, Pyth, and the ERC-8004 identity registries have no official mainnet
-// address published yet (confirmed by probing chain 5042 directly: the
-// testnet EURC/Pyth/Identity Registry addresses return no code there, while
-// the native USDC ERC-20 view precompile at 0x3600...0000 IS live at the
-// same fixed address as testnet). Full inventory, deferred-contract list,
+// Arc Mainnet, chain 5042. Phase 1 (2026-07-30) was USDC-only because EURC,
+// Pyth, and the ERC-8004 identity registries had no official mainnet address
+// published (confirmed then by probing chain 5042 directly: the testnet
+// EURC/Pyth/Identity Registry addresses returned no code there, while the
+// native USDC ERC-20 view precompile at 0x3600...0000 IS live at the same
+// fixed address as testnet).
+//
+// 2026-09-16 — that is no longer true for EURC. Circle published the Arc
+// Mainnet addresses on launch day and EURC is live at
+// ARC_MAINNET_CONTRACTS.eurc (verified on-chain, see the note there), along
+// with USYC, Gateway and StableFX. Pyth and the ERC-8004 registries are
+// still unaddressed on mainnet, so the oracle-dependent surfaces (Arc Lend)
+// stay testnet-only for their own separate reason.
+//
+// Having the EURC address is necessary but not sufficient for the EURC
+// surfaces: the FX pool, the EURC pump factory and the ArcLendV2 market are
+// ARCODIAN contracts that exist only on testnet, and each needs its own
+// mainnet deployment against this real EURC before its surface can be
+// un-gated. Those deploys move real money and are the user's to broadcast. Full inventory, deferred-contract list,
 // and governance caveats: public/developers/contracts.mainnet.json.
 // No UI network switcher exists yet — these constants are not wired into any
 // page. Wiring them in is the next step, tracked separately from this file.
@@ -405,8 +418,42 @@ const THIRDWEB_RPC = THIRDWEB_CLIENT_ID ? `https://5042.rpc.thirdweb.com/${THIRD
 // independent Arc explorer (trustswap.com's own Arc guides point to it),
 // not a random third party — made the default, with the previous default
 // kept as a runtime fallback candidate below rather than dropped.
+// Circle's own Arc Mainnet endpoints, published on docs.arc.io
+// (arc/references/connect-to-arc) the night before the 2026-09-16 public
+// launch — that page had been testnet-only until then. All four verified
+// live from this server the same night: correct head block, real CORS
+// (Access-Control-Allow-Origin honoured on an actual OPTIONS preflight sent
+// with Origin: https://arcodian.fun), 0.12-0.50s round trip.
+//
+// They are NOT interchangeable for log queries, which is why the order in
+// `rpcs` below is deliberate. Measured, not assumed:
+//   rpc.mainnet.arc.io        fastest general reads; eth_getLogs capped at
+//                             ~9,999 blocks, and it refuses a many-address
+//                             filter outright ("requested range too large"
+//                             even over 100 blocks with 1,100 addresses)
+//   rpc.blockdaemon.mainnet…  the ONLY endpoint that serves the many-address
+//                             filter the market/portfolio/tape reads
+//                             actually use — 100,000-block ranges across
+//                             1,100 addresses, no complaint
+//   rpc.quicknode.mainnet…    ~2,900-block cap, same many-address refusal
+//   rpc.drpc.mainnet…         fastest of all, but a 100-block log cap
+// Blockdaemon therefore sits second, directly behind the fast general
+// default, so a log query the first endpoint refuses lands immediately on
+// the one endpoint that can serve it instead of walking the whole list.
+const ARC_OFFICIAL_RPC = "https://rpc.mainnet.arc.io";
+const ARC_BLOCKDAEMON_RPC = "https://rpc.blockdaemon.mainnet.arc.io";
+const ARC_QUICKNODE_RPC = "https://rpc.quicknode.mainnet.arc.io";
+const ARC_DRPC_RPC = "https://rpc.drpc.mainnet.arc.io";
+// Arcscan's RPC — the default from 2026-09-12 until 2026-09-16, demoted
+// rather than dropped. On launch night it was visibly degraded: 503s,
+// "arc-scan.org is temporarily out of capacity for eth_getCode", an
+// outright "rate limiting requests from this client" on every many-address
+// getLogs, and 4 of 20 parallel eth_blockNumber calls failing. That is
+// exactly what had left the mainnet live tape frozen for 11 hours. It still
+// serves ~92,000-block log ranges when healthy, so it stays as a late
+// fallback instead of being removed.
 const ARC_SCAN_RPC = "https://rpc.arc-scan.org/";
-const ARC_MAINNET_RPC = import.meta.env.VITE_ARC_MAINNET_RPC || ARC_SCAN_RPC;
+const ARC_MAINNET_RPC = import.meta.env.VITE_ARC_MAINNET_RPC || ARC_OFFICIAL_RPC;
 
 export const ARC_MAINNET = {
   id: 5042,
@@ -430,6 +477,9 @@ export const ARC_MAINNET = {
   // console. rpc.arc-scan.org added 2026-09-12, see above.
   rpcs: [
     ARC_MAINNET_RPC,
+    ARC_BLOCKDAEMON_RPC,
+    ARC_QUICKNODE_RPC,
+    ARC_DRPC_RPC,
     ARC_SCAN_RPC,
     THIRDWEB_RPC,
     "https://warp-arc-production.up.railway.app/rpc",
@@ -444,6 +494,16 @@ export const ARC_MAINNET = {
   // REST shape at /api/ — that path just serves the site's own SPA shell);
   // resolve that once the user or the official Sept 16 mainnet launch
   // surfaces the real endpoint.
+  //
+  // 2026-09-16: Circle's own explorer URL is now documented —
+  // https://explorer.arc.io — but it is NOT usable as a public explorer
+  // link yet: every path 302s to circle.cloudflareaccess.com, Circle's
+  // internal Cloudflare Access SSO. Linking users there would send them to
+  // a login wall instead of their transaction, so the default deliberately
+  // stays on arc-scan.org. Switch the moment explorer.arc.io answers
+  // anonymously (re-check: it should open at/after the public launch), and
+  // note that Sourcify still does not list chain 5042 — so contract source
+  // verification stays blocked regardless of which explorer we point at.
   explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc-scan.org",
   nativeToken: "0x3600000000000000000000000000000000000000",
   nativeSymbol: "USDC",
@@ -547,6 +607,57 @@ export const ARC_MAINNET_CONTRACTS = {
   // Redeployed 2026-09-05, same reason as agentPayFactory above. Old
   // factory (now agentPayFactoryV6LegacyWrongArcPay) had vaultCount() 0.
   agentPayFactoryV6: "0x304f7ACFDB096358d89Da8762721207e0B5B1433",
+
+  // --- Circle's own Arc Mainnet contracts -------------------------------
+  // Published on docs.arc.io/arc/references/contract-addresses on
+  // 2026-09-16, the day of the public mainnet launch. Until that morning
+  // that page carried testnet addresses only and said mainnet ones were not
+  // yet available, which is what had kept every EURC-dependent surface
+  // testnet-only. Each address below was independently verified from this
+  // server with eth_getCode against chain 5042 — not copied on trust — and
+  // EURC additionally by reading its own name()/symbol()/decimals().
+  //
+  // Note these are Circle's contracts, not ours. They are recorded here so
+  // the app has one authoritative list; wiring a surface to one of them is a
+  // separate, deliberate step per surface.
+
+  // EURC on Arc Mainnet. name() and symbol() both read "EURC", decimals()
+  // is 6, totalSupply() was 5,553,087.488058 at the time of verification.
+  // The testnet EURC address (ARC_EURC_ADDRESS, 0x89B5…D72a) has NO code on
+  // mainnet — the two are genuinely different contracts, so anything that
+  // reads EURC must pick by network rather than reusing one constant.
+  eurc: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+
+  // USYC — Circle's tokenized-treasury yield token, plus its entitlements
+  // and teller contracts. All three live on mainnet. Nothing in Arcodian
+  // reads them yet; recorded so a future surface doesn't have to rediscover
+  // them.
+  usyc: "0x8a5D989Bbb96929F689B0200f435f53dA42bF490",
+  usycEntitlements: "0xb69ecb156Dc0028198028c501340d5367845ca72",
+  usycTeller: "0x51A8CE47dC08ba5CD19c7aa84EA6fD6664f60f9b",
+
+  // Circle Gateway on mainnet. This is what the deferred V5 Gateway work was
+  // waiting on — it had no mainnet deployment until now.
+  gatewayWallet: "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE",
+  gatewayMinter: "0x2222222d7164433c4C09B0b0D809a9b52C04C205",
+
+  // Circle's own FX escrow. Arcodian ships its own USDC/EURC AMM
+  // (ARC_FX_POOL_ADDRESS, testnet) rather than routing through this; kept
+  // here because "StableFX" in Circle's docs means this contract, not ours,
+  // and confusing the two would be expensive.
+  stableFxEscrow: "0xe2E5F173576B513d994073CCbDaCBE027d43DFe6",
+
+  // CCTP v2 — the messenger and transmitter Arcodian actually calls live in
+  // CCTP_MAINNET_TOKEN_MESSENGER_V2 / CCTP_MAINNET_MESSAGE_TRANSMITTER_V2
+  // below and were already correct (they match Circle's published values
+  // exactly, re-checked 2026-09-16). These two are the remaining pieces of
+  // the same deployment, documented for completeness.
+  cctpTokenMinterV2: "0xfd78EE919681417d192449715b2594ab58f5D002",
+  cctpMessageV2: "0xec546b6B005471ECf012e5aF77FBeC07e0FD8f78",
+
+  // Arc transaction extensions.
+  memo: "0x5294E9927c3306DcBaDb03fe70b92e01cCede505",
+  multicall3From: "0x522fAf9A91c41c443c66765030741e4AaCe147D0",
 } as const;
 
 export const BRIDGE_TESTNETS = [
