@@ -5320,3 +5320,20 @@ footer::before {
 .coin-card-launch .mini-chart polyline { fill: none; stroke: var(--f-amber, #C9A15C); stroke-width: 1.6; vector-effect: non-scaling-stroke; }
 .coin-card-launch .mini-chart-empty { display: grid; place-items: center; height: 30px; color: var(--f-faint, #6f7b8c); font-size: 10px; letter-spacing: .02em; }
 .coin-card-launch .progress-amount { display: block; margin-top: 4px; color: var(--f-faint, #6f7b8c); font-size: 10px; }
+
+/* Published-source badge on the contracts page. Read live from the explorer
+   rather than hardcoded: a checkmark that could go stale is worse than none,
+   because it is exactly the claim someone checks before trusting an ABI. */
+.contract-verified {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid rgba(25, 231, 154, 0.35);
+  border-radius: 999px;
+  color: #19e79a;
+  background: rgba(25, 231, 154, 0.1);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  vertical-align: middle;
+}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
-import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, AGENT_PAY_V6_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
+import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, CCTP_MAINNET_TOKEN_MESSENGER_V2, CCTP_MAINNET_MESSAGE_TRANSMITTER_V2, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, AGENT_PAY_V6_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
 import { fetchBurnLimitPerMessage, tokenMessengerFor } from "../bridgeRecovery";
 
@@ -107,102 +107,157 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
 export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () => void; openFaq: () => void; openCanary: () => void }) {
   const [checks, setChecks] = useState<Array<{ label: string; value: string; ok: boolean }>>([]);
   const [checkedAt, setCheckedAt] = useState("");
+  const [verified, setVerified] = useState<Record<string, boolean>>({});
   useEffect(() => {
-    const provider = arcProvider();
+    // Reads Arc Mainnet. This used to read the testnet launch factory and
+    // pair factory, which meant the "live wiring proof" on a page about real
+    // money was proving the wiring of contracts holding none.
+    const provider = arcProvider(ARC_MAINNET);
     void (async () => {
       try {
-        // V8 has no suite contract — the launch factory is the root, and it
-        // graduates into ArcPairFactoryV2 rather than a DEX of its own. The
-        // old suite/DEX-owner checks described V7's shape and are gone with it.
-        const pump = new Contract(PUMP_FACTORY_ADDRESS, ["function graduationThreshold() view returns(uint256)", "function treasury() view returns(address)", "function pairFactory() view returns(address)"], provider);
-        const pairFactory = new Contract(ARC_PAIR_FACTORY_ADDRESS, ["function graduationAuthority() view returns(address)", "function treasury() view returns(address)"], provider);
-        const [threshold, pumpTreasury, pumpPairFactory, authority, pairTreasury] = await Promise.all([
-          pump.graduationThreshold(), pump.treasury(), pump.pairFactory(),
-          pairFactory.graduationAuthority(), pairFactory.treasury(),
+        const pump = new Contract(ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, [
+          "function graduationThreshold() view returns(uint256)",
+          "function treasury() view returns(address)",
+          "function v3Factory() view returns(address)",
+          "function positionManager() view returns(address)",
+        ], provider);
+        const eurc = new Contract(ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11, [
+          "function graduationThreshold() view returns(uint256)",
+          "function treasury() view returns(address)",
+          "function quote() view returns(address)",
+        ], provider);
+        const [threshold, treasury, v3Factory, positionManager, eurcThreshold, eurcTreasury, eurcQuote] = await Promise.all([
+          pump.graduationThreshold(), pump.treasury(), pump.v3Factory(), pump.positionManager(),
+          eurc.graduationThreshold(), eurc.treasury(), eurc.quote(),
         ]);
         const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
         setChecks([
-          { label: "Launch Factory → Pair Factory", value: short(pumpPairFactory), ok: same(pumpPairFactory, ARC_PAIR_FACTORY_ADDRESS) },
-          // The pair reservation that makes graduation unstealable is only in
-          // force while the authority points back at this launch factory.
-          { label: "Graduation authority sealed", value: short(authority), ok: same(authority, PUMP_FACTORY_ADDRESS) },
-          { label: "Treasury agreement", value: short(pumpTreasury), ok: [pumpTreasury, pairTreasury].every((value) => same(value, FEE_TREASURY)) },
-          { label: "Graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("12000") },
+          { label: "Launch factory → Uniswap V3", value: short(v3Factory), ok: same(v3Factory, ARC_MAINNET_CONTRACTS.v3Factory) },
+          { label: "Graduation mints to position manager", value: short(positionManager), ok: same(positionManager, ARC_MAINNET_CONTRACTS.v3PositionManager) },
+          { label: "Treasury agreement (USDC + EURC)", value: short(treasury), ok: [treasury, eurcTreasury].every((value) => same(value, FEE_TREASURY)) },
+          { label: "USDC graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("12000") },
+          { label: "EURC engine quotes real EURC", value: short(eurcQuote), ok: same(eurcQuote, ARC_MAINNET_CONTRACTS.eurc) },
+          { label: "EURC graduation threshold", value: `${(Number(eurcThreshold) / 1e6).toLocaleString()} EURC`, ok: Number(eurcThreshold) === 3_000_000_000 },
         ]);
         setCheckedAt(new Date().toLocaleString());
       } catch { setChecks([]); }
       finally { provider.destroy(); }
     })();
   }, []);
+
+  // Published-source status, straight from the explorer that holds it. A
+  // checkmark here is the same fact an external buyer bot relies on when it
+  // reads a pasted address's ABI, so it is read live rather than asserted.
+  useEffect(() => {
+    let alive = true;
+    const addresses = [
+      ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11,
+      ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11,
+      ARC_MAINNET_CONTRACTS.marketRouter,
+      ARC_MAINNET_CONTRACTS.marketGraduationHub,
+      ARC_MAINNET_CONTRACTS.fxPool,
+      ARC_MAINNET_CONTRACTS.arcPay,
+      ARC_MAINNET_CONTRACTS.agentPassport,
+      ARC_MAINNET_CONTRACTS.sessionKeyAccount,
+      ARC_MAINNET_CONTRACTS.adminTimelock,
+      CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id],
+    ];
+    // Through our own origin: the explorer's API sends no CORS header, so a
+    // direct fetch from the browser is blocked and every badge stayed off.
+    void fetch(`/api/verified.php?addresses=${addresses.join(",")}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error("unavailable"))))
+      .then((data: { contracts?: Record<string, { verified?: boolean }> }) => {
+        if (!alive) return;
+        setVerified(Object.fromEntries(Object.entries(data.contracts || {}).map(([address, row]) => [address, Boolean(row?.verified)])));
+      })
+      .catch(() => { /* badge is additive; absence of it is the safe default */ });
+    return () => { alive = false; };
+  }, []);
+
+  // Arc Mainnet only. This page used to lead with three groups of Arc
+  // Testnet addresses and put mainnet last, which is backwards for a page
+  // whose whole point is letting someone verify the contracts their money
+  // touches. Testnet addresses are still in the repo and in
+  // developers/contracts.json for anyone developing against them; they do
+  // not belong on a public trust page.
   const contractGroups: { title: string; note: string; cards: (readonly [string, string, string])[] }[] = [
     {
-      title: "Money & market",
-      note: "The USDC economy: payments, lending, and the permissionless launchpad.",
+      title: "Launchpad & market",
+      note: "Every coin created on Arcodian is launched, traded and graduated by these. Source is published on the explorer — the same published ABI an external buyer bot reads from a pasted address.",
       cards: [
-        ["Launch Factory v10", PUMP_FACTORY_ADDRESS, "Creates price-continuous coin and bonding-curve contracts, then graduates them into the shared pair factory below."],
-        ["Pair Factory v2", ARC_PAIR_FACTORY_ADDRESS, "The permissionless AMM registry. While a coin's curve is running, only that curve may open its pair, so graduation liquidity cannot be front-run. LP ownership is burned at graduation."],
-        ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is permanently burned; liquidity added later is withdrawable by whoever added it."],
-        ...(ARC_PAY_ADDRESS ? [["Arc Pay", ARC_PAY_ADDRESS, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."] as const] : []),
-        ...(ARC_LEND_ADDRESS ? [["Arc Lend market", ARC_LEND_ADDRESS, "Isolated USDC lending market. Supply native USDC or borrow against EURC collateral at up to 70% LTV; an oracle older than 90 hours fails closed."] as const] : []),
-        ...(ARC_LEND_COLLATERAL_ADDRESS ? [["Arc Lend collateral · EURC", ARC_LEND_COLLATERAL_ADDRESS, "The canonical Circle EURC token accepted as collateral in the isolated Arc Lend market (6 decimals)."] as const] : []),
+        ["Launch Factory · USDC (V11, live)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, "The live launch engine. Fair-launch bonding curve with a 1% trading fee split evenly between the launch's creator (pull-claimed) and the treasury, plus a separate one-time 1% graduation fee to the treasury. Graduates into a real Uniswap V3 pool with the LP position minted to the burn address."],
+        ["Launch Factory · EURC (V11, live)", ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11, "The same engine quoted in Circle's Arc Mainnet EURC instead of native USDC. Identical curve shape and fees; graduation threshold is 3,000 EURC rather than 12,000 because EURC liquidity on Arc is still thin, with the curve's virtual reserve scaled to match."],
+        ["Launch Factory · USDC (V10, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Superseded by V11. Kept live and readable for coins that launched there; a launch cannot be migrated between factories."],
+        ["Launch Factory · USDC (V9, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, "Superseded by V10. Kept live and readable for the same reason."],
+        ["Swap Router", ARC_MAINNET_CONTRACTS.marketRouter, "The route the swap surface executes through across Arcodian's own pools."],
+        ["Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority so a launch's liquidity cannot be front-run at the moment it graduates."],
+        ["Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry. Nothing has graduated into it on mainnet — every V9/V10/V11 graduation opens its own Uniswap V3 pool instead — so its graduation authority is deliberately still unset."],
+        ["Stablecoin FX pool · USDC/EURC", ARC_MAINNET_CONTRACTS.fxPool, "Arcodian's own USDC/EURC desk. Deployed and wired to Circle's real EURC, and currently holding no liquidity — the FX surface stays off until it is seeded."],
+        ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is burned permanently; liquidity added afterwards stays withdrawable by whoever added it."],
       ],
     },
     {
-      title: "Agent economy",
-      note: "ERC-8004 identity, escrowed jobs, and verified reputation — an agent is never granted spending authority by its identity alone.",
+      title: "Bridge",
+      note: "A 1.5% fee router over Circle's official CCTP v2 rails, deployed on all five chains. Each non-Arc address opens that chain's own explorer.",
       cards: [
-        ["Agent Passport", AGENT_PASSPORT_ADDRESS, "Binds an official ERC-8004 Agent ID to an authorized wallet with owner-only rotation. Identity never grants spending authority by itself."],
-        ["Agent Jobs v2", AGENT_JOBS_ADDRESS, "Escrowed job lifecycle settled in USDC through Arc Pay. A nonzero provider Agent ID is accepted only when the provider is the current Passport-bound wallet — no Agent-ID spoofing."],
-        ["Reputation Registry", REPUTATION_REGISTRY_ADDRESS, "Official ERC-8004 registry. Feedback is evidence-backed only when its tag names a real completed job and its authorized client or evaluator."],
-        ["Validation Registry", VALIDATION_REGISTRY_ADDRESS, "Official ERC-8004 registry for independent validation of an agent's work, tied to the exact completed job."],
-        ["Agent Pay Factory v3", AGENT_PAY_V3_FACTORY_ADDRESS, "Mints one isolated, non-custodial vault per owner whose bounded spending policies are keyed by Agent ID."],
-        ["Agent Pay Factory v6 · testnet", AGENT_PAY_V6_FACTORY_ADDRESS, "ERC-1271-aware additive vault template with atomic EIP-712 batch payments. Testnet only; production UI remains on the reviewed migration path."],
-      ],
-    },
-    {
-      title: "Operational hardening · spikes",
-      note: "Phase F testnet spikes. Bounded, fail-closed, not ERC-4337, not independently audited, not mainnet-ready.",
-      cards: [
-        ["Session-Key Account", SESSION_KEY_ACCOUNT_ADDRESS, "Owner installs a scoped session key (target + function + per-call and daily caps + time window + instant revoke). The key executes autonomously with no per-call owner signature; the account enforces every bound on-chain. Owner keeps custody."],
-        ["Admin Timelock", ADMIN_TIMELOCK_ADDRESS, "Role-gated governed administration: schedule → enforced delay → execute, with cancel and a self-governed delay. The mechanism for moving admin to a production multisig."],
-      ],
-    },
-    {
-      title: "Arc Mainnet — live, real value",
-      note: `Deployed on Arc Mainnet, chain ${ARC_MAINNET.id}, not Arc Testnet. Governance on these is still deployer-only — no mainnet multisig yet (see Mainnet readiness below). ArcBridgeRouter deployed on 2026-07-31 across 5 chains; verify links below open the relevant chain's own explorer.`,
-      cards: [
-        ["USDC-only Market Factory (V11, current)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, "Mainnet launch factory — every new coin launches here. Same fair-launch curve as V10 below, plus a creator fee split (1% trading fee, half to the launch's creator via pull-claim, half treasury) and a separate 1% one-time graduation fee (100% treasury)."],
-        ["USDC-only Market Factory (V10, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Superseded by V11 above. Kept live read-only for the one coin still trading there that can't be migrated."],
-        ["USDC-only Market Factory (V9, legacy)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, "Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
-        ["Market Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority into the pair factory below."],
-        ["Market Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead."],
-        ["Arc Pay (mainnet)", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement, deployed to Arc Mainnet."],
-        ["Agent Pay Factory v6 · mainnet", ARC_MAINNET_CONTRACTS.agentPayFactoryV6, "Additive ERC-1271-aware batch-payment factory. No automatic vault creation; production UI remains on the existing factory until Gateway and migration gates pass."],
-        ["ArcBridgeRouter · Arc", CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id], "1.5% fee router over Circle's official CCTP v2 rails. Proven live: real transactions on all 5 chains, plus independent third-party wallets bridging unaided."],
-        ["ArcBridgeRouter · Ethereum", CCTP_MAINNET_FEE_ROUTER[1], "Same router contract, deployed on Ethereum mainnet — opens that chain's own explorer, not Arc's."],
+        ["ArcBridgeRouter · Arc", CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id], "Proven live with real transactions on every chain below, including third-party wallets bridging unaided."],
+        ["ArcBridgeRouter · Ethereum", CCTP_MAINNET_FEE_ROUTER[1], "Same router contract, deployed on Ethereum mainnet."],
         ["ArcBridgeRouter · Optimism", CCTP_MAINNET_FEE_ROUTER[10], "Same router contract, deployed on Optimism mainnet."],
         ["ArcBridgeRouter · Arbitrum", CCTP_MAINNET_FEE_ROUTER[42161], "Same router contract, deployed on Arbitrum mainnet."],
-        ["ArcBridgeRouter · Base", CCTP_MAINNET_FEE_ROUTER[8453], "Same router contract, deployed on Base mainnet — the first chain this router was proven on with a real transaction."],
+        ["ArcBridgeRouter · Base", CCTP_MAINNET_FEE_ROUTER[8453], "Same router contract, deployed on Base mainnet — the first chain this router was proven on."],
+      ],
+    },
+    {
+      title: "Payments & agent economy",
+      note: "Invoice settlement and agent identity. An agent is never granted spending authority by its identity alone.",
+      cards: [
+        ["Arc Pay", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."],
+        ["Agent Passport", ARC_MAINNET_CONTRACTS.agentPassport, "Binds an ERC-8004 Agent ID to an authorized wallet with owner-only rotation."],
+        ["Agent Jobs", ARC_MAINNET_CONTRACTS.agentJobs, "Escrowed job lifecycle settled in USDC through Arc Pay."],
+        ["Agent Pay Factory v3", ARC_MAINNET_CONTRACTS.agentPayFactoryV3, "Mints one isolated, non-custodial vault per owner, with bounded spending policies keyed by Agent ID."],
+        ["Agent Pay Factory v6", ARC_MAINNET_CONTRACTS.agentPayFactoryV6, "Additive ERC-1271-aware vault template with atomic EIP-712 batch payments. No automatic vault creation."],
+      ],
+    },
+    {
+      title: "Circle's own contracts",
+      note: "Not Arcodian's. Published by Circle for Arc Mainnet and listed so the addresses this app reads can be checked against Circle's own documentation.",
+      cards: [
+        ["USDC (native)", ARC_MAINNET_CONTRACTS.usdc, "Arc's native gas token, exposed at a fixed address as an ERC-20 view. 18 decimals natively, 6 through this interface — the same balance, never two."],
+        ["EURC", ARC_MAINNET_CONTRACTS.eurc, "Circle's Arc Mainnet EURC, published on 2026-09-16. A different contract from the testnet EURC, which has no code on this chain."],
+        ["CCTP TokenMessenger v2", CCTP_MAINNET_TOKEN_MESSENGER_V2, "Burns USDC on the source chain. Identical address on every CCTP v2 chain."],
+        ["CCTP MessageTransmitter v2", CCTP_MAINNET_MESSAGE_TRANSMITTER_V2, "Mints on the destination chain once Circle attests the burn."],
+        ["Gateway Wallet", ARC_MAINNET_CONTRACTS.gatewayWallet, "Circle Gateway's chain-abstracted USDC balance contract."],
+        ["StableFX Escrow", ARC_MAINNET_CONTRACTS.stableFxEscrow, "Circle's own permissioned RFQ FX settlement contract. Arcodian's FX desk is a separate, permissionless pool."],
+      ],
+    },
+    {
+      title: "Governance",
+      note: "Administration is still deployer-held on mainnet. These are the mechanisms for moving it, not evidence that it has moved.",
+      cards: [
+        ["Session-Key Account", ARC_MAINNET_CONTRACTS.sessionKeyAccount, "Owner installs a scoped session key — target, function, per-call and daily caps, time window, instant revoke — and the account enforces every bound on-chain. Owner keeps custody."],
+        ["Admin Timelock", ARC_MAINNET_CONTRACTS.adminTimelock, "Role-gated administration: schedule, enforced delay, execute, with cancel and a self-governed delay."],
       ],
     },
   ];
-  const explorerFor = (groupTitle: string, label: string): string => {
-    if (groupTitle !== "Arc Mainnet — live, real value") return ARC.explorer;
+  // Arc addresses link to arcexplorer.org specifically: it is where this
+  // project's source is published, so the link lands on a page that can show
+  // the verified code rather than just a balance.
+  const explorerFor = (_groupTitle: string, label: string): string => {
     if (label.includes("Ethereum")) return "https://etherscan.io";
     if (label.includes("Optimism")) return "https://optimistic.etherscan.io";
     if (label.includes("Arbitrum")) return "https://arbiscan.io";
     if (label.includes("Base")) return "https://basescan.org";
-    return ARC_MAINNET.explorer;
+    return "https://www.arcexplorer.org";
   };
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
-    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>These are the canonical Arc Testnet contracts read by Arcodian, where most of the product still runs. Bridge and the USDC-only Market/Launchpad are additionally deployed on Arc Mainnet with real value — see the <a href="/developers/contracts.mainnet.json">mainnet registry</a> and <a href="#docs-readiness">Mainnet readiness</a>. Every address opens in the explorer; live wiring checks run again when this page loads. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads the same contracts and returns unsigned transactions only — it never holds a key.</p></header>
+    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>Every contract below is deployed on Arc Mainnet, chain {ARC_MAINNET.id}, holding real value. Source is published on <a href="https://www.arcexplorer.org" target="_blank" rel="noreferrer">arcexplorer.org</a> — a <b>Verified</b> badge means anyone, including an external buyer bot, can read that contract's real ABI straight from the chain. Addresses open in the explorer, and the wiring checks below re-run on every page load, read from chain {ARC_MAINNET.id} itself. Testnet addresses are in <a href="/developers/contracts.json">the developer registry</a> rather than here. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads these same contracts and returns unsigned transactions only — it never holds a key.</p></header>
     {contractGroups.map((group) => <div key={group.title} className="contract-group">
       <div className="contract-group-head"><h2>{group.title}</h2><p>{group.note}</p></div>
-      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={label}><small>{label}</small><a href={`${explorerFor(group.title,label)}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
+      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={label}><small>{label}{verified[address.toLowerCase()] && <b className="contract-verified" title="Source published on arcexplorer.org">✓ Verified</b>}</small><a href={`${explorerFor(group.title,label)}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
     </div>)}
-    <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Testnet…"}</h2><p>Read directly from chain {ARC.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
-    <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>12,000</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
+    <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Mainnet…"}</h2><p>Read directly from chain {ARC_MAINNET.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
+    <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>12,000</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve. The EURC engine graduates at 3,000, with its virtual reserve scaled to keep the same curve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
   </section>;
 }
 
