@@ -5,6 +5,8 @@ import {
   ARC_EURC_ADDRESS,
   ARC_MAINNET,
   ARC_MAINNET_CONTRACTS,
+  ACTIVE_LAUNCH_FACTORY,
+  ACTIVE_ENGINE_VERSION,
   CHAINS,
   CCTP_MAINNET_MESSAGE_TRANSMITTER_V2,
   CCTP_MAINNET_TOKEN_MESSENGER_V2,
@@ -100,6 +102,22 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
     // address is real, the liquidity is not.
     expect(ARC_MAINNET_CONTRACTS.fxPool).toBe("0x506f61b6c287c616bb7ef827d2455b401373418f");
     expect(ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11).toBe("0x426e68f06207a3f3ef7aa261f3856e71746af7aa");
+  });
+
+  it("pins the V12 engine and the V4 contracts it trades on", () => {
+    expect(ARC_MAINNET_CONTRACTS.launchFactoryV12).toBe("0x95b4d7CCbd0D13aF4ba2CCd1Dd037C30B9eD76C2");
+    // V4 reads a hook's permissions from the low bits of its own address.
+    // beforeSwap (1<<7) + beforeSwapReturnDelta (1<<3) = 0x0088; a hook at
+    // any other address is simply never called, so this is load-bearing.
+    expect(ARC_MAINNET_CONTRACTS.launchHookV12).toBe("0xe05D566f070Ac8508C3a4f4C15AA02dE100ec088");
+    expect(BigInt(ARC_MAINNET_CONTRACTS.launchHookV12) & 0x3fffn).toBe(0x0088n);
+    expect(ARC_MAINNET_CONTRACTS.v4PoolManager).toBe("0x8366a39CC670B4001A1121B8F6A443A643e40951");
+    expect(ARC_MAINNET_CONTRACTS.universalRouter).toBe("0x6049c9a0e26405c0985f9e3685c87d0ae917f82b");
+  });
+
+  it("creates new launches on the newest engine", () => {
+    expect(ACTIVE_LAUNCH_FACTORY).toBe(ARC_MAINNET_CONTRACTS.launchFactoryV12);
+    expect(ACTIVE_ENGINE_VERSION).toBe(12);
   });
 
   it("does not point public explorer links at Circle's SSO-gated explorer", () => {

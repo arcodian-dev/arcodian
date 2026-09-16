@@ -721,7 +721,49 @@ export const ARC_MAINNET_CONTRACTS = {
   // the market indexer does not read this factory. Wiring those is its own
   // change, deliberately not bundled with the deploy.
   eurcPumpFactoryV11: "0x426e68f06207a3f3ef7aa261f3856e71746af7aa",
+
+  // --- V12: the live launch engine, deployed 2026-09-16 ------------------
+  // Every earlier engine held a launch on a bonding curve and only opened a
+  // pool at 12,000 USDC. That kept the 1% — every trade had to pass through
+  // code we own — but it also meant nothing existed for a scanner or a buy
+  // bot to index until a coin had already made it. Proven on ArcBee: BasedBot
+  // read its name, symbol, decimals and supply correctly and then said "not
+  // yet tradeable", because there genuinely was no pool.
+  //
+  // V12 opens a real Uniswap V4 pool at launch. The fee survives because the
+  // hook is called by the PoolManager on every swap through that pool,
+  // whoever initiated it — a V3 pool could not have done this, since its fee
+  // goes to liquidity providers and fee-on-transfer tokens are not tradeable
+  // on V3 at all.
+  //
+  // Liquidity is single-sided and therefore free: the pool starts where the
+  // token is worth least and is seeded with the token alone, and the quote
+  // side fills up as people buy. Verified on the first real launch —
+  // 99% of supply went into the pool, 1% to the treasury, no quote spent.
+  launchFactoryV12: "0x95b4d7CCbd0D13aF4ba2CCd1Dd037C30B9eD76C2",
+  // Takes 1% of every swap and splits it evenly between the launch's creator
+  // and the treasury, both pull-claimed. Its address is not arbitrary: V4
+  // reads a hook's permissions from the low bits of its own address, so this
+  // one was CREATE2-mined to end in 0x0088 (beforeSwap + returnDelta).
+  launchHookV12: "0xe05D566f070Ac8508C3a4f4C15AA02dE100ec088",
+
+  // --- Uniswap V4 on Arc -------------------------------------------------
+  // Verified canonical before use: the PoolManager answers extsload,
+  // protocolFeesAccrued and protocolFeeController. NOT the address V4 uses on
+  // Ethereum — that one has no code here.
+  v4PoolManager: "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+  v4PositionManager: "0x20eead6db6b3d0a4491e9073119dd0ebff166acc",
+  // The Universal Router, identified from real traffic rather than assumed:
+  // it carried 3,408 of the last 3,490 V4 swaps on Arc and exposes the
+  // router's own msgSender()/poolManager() pair.
+  universalRouter: "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b",
 } as const;
+
+/// The factory Create uses. Older factories stay in ARC_MAINNET_CONTRACTS so
+/// coins launched there remain readable and tradeable — a launch cannot be
+/// migrated between factories — but they are no longer offered for new ones.
+export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV12;
+export const ACTIVE_ENGINE_VERSION = 12;
 
 export const BRIDGE_TESTNETS = [
   "Arc Testnet", "Ethereum Sepolia", "Arbitrum Sepolia", "Base Sepolia",

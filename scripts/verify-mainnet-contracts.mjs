@@ -90,7 +90,11 @@ const launches = (() => {
     const data = JSON.parse(readFileSync(INDEX, "utf8"));
     // Arcodian launches only: an externally discovered pool's token is
     // somebody else's contract and not ours to publish source for.
-    return (data.launches || []).filter((row) => !row.globalPool && row.curve && row.address);
+    //
+    // Keyed off the factory rather than the presence of a curve — a V12
+    // launch has no curve at all, and testing for one silently skipped every
+    // coin from the current engine.
+    return (data.launches || []).filter((row) => !row.globalPool && row.address && (row.curve || Number(row.engineVersion) === 12));
   } catch { return []; }
 })();
 

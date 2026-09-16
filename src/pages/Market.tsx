@@ -13,6 +13,7 @@ import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type Candle } from "../candles";
 import { findBestExternalV3Route } from "../routingReads";
 import { ScreenerTable, DEFAULT_SCREENER_FILTERS, type ScreenerFilters } from "../components/ScreenerTable";
+import { ACTIVE_LAUNCH_FACTORY } from "../config";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -2201,6 +2202,8 @@ function Launch({
   // Arc Mainnet's EURC engine graduates at 3,000 where every other engine
   // graduates at 12,000, so this can no longer be a literal in the copy.
   const graduationLabel = graduationUnitsFor(isMainnet, quoteChoice).toLocaleString("en-US");
+  // A V12 launch has no graduation to describe — it opens its pool at once.
+  const launchesStraightToPool = isMainnet && quoteChoice === "USDC";
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const launchStep = !name.trim() || !symbol.trim() ? 1 : !image ? 2 : 3;
@@ -2279,7 +2282,15 @@ function Launch({
       // identical either way; only the address differs.
       const isEurc = quoteChoice === "EURC";
       const eurcFactory = isMainnet ? ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11 : EURC_PUMP_FACTORY_ADDRESS;
-      const factoryAddress = (isEurc ? eurcFactory : activeFactory).toLowerCase();
+      // USDC launches go to V12, which opens a real Uniswap V4 pool
+      // immediately — the reason a new coin is buyable from an external bot
+      // instead of invisible until it graduates. EURC has no V12 engine yet,
+      // so it stays on its curve factory.
+      const usdcFactory = isMainnet ? ACTIVE_LAUNCH_FACTORY : activeFactory;
+      const factoryAddress = (isEurc ? eurcFactory : usdcFactory).toLowerCase();
+      // V12 has no curve and no graduation: createLaunch returns the token
+      // and a V4 pool id, and the coin is tradeable from that block.
+      const isPoolLaunch = isMainnet && !isEurc;
       const factory = new Contract(
         factoryAddress,
         ARC_PUMP_FACTORY_ABI,
@@ -2369,6 +2380,19 @@ function Launch({
           }
         }
         const QSCALE = 10n ** 12n;
+        if (isPoolLaunch) {
+          // Nothing to read from a curve — there isn't one. The market index
+          // picks the launch up from the factory's own event on its next
+          // pass, same as every other engine.
+          onCreated?.({
+            symbol: symbol.toUpperCase(), name: name.trim(), type: "Meme", risk: "Uniswap V4",
+            address: tokenAddress, curve: "", image, creator: account, quoteKind: 0, currency: "USDC",
+            progress: 100, reserve: 0n, virtualReserve: 0n, threshold: 0n, inventory: 0n, graduated: true,
+            tradeCount: 0, holderCount: 0, volume: "0", volume1h: "0", volume24h: "0", priceChange24h: 0,
+            topHolders: [], trades: [],
+          });
+          return;
+        }
         const curve = new Contract(curveAddress, [
           isEurc ? "function realQuoteReserve() view returns(uint256)" : "function realNativeReserve() view returns(uint256)",
           isEurc ? "function VIRTUAL_QUOTE() view returns(uint256)" : "function VIRTUAL_NATIVE() view returns(uint256)",
@@ -2416,7 +2440,9 @@ function Launch({
         <div>
           <p className="kicker">Launch studio · {activeArc.name}</p>
           <h3>Build the coin.<br/><em>We handle the market.</em></h3>
-          <p>One wallet confirmation creates a fixed-supply token and its live bonding curve. At {graduationLabel} {quoteChoice}, liquidity graduates automatically to ARC DEX.</p>
+          <p>{launchesStraightToPool
+              ? "One wallet confirmation creates a fixed-supply token and opens its Uniswap V4 pool in the same transaction. Liquidity is permanent — the position has no withdrawal path at all."
+              : `One wallet confirmation creates a fixed-supply token and its live bonding curve. At ${graduationLabel} ${quoteChoice}, liquidity graduates automatically to ARC DEX.`}</p>
         </div>
         <span className="launch-network"><i/> Canonical v{isMainnet ? ARC_MAINNET_ENGINE_VERSION : ENGINE_VERSION}</span>
       </div>
@@ -2468,7 +2494,9 @@ function Launch({
             <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
             <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
           </div>
-          <small>Traders buy/sell your coin in {quoteChoice}. Graduation at {graduationLabel} {quoteChoice}.</small>
+          <small>{launchesStraightToPool
+            ? "Traders buy and sell your coin in USDC from the moment it launches — it opens a real Uniswap V4 pool immediately, so external bots and scanners can see and trade it straight away. You pay nothing for the liquidity."
+            : `Traders buy/sell your coin in ${quoteChoice}. Graduation at ${graduationLabel} ${quoteChoice}.`}</small>
         </label>
         <div className="launch-section-title launch-section-social"><span>02</span><div><b>Community</b><small>Optional discovery links</small></div></div>
         <label>
@@ -2506,7 +2534,7 @@ function Launch({
         <div className="preview-token-art"><CoinIcon image={image} fallback={<b>{symbol?.[0]?.toUpperCase() || "A"}</b>} /></div>
         <h4>{name.trim() || "Your coin name"}</h4>
         <strong>${symbol.toUpperCase() || "TICKER"}</strong>
-        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>Graduation</small><b>{graduationLabel} {quoteChoice}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
+        <div className="preview-market-data"><span><small>Fixed supply</small><b>1,000,000,000</b></span><span><small>Launch venue</small><b>Bonding curve</b></span><span><small>{launchesStraightToPool ? "Venue" : "Graduation"}</small><b>{launchesStraightToPool ? "Uniswap V4 · instant" : `${graduationLabel} ${quoteChoice}`}</b></span><span><small>Liquidity</small><b>Permanent</b></span></div>
         <div className="launch-readiness"><b>{launchReady ? "Ready to launch" : "Complete required fields"}</b><div><i className={identityReady ? "done" : ""}/><i className={image ? "done" : ""}/><i className={launchReady ? "done" : ""}/></div></div>
         <small className="preview-note">This is a visual preview. Contract addresses are created only after wallet confirmation.</small>
       </aside>

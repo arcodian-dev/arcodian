@@ -10,7 +10,7 @@ solc_version = "0.8.24"
 # different bytecode — re-verifying any of them would stop matching.
 # Globbed rather than listed file by file so a new V4 contract cannot break
 # the default build by being forgotten here.
-skip = ["src/Arcodian*.sol", "test/Arcodian*.t.sol"]
+skip = ["src/Arcodian*.sol", "test/Arcodian*.t.sol", "script/DeployArcodian*.s.sol"]
 optimizer = true
 optimizer_runs = 200
 

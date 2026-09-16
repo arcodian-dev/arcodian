@@ -56,6 +56,11 @@ const FACTORIES = [
   // because its curve names the quote "quote" rather than "native" and holds
   // it at 6 decimals.
   { address: process.env.ARC_MAINNET_FACTORY_EURC_V11 || "0x426e68f06207a3f3ef7aa261f3856e71746af7aa", fromBlock: 21_096_267, kind: "v3-eurc" },
+  // V12, deployed 2026-09-16 at block 21,128,... — the live engine. It has
+  // no curve at all: createLaunch opens a Uniswap V4 pool in the same
+  // transaction, so a launch is read from the factory's own event and the
+  // pool's state rather than from a bonding curve's getters.
+  { address: process.env.ARC_MAINNET_FACTORY_V12 || "0x95b4d7CCbd0D13aF4ba2CCd1Dd037C30B9eD76C2", fromBlock: 21_128_000, kind: "v4" },
 ];
 const V3_FACTORIES = [
   { address: process.env.ARCODIAN_V3_FACTORY || "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd", fromBlock: 13_400_000, dex: "Arcodian DEX" },
@@ -291,7 +296,61 @@ async function addressLogs(address, fromBlock, topics) {
 
 const cachedByAddress = new Map((previous?.launches || []).map((item) => [item.address.toLowerCase(), item]));
 
+const v4FactoryAbi = [
+  "function launchCount() view returns(uint256)",
+  "function tokenByLaunch(uint256) view returns(address)",
+  "function poolByLaunch(uint256) view returns(bytes32)",
+];
+const V4_POOL_MANAGER = process.env.ARC_V4_POOL_MANAGER || "0x8366a39CC670B4001A1121B8F6A443A643e40951";
+
+/**
+ * A V12 launch, read from the factory and the V4 PoolManager.
+ *
+ * There is no curve to ask for a reserve, and a V4 pool is not a contract
+ * with a balance — the PoolManager holds every pool's tokens together, so
+ * "how much is in this pool" cannot be read as a token balance the way it can
+ * for a V3 pool. Until the tape learns to follow V4 Swap events by pool id,
+ * this reports the launch itself honestly: it exists, it is tradeable, and
+ * its numbers fill in from trades rather than being guessed at.
+ */
+async function indexV4Launches(FACTORY, latestBlock) {
+  const factory = new Contract(FACTORY, v4FactoryAbi, provider);
+  const count = Number(await factory.launchCount());
+  const rows = [];
+  for (let id = 1; id <= count; id++) {
+    try {
+      const [address, poolId] = await Promise.all([factory.tokenByLaunch(id), factory.poolByLaunch(id)]);
+      const token = new Contract(address, tokenAbi, provider);
+      const [name, symbol, image, pooled] = await Promise.all([
+        token.name(), token.symbol(),
+        token.imageURI().catch(() => ""),
+        token.balanceOf(V4_POOL_MANAGER).catch(() => 0n),
+      ]);
+      rows.push({
+        address, curve: "", pair: poolId, pool: poolId, poolId, engineVersion: 12,
+        quoteKind: 0, currency: "USDC", quoteDecimals: 18,
+        name, symbol, image, creator: "",
+        // Graduated in the sense every consumer means by it: trading in a
+        // real pool rather than on a curve.
+        graduated: true, progress: 100, factory: FACTORY,
+        dex: "Uniswap V4", venue: "Uniswap V4", risk: "Uniswap V4", type: "Launch",
+        reserve: "0", virtualReserve: "0", threshold: "0", inventory: pooled.toString(),
+        lpSupply: "0", lpBurned: "0",
+        tradeCount: 0, holderCount: 0, volume: "0", volume24h: "0", priceChange24h: null,
+        createdAt: 0, trades: [],
+      });
+    } catch (error) {
+      console.error(`V12 launch ${id} unreadable: ${String(error).slice(0, 90)}`);
+    }
+  }
+  return rows;
+}
+
 const perFactory = await Promise.all(FACTORIES.map(async ({ address: FACTORY, fromBlock: deployBlock, kind }) => {
+  if (kind === "v4") {
+    const launches = await indexV4Launches(FACTORY, latestBlock);
+    return { address: FACTORY, kind, indexedBlock: latestBlock, launches };
+  }
   const fromBlock = previousByFactory.has(FACTORY.toLowerCase())
     ? Math.max(0, Number(previousByFactory.get(FACTORY.toLowerCase())) + 1)
     : deployBlock;
