@@ -128,9 +128,10 @@ describe("official Circle contracts on Arc Mainnet (published 2026-09-16)", () =
     expect(ARC_MAINNET_CONTRACTS.v4Router).toBe("0xb865dB1cC95b05Ee939b74779C6996173da8fb48");
   });
 
-  it("does not point public explorer links at Circle's SSO-gated explorer", () => {
-    // explorer.arc.io 302s to circle.cloudflareaccess.com; linking a user
-    // there sends them to a login wall instead of their transaction.
-    expect(ARC_MAINNET.explorer).not.toContain("explorer.arc.io");
+  it("points public explorer links at Circle's official mainnet explorer", () => {
+    // explorer.arc.io was SSO-gated at launch and opened to the public on
+    // 2026-09-17; the mainnet UI must never link the testnet explorer.
+    expect(ARC_MAINNET.explorer).toBe("https://explorer.arc.io");
+    expect(ARC_MAINNET.explorer).not.toContain("testnet");
   });
 });

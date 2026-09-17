@@ -514,27 +514,11 @@ export const ARC_MAINNET = {
     THIRDWEB_RPC,
     "https://warp-arc-production.up.railway.app/rpc",
   ],
-  // arc.exploreme.pro has been serving its own maintenance page on every
-  // API path since before 2026-09-05 (still true 2026-09-10). arc-scan.org
-  // ("Arcscan") is a real, independent Arc explorer confirmed live
-  // 2026-09-12 — supports address/tx lookups, contract verification, token
-  // holders. Its own verify-contract API endpoint isn't publicly documented
-  // yet (its web UI sits behind a Cloudflare bot challenge that blocked
-  // every automated attempt to find it, and it isn't the plain Blockscout
-  // REST shape at /api/ — that path just serves the site's own SPA shell);
-  // resolve that once the user or the official Sept 16 mainnet launch
-  // surfaces the real endpoint.
-  //
-  // 2026-09-16: Circle's own explorer URL is now documented —
-  // https://explorer.arc.io — but it is NOT usable as a public explorer
-  // link yet: every path 302s to circle.cloudflareaccess.com, Circle's
-  // internal Cloudflare Access SSO. Linking users there would send them to
-  // a login wall instead of their transaction, so the default deliberately
-  // stays on arc-scan.org. Switch the moment explorer.arc.io answers
-  // anonymously (re-check: it should open at/after the public launch), and
-  // note that Sourcify still does not list chain 5042 — so contract source
-  // verification stays blocked regardless of which explorer we point at.
-  explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://arc-scan.org",
+  // Circle's official Blockscout explorer. It sat behind Circle's Cloudflare
+  // Access SSO at launch (2026-09-16), so the default was arc-scan.org; it
+  // answers anonymously as of 2026-09-17. Contracts also verify on Sourcify
+  // (chain 5042), arcexplorer.org and arc.exploreme.pro.
+  explorer: import.meta.env.VITE_ARC_MAINNET_EXPLORER || "https://explorer.arc.io",
   nativeToken: "0x3600000000000000000000000000000000000000",
   nativeSymbol: "USDC",
   nativeDecimals: 18,

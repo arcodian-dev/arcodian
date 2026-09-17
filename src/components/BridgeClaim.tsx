@@ -65,7 +65,7 @@ const chainName = (id: number) => allBridgeChains.find((chain) => chain.id === i
 const chainExplorer = (id: number) => ({
   11155111: "https://sepolia.etherscan.io", 421614: "https://sepolia.arbiscan.io", 84532: "https://sepolia.basescan.org", 43113: "https://testnet.snowtrace.io", 11155420: "https://sepolia-optimism.etherscan.io", 80002: "https://amoy.polygonscan.com", [ARC.id]: ARC.explorer,
   1: "https://etherscan.io", 42161: "https://arbiscan.io", 10: "https://optimistic.etherscan.io", 8453: "https://basescan.org", [ARC_MAINNET.id]: ARC_MAINNET.explorer,
-} as Record<number, string>)[id] || ARC.explorer;
+} as Record<number, string>)[id] || ARC_MAINNET.explorer;
 // Manual "add a claim" only offers mainnet — matches the live Bridge page,
 // which no longer surfaces testnet as an option. chainName/chainExplorer
 // above still resolve testnet ids so an older pending/history entry from

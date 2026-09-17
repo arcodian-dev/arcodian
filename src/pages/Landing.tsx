@@ -113,8 +113,6 @@ const PILLARS: { group: string; blurb: string; items: { name: string; desc: stri
     items: [
       { name: "Developers", desc: "SDK, machine-readable registry, event schemas, and the MCP endpoint.", tab: "developers" },
       { name: "Trust Center", desc: "Every canonical address with a live on-chain wiring proof.", tab: "contracts" },
-      { name: "Analytics", desc: "Public protocol metrics read straight from chain.", tab: "analytics" },
-      { name: "Treasury", desc: "Where protocol fees go, in the open.", tab: "treasury" },
     ],
   },
 ];

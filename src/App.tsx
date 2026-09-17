@@ -155,7 +155,7 @@ type CircleSwapEstimateView = {
   fees: Array<{ type: string; token: string; amount: string | null }>;
 };
 
-const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "analytics", "treasury", "developers", "screener", "bridge", "swap", "terminal", "fx", "ausd", "profile", "how", "faq", "contracts"] as const;
+const ROUTE_TABS = ["wallet", "arcpay", "agentpay", "jobs", "developers", "screener", "bridge", "swap", "terminal", "fx", "ausd", "profile", "how", "faq", "contracts"] as const;
 function initialTab(): Tab {
   if (typeof window === "undefined") return "bridge";
   const segment = window.location.pathname.split("/").filter(Boolean)[0];
@@ -985,8 +985,8 @@ export default function App() {
                   left intact (still reachable at /developers directly), so
                   this is easily reversible if that's not actually wanted. */}
               <button onClick={() => chooseTab("contracts")}><b>Trust Center</b><small>Canonical contracts</small></button>
-              <button onClick={() => chooseTab("analytics")}><b>Analytics</b><small>Public protocol metrics</small></button>
-              <button onClick={() => chooseTab("treasury")}><b>Treasury</b><small>Protocol treasury</small></button>
+              {/* Analytics and Treasury hidden 2026-09-17 (user request): not
+                  needed for now. Pages kept; their routes fall back to home. */}
               <button onClick={() => chooseTab("how")}><b>Docs, FAQ & Legal</b><small>How everything works</small></button>
             </div>
           </details>
@@ -1396,7 +1396,7 @@ export default function App() {
         <span>Markets should show their workings.</span>
         <button onClick={() => chooseTab("how")}>Docs, FAQ & Legal</button>
         <button onClick={() => chooseTab("contracts")}>Trust Center</button>
-        <a href={ARC.explorer} target="_blank" rel="noreferrer">
+        <a href={ARC_MAINNET.explorer} target="_blank" rel="noreferrer">
           Explorer ↗
         </a>
         <div className="footer-socials">
@@ -1424,7 +1424,7 @@ export default function App() {
         <p className="mm-group">Agent</p>
         <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/services">Services</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>
-        <a href="/contracts">Trust Center</a><a href="/analytics">Analytics</a><a href="/treasury">Treasury</a><a href="/docs">Docs, FAQ &amp; Legal</a>
+        <a href="/contracts">Trust Center</a><a href="/docs">Docs, FAQ &amp; Legal</a>
         <button className="mm-create" onClick={() => { setMobileMoreOpen(false); openCreateStudio(); }}>Create token</button></aside>}
       {walletOpen && (
         <WalletModal

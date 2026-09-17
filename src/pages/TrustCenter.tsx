@@ -474,7 +474,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div className="docs-links">
         <button onClick={openContracts}><b>Contracts →</b><small>Live on-chain wiring proof</small></button>
         <a href="#docs-faq"><b>FAQ ↓</b><small>Plain answers to the edge cases</small></a>
-        <a href={ARC.explorer} target="_blank" rel="noreferrer"><b>Arc Explorer ↗</b><small>Inspect any address or transaction</small></a>
+        <a href={ARC_MAINNET.explorer} target="_blank" rel="noreferrer"><b>Arc Explorer ↗</b><small>Inspect any address or transaction</small></a>
       </div>
     </article>
 
