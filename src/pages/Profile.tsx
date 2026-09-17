@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Contract, formatEther } from "ethers";
-import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS } from "../config";
+import { Contract, formatEther, formatUnits } from "ethers";
+import { ARC, ARC_MAINNET, ARC_MAINNET_CONTRACTS, launchHookFor, LEGACY_PUMP_FACTORY_ADDRESSES, PUMP_FACTORY_ADDRESS } from "../config";
 import { ARC_PUMP_FACTORY_ABI } from "../generated/arcPumpFactory";
 import { arcProvider, CoinIcon, readActivities, short, type LaunchAsset, type WalletActivity } from "../shared";
 
@@ -9,6 +9,7 @@ import { arcProvider, CoinIcon, readActivities, short, type LaunchAsset, type Wa
 // effect depends on it) retrigger an infinite refetch loop, same failure
 // mode fixed in Market.tsx.
 const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function withdrawCreatorFees() external"];
+const HOOK_FEE_ABI = ["function claimable(address,address) view returns(uint256)", "function claim(address) external"];
 
 // V11-only (ArcPumpV11's creator fee split) — silently renders nothing for
 // any coin on an older engine (creatorFeesAccrued() reverts there, same
@@ -16,8 +17,11 @@ const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", 
 // filtered to creator===account (see the effect below), so every row this
 // renders in IS this wallet's own coin — no extra visibility gate needed
 // here, that's the whole reason this lives on the Created tab specifically.
-function CreatorFeeChip({ curve, activeArc, activeProvider, account }: {
+function CreatorFeeChip({ curve, hook = "", activeArc, activeProvider, account }: {
   curve: string;
+  // Set for pool launches: the fee accrues on the engine's hook, in USDC at
+  // 6 decimals, per creator across every coin on that engine.
+  hook?: string;
   activeArc: { rpc: string; rpcs?: readonly string[]; id?: number };
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   account: string;
@@ -29,13 +33,15 @@ function CreatorFeeChip({ curve, activeArc, activeProvider, account }: {
   useEffect(() => {
     let alive = true;
     const provider = arcProvider(activeArc);
-    const poll = () => new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+    const poll = () => (hook
+      ? new Contract(hook, HOOK_FEE_ABI, provider).claimable(account, "0x3600000000000000000000000000000000000000")
+      : new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued())
       .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
       .catch(() => { if (alive) setSupported(false); });
     void poll();
     const timer = window.setInterval(poll, 15_000);
     return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
-  }, [curve, activeArc]);
+  }, [curve, hook, activeArc, account]);
 
   if (!supported || accrued == null) return null;
 
@@ -44,14 +50,15 @@ function CreatorFeeChip({ curve, activeArc, activeProvider, account }: {
     if (!activeProvider) return;
     setClaiming(true);
     try {
-      const iface = new Contract(curve, CREATOR_FEE_ABI);
-      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
-      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: curve, data }] });
+      const data = hook
+        ? new Contract(hook, HOOK_FEE_ABI).interface.encodeFunctionData("claim", ["0x3600000000000000000000000000000000000000"])
+        : new Contract(curve, CREATOR_FEE_ABI).interface.encodeFunctionData("withdrawCreatorFees", []);
+      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: hook || curve, data }] });
     } catch { /* status surfaced via the balance simply not moving; kept minimal here, terminal has the full flow */ }
     finally { setClaiming(false); }
   }
 
-  return <span className="creator-fee-chip"><small>Your creator fee</small><b>{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
+  return <span className="creator-fee-chip"><small>Your creator fee</small><b>{Number(hook ? formatUnits(accrued, 6) : formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
     <button disabled={claiming || accrued === 0n} onClick={(event) => void claim(event)}>{claiming ? "Claiming…" : "Claim"}</button>
   </span>;
 }
@@ -109,7 +116,7 @@ export default function Profile({
       const wallet = account.toLowerCase();
       const local = readActivities().filter((item) => item.account.toLowerCase() === wallet && (item.kind === "BUY" || item.kind === "SELL"));
       try {
-        const response = await fetch("/data/market-index.json", { cache: "no-store" });
+        const response = await fetch(isMainnet ? "/data/mainnet-market-index.json" : "/data/market-index.json", { cache: "no-store" });
         if (!response.ok) throw new Error("INDEX_UNAVAILABLE");
         const index = await response.json() as { launches?: Array<{ address: string; symbol: string; name: string; trades?: Array<{ side: "BUY" | "SELL"; block: number; timestamp?: number; tx: string; user: string; native: string; tokens: string }> }> };
         const indexed = (index.launches || []).flatMap((market) => (market.trades || [])
@@ -142,7 +149,7 @@ export default function Profile({
     window.addEventListener("arcodian:activity", handleRefresh);
     window.addEventListener("storage", handleRefresh);
     return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("arcodian:activity", handleRefresh); window.removeEventListener("storage", handleRefresh); };
-  }, [account]);
+  }, [account, isMainnet]);
   useEffect(() => {
     if (!account) { setReferralStats({ visits: 0, uniqueVisitors: 0 }); return; }
     fetch(`/api/referral.php?ref=${encodeURIComponent(account)}`, { cache: "no-store" })
@@ -157,6 +164,36 @@ export default function Profile({
     }
     const provider = arcProvider(activeArc);
     setLoading(true);
+    if (isMainnet) {
+      // Mainnet lists the current launch engine only, from the market index —
+      // the same set the Market page shows. The old curve-factory scan below
+      // never saw pool launches, which have no curve at all.
+      (async () => {
+        const response = await fetch("/data/mainnet-market-index.json", { cache: "no-store" });
+        if (!response.ok) throw new Error("INDEX_UNAVAILABLE");
+        const index = await response.json() as { launches: Array<Record<string, unknown>> };
+        const rows = index.launches.filter((item) => !item.globalPool && Number(item.engineVersion) >= 15);
+        const tokenAbi = ["function balanceOf(address) view returns(uint256)"];
+        const found = await Promise.all(rows.map(async (item) => {
+          const balance = BigInt(await new Contract(String(item.address), tokenAbi, provider).balanceOf(account).catch(() => 0n));
+          if (balance === 0n) return null;
+          const reserve = BigInt(String(item.reserve || "0")), threshold = BigInt(String(item.threshold || "1"));
+          // Pool spot price (USDC per token) less the 1% fee a sell pays.
+          const price = Number(item.price || 0);
+          const value = BigInt(Math.floor(Number(formatEther(balance)) * price * 0.99 * 1e6)) * 10n ** 12n;
+          return {
+            ...item, balance, value, reserve, threshold,
+            virtualReserve: 0n, inventory: BigInt(String(item.inventory || "0")),
+            progress: item.graduated ? 100 : Number((reserve * 10000n) / (threshold || 1n)) / 100,
+            type: item.graduated ? "Graduated" : "Meme", risk: "Uniswap V4",
+          } as unknown as LaunchAsset & { balance: bigint; value: bigint };
+        }));
+        setHoldings(found.filter((item): item is LaunchAsset & { balance: bigint; value: bigint } => item !== null));
+      })()
+        .catch(() => setHoldings([]))
+        .finally(() => { setLoading(false); provider.destroy(); });
+      return;
+    }
     (async () => {
       const groups = await Promise.all(
         [activeFactory, ...activeLegacyFactories].map(
@@ -451,14 +488,15 @@ export default function Profile({
               <p className="kicker">Created markets</p>
               <div className="holdings-list">
                 {created.map((item) => {
-                  const showFee = Boolean(item.curve) && isMainnet && Boolean(viewerAccount) && viewerAccount!.toLowerCase() === account.toLowerCase();
+                  const feeHook = launchHookFor(Number(item.engineVersion) || 0);
+                  const showFee = Boolean(item.curve || feeHook) && isMainnet && Boolean(viewerAccount) && viewerAccount!.toLowerCase() === account.toLowerCase();
                   return <div key={`created-${item.address}`} className="created-market-row">
                     <button onClick={() => chooseCoin(item.address)}>
                       <span className="asset"><CoinIcon image={item.image} fallback={<b>{item.symbol[0]}</b>} /><span><strong>{item.symbol}</strong><small>{item.name}</small></span></span>
                       <span><small>{item.graduated ? "Venue" : "Progress"}</small><b>{item.graduated ? "ARC DEX" : `${item.progress.toFixed(2)}%`}</b></span><span><small>24h volume</small><b>{Number(formatEther(BigInt(item.volume24h||"0"))).toLocaleString(undefined,{maximumFractionDigits:2})} USDC</b></span>
                       <i>→</i>
                     </button>
-                    {showFee && <CreatorFeeChip curve={item.curve} activeArc={activeArc} activeProvider={activeProvider || null} account={viewerAccount!} />}
+                    {showFee && <CreatorFeeChip curve={item.curve} hook={feeHook} activeArc={activeArc} activeProvider={activeProvider || null} account={viewerAccount!} />}
                   </div>;
                 })}
               </div>

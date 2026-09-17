@@ -836,11 +836,10 @@ export default function Wallet({
     setHoldingsLoading(true);
     const rpc = isArcMainnetChain ? ARC_MAINNET.rpc : ARC.rpc;
     const provider = new JsonRpcProvider(rpc);
-    // V11 (creator fee split + graduation fee) is mainnet's active launch
-    // factory as of 2026-09-12; V10/V9/V8 stay wired read-only so pre-V11
-    // coins keep showing up — same split Market.tsx uses.
+    // Mainnet shows the current launch engine only (V15, the same set the
+    // Market lists); its factory exposes the same launchCount/tokenByLaunch.
     const factoryAddresses = isArcMainnetChain
-      ? [ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, ARC_MAINNET_CONTRACTS.marketUsdcFactory]
+      ? [ARC_MAINNET_CONTRACTS.launchFactoryV15]
       : [PUMP_FACTORY_ADDRESS];
     (async () => {
       const found: Array<{ symbol: string; name: string; balance: string; address: string }> = [];

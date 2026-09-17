@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Contract, formatEther } from "ethers";
+import { Contract, formatEther, formatUnits } from "ethers";
 import SwapPanel from "../components/SwapPanel";
 import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type CandlePoint } from "../candles";
-import { ARC_MAINNET } from "../config";
+import { ARC_MAINNET, launchHookFor } from "../config";
 import { arcProvider, CoinIcon, quoteDecimalsOf, rpcUrlsFor } from "../shared";
 // The scoped design system comes first so the older TradingTerminal.css,
 // which still owns PoolInfo and the skeleton, can override it where those
@@ -13,6 +13,7 @@ import "./TradingTerminal.css";
 
 type MarketTrade = { side: "BUY" | "SELL"; timestamp?: number; tx: string; user: string; native: string; tokens: string; block?: number; venue?: string; price?: number };
 type MarketRecord = {
+  engineVersion?: number;
   address: string;
   name: string;
   symbol: string;
@@ -140,6 +141,7 @@ function CurveProgress({ market }: { market: MarketRecord }) {
 }
 
 const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function creator() view returns(address)", "function withdrawCreatorFees() external"];
+const HOOK_FEE_ABI = ["function claimable(address,address) view returns(uint256)", "function claim(address) external"];
 
 // V11-only feature (creator fee split — see contracts/src/ArcPumpV11.sol).
 // Reads live, not from the index snapshot: this is a claimable balance, so a
@@ -157,7 +159,10 @@ function CreatorFeeSection({ market, account, activeProvider }: {
   const [supported, setSupported] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [status, setStatus] = useState("");
-  const curve = market.curve;
+  // Pool launches (V13+) accrue the creator fee on the engine's hook in USDC
+  // (6 dp), per creator; curve launches on the curve.
+  const hook = launchHookFor(Number(market.engineVersion) || 0);
+  const curve = hook || market.curve;
   // User-specified privacy rule: creator-fee info shows ONLY to the wallet
   // that IS this coin's creator, connected. Everyone else sees nothing here
   // (not even a disabled/blurred hint) — the balance is technically public
@@ -168,13 +173,15 @@ function CreatorFeeSection({ market, account, activeProvider }: {
     if (!curve || !isCreator) return;
     let alive = true;
     const provider = arcProvider(ARC_MAINNET);
-    const poll = () => new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+    const poll = () => (hook
+      ? new Contract(hook, HOOK_FEE_ABI, provider).claimable(account, "0x3600000000000000000000000000000000000000")
+      : new Contract(curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued())
       .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
       .catch(() => { if (alive) setSupported(false); });
     void poll();
     const timer = window.setInterval(poll, 10_000);
     return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
-  }, [curve, isCreator]);
+  }, [curve, hook, isCreator, account]);
 
   if (!curve || !isCreator || !supported || accrued == null) return null;
 
@@ -183,8 +190,9 @@ function CreatorFeeSection({ market, account, activeProvider }: {
     setClaiming(true);
     setStatus("Confirm the claim in your wallet…");
     try {
-      const iface = new Contract(curve, CREATOR_FEE_ABI);
-      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
+      const data = hook
+        ? new Contract(hook, HOOK_FEE_ABI).interface.encodeFunctionData("claim", ["0x3600000000000000000000000000000000000000"])
+        : new Contract(curve, CREATOR_FEE_ABI).interface.encodeFunctionData("withdrawCreatorFees", []);
       const hash = await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: curve, data }] });
       setStatus(typeof hash === "string" ? "Claim submitted — it'll land in a few seconds." : "Claim submitted.");
     } catch (error) {
@@ -198,7 +206,7 @@ function CreatorFeeSection({ market, account, activeProvider }: {
     <div className="terminal-section-title">Your creator fee <span>1% trading fee, split</span></div>
     <div className="creator-fee-stat">
       <span>Claimable now</span>
-      <b>{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
+      <b>{Number(hook ? formatUnits(accrued, 6) : formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })} USDC</b>
     </div>
     <p className="poolinfo-note">Visible only to you — you're the creator wallet for {market.symbol}.</p>
     <button className="creator-fee-claim" disabled={claiming || accrued === 0n} onClick={() => void claim()}>{claiming ? "Claiming…" : accrued === 0n ? "Nothing to claim yet" : "Claim creator fee"}</button>

@@ -13,7 +13,7 @@ import { TerminalChart } from "../components/TerminalChart";
 import { buildCandles, type Candle } from "../candles";
 import { findBestExternalV3Route } from "../routingReads";
 import { ScreenerTable, DEFAULT_SCREENER_FILTERS, type ScreenerFilters } from "../components/ScreenerTable";
-import { ACTIVE_ENGINE_VERSION, ACTIVE_LAUNCH_FACTORY, V13_POOL_FEE, V13_TICK_SPACING, V14_POOL_FEE } from "../config";
+import { ACTIVE_ENGINE_VERSION, ACTIVE_LAUNCH_FACTORY, launchHookFor, V13_POOL_FEE, V13_TICK_SPACING, V14_POOL_FEE } from "../config";
 import { convert, currencyOf, routeFor, trueCost, type Currency, type FxRate } from "../fx";
 import { fetchFxRate } from "../fxRate";
 import { isFreshMarketIndex } from "../marketData";
@@ -1038,6 +1038,7 @@ export default function Screener({
 }
 
 const CREATOR_FEE_ABI = ["function creatorFeesAccrued() view returns(uint256)", "function withdrawCreatorFees() external"];
+const HOOK_FEE_ABI = ["function claimable(address,address) view returns(uint256)", "function claim(address) external"];
 
 // V11-only (ArcPumpV11's creator fee split) — visible ONLY to the connected
 // wallet that IS this coin's creator (user-specified privacy rule, same as
@@ -1086,29 +1087,36 @@ function CreatorFeeCard({ asset, account, activeArc, activeProvider }: {
   const [claiming, setClaiming] = useState(false);
   const [status, setStatus] = useState("");
   const isCreator = Boolean(account) && Boolean(asset.creator) && account.toLowerCase() === (asset.creator || "").toLowerCase();
+  // Pool launches (V13+) accrue the creator's half on the engine's hook, per
+  // creator, in USDC at 6 decimals; curve launches accrue it on the curve.
+  const hook = launchHookFor(Number(asset.engineVersion) || 0);
+  const feeTarget = hook || asset.curve;
 
   useEffect(() => {
-    if (!asset.curve || !isCreator) return;
+    if (!feeTarget || !isCreator) return;
     let alive = true;
     const provider = arcProvider(activeArc);
-    const poll = () => new Contract(asset.curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued()
+    const poll = () => (hook
+      ? new Contract(hook, HOOK_FEE_ABI, provider).claimable(account, ARC_USDC_ERC20)
+      : new Contract(asset.curve, CREATOR_FEE_ABI, provider).creatorFeesAccrued())
       .then((value: unknown) => { if (alive) { setAccrued(value as bigint); setSupported(true); } })
       .catch(() => { if (alive) setSupported(false); });
     void poll();
     const timer = window.setInterval(poll, 10_000);
     return () => { alive = false; window.clearInterval(timer); provider.destroy(); };
-  }, [asset.curve, isCreator, activeArc]);
+  }, [feeTarget, hook, asset.curve, isCreator, activeArc, account]);
 
-  if (!asset.curve || !isCreator || !supported || accrued == null) return null;
+  if (!feeTarget || !isCreator || !supported || accrued == null) return null;
 
   async function claim() {
     if (!activeProvider) return;
     setClaiming(true);
     setStatus("Confirm the claim in your wallet…");
     try {
-      const iface = new Contract(asset.curve, CREATOR_FEE_ABI);
-      const data = iface.interface.encodeFunctionData("withdrawCreatorFees", []);
-      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: asset.curve, data }] });
+      const data = hook
+        ? new Contract(hook, HOOK_FEE_ABI).interface.encodeFunctionData("claim", [ARC_USDC_ERC20])
+        : new Contract(asset.curve, CREATOR_FEE_ABI).interface.encodeFunctionData("withdrawCreatorFees", []);
+      await activeProvider.request({ method: "eth_sendTransaction", params: [{ from: account, to: feeTarget, data }] });
       setStatus("Claim submitted — it'll land in a few seconds.");
     } catch (error) {
       setStatus((error as { message?: string })?.message?.slice(0, 120) || "Claim failed.");
@@ -1119,8 +1127,8 @@ function CreatorFeeCard({ asset, account, activeArc, activeProvider }: {
 
   return <div className="orbit-block orbit-creator-fee">
     <div className="orbit-block-h"><div className="orbit-block-t">Your creator fee</div></div>
-    <div className="orbit-curve-top"><div className="orbit-curve-pct">{Number(formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })}</div><div className="orbit-curve-sub">USDC claimable</div></div>
-    <div className="orbit-curve-note">Visible only to you — you're the creator wallet for {asset.symbol}. 1% trading fee, split 50/50 with the protocol treasury.</div>
+    <div className="orbit-curve-top"><div className="orbit-curve-pct">{Number(hook ? formatUnits(accrued, 6) : formatEther(accrued)).toLocaleString(undefined, { maximumFractionDigits: 6 })}</div><div className="orbit-curve-sub">USDC claimable</div></div>
+    <div className="orbit-curve-note">Visible only to you — you're the creator wallet for {asset.symbol}. 1% trading fee, split 50/50 with the protocol treasury{hook ? ", paid in USDC. The balance covers every coin you launched on this engine; one claim withdraws it all." : "."}</div>
     <button className="orbit-claim-btn" disabled={claiming || accrued === 0n} onClick={() => void claim()}>{claiming ? "Claiming…" : accrued === 0n ? "Nothing to claim yet" : "Claim creator fee"}</button>
     {status && <div className="orbit-curve-note">{status}</div>}
   </div>;
@@ -2686,7 +2694,9 @@ function Launch({
           <span>Quote asset <i>Trading currency</i></span>
           <div className="quote-toggle" role="group" aria-label="Quote asset">
             <button type="button" className={quoteChoice === "USDC" ? "active" : ""} onClick={() => setQuoteChoice("USDC")}>USDC</button>
-            <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>
+            {/* EURC launches still run on the V11 curve engine; mainnet
+                offers the current pool engine only (user request 2026-09-17). */}
+            {!isMainnet && <button type="button" className={quoteChoice === "EURC" ? "active" : ""} onClick={() => setQuoteChoice("EURC")}>EURC</button>}
           </div>
           <small>{launchesStraightToPool
             ? "Traders buy and sell your coin in USDC from the moment it launches — it opens a real Uniswap V4 pool immediately, so external bots and scanners can see and trade it straight away. You pay nothing for the liquidity."

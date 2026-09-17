@@ -52,9 +52,9 @@ const entries=[
 // actually runs on — exactly the kind of self-defeating staleness this
 // "verify before integrating" page exists to prevent.
 const mainnetEntries=[
- ["USDC-only Market Factory (V11, current)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11,"Fair-launch bonding-curve factory — every new coin launches here. Same curve as V10 below, plus a creator fee split (1% trading fee, half to the launch's creator via pull-claim, half treasury) and a separate 1% one-time graduation fee (100% treasury)."],
- ["USDC-only Market Factory (V10, legacy)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10,"Superseded by V11 above. Kept live read-only for the one coin still trading there that can't be migrated."],
- ["USDC-only Market Factory (V9, legacy)",ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9,"Superseded by V10 above. Kept live read-only for the one coin still trading there that can't be migrated."],
+ ["Launch Factory (V15, current)",ARC_MAINNET_CONTRACTS.launchFactoryV15,"Every new coin launches here, straight into its own Uniswap V4 pool. 1% trading fee in USDC split with the creator, one-time 1% USDC graduation fee at 12,000 USDC, liquidity locked."],
+ ["Launch Fee Hook (V15)",ARC_MAINNET_CONTRACTS.launchHookV15,"Takes the 1% on every swap through a V15 pool, in USDC, and triggers graduation. Source on Sourcify."],
+ ["V4 Router",ARC_MAINNET_CONTRACTS.v4Router,"Exact-input swaps and quotes on V4 launch pools with one plain ERC-20 approval."],
  ["Market Graduation Hub",ARC_MAINNET_CONTRACTS.marketGraduationHub,"Seals graduation authority into the pair factory below."],
  ["Market Pair Factory (Arcodian DEX)",ARC_MAINNET_CONTRACTS.marketPairFactory,"Permissionless AMM registry — the direct-pair route Swap/Pools/Create pool read on-chain. No coin has graduated into it on mainnet yet; every V9/V10 graduation lands in its own Uniswap V3 pool instead (see the V3 factory below)."],
  ["Arcodian DEX Router","0x4A5eF82818F674452690539D75517b4604981Bed","Stateless multi-hop swap router over the pair factory above. Holds no funds between transactions."],

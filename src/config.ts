@@ -804,6 +804,14 @@ export const V13_GRADUATION_USDC = 12_000;
 /// migrated between factories — but they are no longer offered for new ones.
 // Never V12 — see launchFactoryV13 for why.
 export const ACTIVE_LAUNCH_FACTORY = ARC_MAINNET_CONTRACTS.launchFactoryV15;
+/// The fee hook of a pool launch's engine, or "" for curve engines. Creator
+/// fees for pool launches accrue on the hook, per creator, in USDC (6 dp).
+export function launchHookFor(engineVersion: number): string {
+  if (engineVersion >= 15) return ARC_MAINNET_CONTRACTS.launchHookV15;
+  if (engineVersion === 14) return ARC_MAINNET_CONTRACTS.launchHookV14;
+  if (engineVersion === 13) return ARC_MAINNET_CONTRACTS.launchHookV13;
+  return "";
+}
 export const ACTIVE_ENGINE_VERSION = 15;
 
 export const BRIDGE_TESTNETS = [
