@@ -786,6 +786,14 @@ export const ARC_MAINNET_CONTRACTS = {
   // Same permission bits as V14 (0x20CC); also calls the factory after each
   // swap until the pool graduates.
   launchHookV15: "0x82AA4c459DB78C58fF279439bEDe03697C80A0Cc",
+  // Arc Lend on mainnet, deployed 2026-09-18 (blocks 21,461,651/656): an
+  // isolated market lending native USDC against Circle's EURC, 70% max LTV,
+  // 80% liquidation threshold, 10% of interest to the protocol reserve,
+  // launched with 5,000 / 3,000 USDC supply / borrow caps.
+  arcLendMarket: "0x36Fe4144DD0154338b90FeE3303663C77b42E8DB",
+  // EUR/USD for it: 30-minute TWAP of the deepest Uniswap V3 USDC/EURC pool,
+  // cross-checked against Pyth whenever Pyth has a fresh report.
+  arcEurUsdOracle: "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
 } as const;
 
 /// V13 pool parameters, fixed by the factory. A V4 pool is identified by

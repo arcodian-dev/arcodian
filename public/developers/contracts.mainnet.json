@@ -55,7 +55,10 @@
     "sessionKeyAccount": "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
     "adminTimelock": "0xba953bc1282d0bffe22b4f769822d20900625594",
     "bridgeFeeRouter": "0xc35deb937f5056a0e034f10e21094878485caee7",
-    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF"
+    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF",
+    "arcLendMarket": "0x36Fe4144DD0154338b90FeE3303663C77b42E8DB",
+    "arcEurUsdOracle": "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
+    "fxPool": "0x506f61b6c287c616bb7ef827d2455b401373418f"
   },
   "external": {
     "v4PoolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
@@ -75,5 +78,18 @@
       "0xf63748010F29c00F67C3F7E5598eBd3AE20055bE"
     ],
     "note": "2026-08-02: ArcAdminTimelock's admin (the role that can change who may propose/execute, or transfer admin again) was migrated from the deployer EOA to a freshly-deployed 2-of-3 ArcMultisig (contracts/src/ArcGovernance.sol) via transferAdmin/acceptAdmin \u2014 verified on-chain, admin() now returns the multisig. isProposer/isExecutor were left as the deployer alone (routine timelock operations stay single-key; only the higher-privilege admin role required 2 signatures to change). ArcMultisig itself has NO owner-rotation function \u2014 its signer set is immutable once deployed, so this is a one-shot decision. All 3 signer keys were generated on and are stored on the same VPS that runs this project (not independent devices/parties) \u2014 this multisig protects against a single lost/misused key, not against compromise of this server itself. See docs/ARCODIAN-AUDIT-READINESS.md; ArcAdminTimelock's own contract docstring still says 'Not audited, not for mainnet' \u2014 this migration does not change that."
+  },
+  "lend": {
+    "market": "0x36Fe4144DD0154338b90FeE3303663C77b42E8DB",
+    "oracle": "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
+    "collateral": "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+    "maxLtvBps": 7000,
+    "liquidationThresholdBps": 8000,
+    "liquidationBonusBps": 500,
+    "reserveFactorBps": 1000,
+    "supplyCapUsdc": 5000,
+    "borrowCapUsdc": 3000,
+    "maxOracleAgeSeconds": 21600,
+    "priceSource": "Uniswap V3 USDC/EURC 30-min TWAP (0x6fd5F2fb831940DcD61A98c5B3aCB7D8C6f3bFc1), Pyth cross-check (0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a)"
   }
 }

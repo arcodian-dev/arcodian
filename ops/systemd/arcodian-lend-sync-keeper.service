@@ -1,0 +1,9 @@
+[Unit]
+Description=Arc Lend (mainnet) oracle sync keeper
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/.openclaw/workspace/arc
+ExecStart=/usr/bin/node scripts/lend-sync-keeper.mjs
+TimeoutStartSec=5min

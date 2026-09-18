@@ -124,7 +124,7 @@ const STEPS = [
 ];
 
 const FAQS = [
-  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Bridge, the Market/Launchpad, Swap, Stablecoin FX and Arc Pay are live on Arc Mainnet with real USDC. Lend and the agent-economy rails are still Arc Testnet only." },
+  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Bridge, the Market/Launchpad, Swap, Stablecoin FX, Lend and Arc Pay are live on Arc Mainnet with real USDC. The agent-economy rails are still Arc Testnet only." },
   { q: "Is Arcodian custodial?", a: "No. You connect your own wallet and every action settles directly on chain. Arcodian never holds your assets and has no ability to move them." },
   { q: "What does graduation actually do?", a: "A coin trades in its own Uniswap V4 pool from launch. When 12,000 USDC has been raised, the swap that crosses the line takes a one-time 1% of the position in USDC for the treasury and burns the matching tokens. The rest stays locked in the pool for good; there is no LP token anyone can withdraw." },
   { q: "Who can create a pool?", a: "Anyone. The pair factory is permissionless — any two tokens, at either fee tier. Launchpad coins already have their own pool from the moment they are created." },
