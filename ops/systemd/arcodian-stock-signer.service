@@ -1,0 +1,15 @@
+[Unit]
+Description=Arcodian stock price signer (ArcSignedPriceFeed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/.openclaw/workspace/arc
+Environment=STOCK_FEED_ADDRESS=0xE8e3eE1201E6D9dA70B4147CD2E63185A063573d
+ExecStart=/usr/bin/env node scripts/stock-price-signer.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

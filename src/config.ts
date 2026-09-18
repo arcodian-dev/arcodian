@@ -794,10 +794,14 @@ export const ARC_MAINNET_CONTRACTS = {
   // EUR/USD for it: 30-minute TWAP of the deepest Uniswap V3 USDC/EURC pool,
   // cross-checked against Pyth whenever Pyth has a fresh report.
   arcEurUsdOracle: "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
-  // Stock market, deployed 2026-09-18 (blocks 21,471,693–729): Pyth-priced
-  // stock-tracking tokens (aNVDA, aAAPL, …) traded against an LP-funded USDC
-  // pool. 0.30% per trade, 80% to LPs; 250 USDC open-interest cap per stock.
-  arcStockMarket: "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de",
+  // Stock market, deployed 2026-09-18: stock-tracking tokens (aNVDA, aAAPL,
+  // …) traded against an LP-funded USDC pool, 0.30% per trade, 80% to LPs,
+  // 250 USDC open-interest cap per stock. Priced by Arcodian's own signed feed
+  // (median of independent public quotes) because Pyth's equity feeds need a
+  // paid entitlement. The first market, 0xb713…f0de, was on Pyth, never got
+  // prices, and is paused.
+  arcStockMarket: "0x6171084061b98E0A71B4b77f73a00B13b76512C1",
+  arcStockPriceFeed: "0xE8e3eE1201E6D9dA70B4147CD2E63185A063573d",
 } as const;
 
 /// V13 pool parameters, fixed by the factory. A V4 pool is identified by

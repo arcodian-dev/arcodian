@@ -113,13 +113,13 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
 // explorers do not index contracts created through the CREATE2 deployer.
 /** aNVDA … aCOIN, in ArcStockMarket asset-id order. */
 const STOCK_TOKENS = [
-  "0xb3e88208b28F4b4fFD29B717F2b6605447092423", "0x10be292d3e41F08EA3B7bCf9dBFA8ee191EF3eC5", "0x161A40d9b70b6dca10d6417536B7c9F786f7f37a",
-  "0x6473681C0f26468C6a901525edC6556B79153050", "0x82e0424BBA9a69900C0E1E18A84BcAED92f0516b", "0xB8B333Ef54a25b3b125b61075dFF0585e16D0bb1",
-  "0xd9A1a9Fe47aa0fE311e2d1b5a22041Ae98Bb1442", "0x5724494968B8821AfaDE2b9aCA8894F21Ec53165", "0x1D1E027f77d7e37aca6D56EA6c640b9CB201CAA2",
-  "0x445dAe2591Fcf47A381d3AF288e8FDC9674189Bc",
+  "0x7023e9f5e9eF0E636F8CaDc94ca18bCc724B4675", "0xED98B427Cecc076E5C9416A1a890ffb6bE03A1c8", "0xeD5723D45A9F5d9E435c8572C280DC2E9d07c550",
+  "0x722739Af6070EC69a3548AbF40B68a166e02D69e", "0xb1F855D2e2B8dA130d6dF376429e07dBb898ae8F", "0x5dD6799aD8933F5776368F6A982d01BE1A67D5E7",
+  "0x9523bED27C4608A8a085d072F6c3D25134468Da7", "0xF406De48f9C2A2C40B1E0cDd07Da6d2384267563", "0xd59C3d08dfE760F28a789234ed0AaD6f0d140c6b",
+  "0x16b984B6d899f993E8965a01eEf895ff57a854a3",
 ];
 const OFFICIAL_EXPLORER_VERIFIED = new Set([
-  ARC_MAINNET_CONTRACTS.arcStockMarket, ...STOCK_TOKENS,
+  ARC_MAINNET_CONTRACTS.arcStockMarket, ARC_MAINNET_CONTRACTS.arcStockPriceFeed, ...STOCK_TOKENS,
   ARC_MAINNET_CONTRACTS.launchFactoryV15, ARC_MAINNET_CONTRACTS.launchHookV15, ARC_MAINNET_CONTRACTS.v4Router,
   ARC_MAINNET_CONTRACTS.marketRouter, ARC_MAINNET_CONTRACTS.marketPairFactory, ARC_MAINNET_CONTRACTS.v3Factory,
   ARC_MAINNET_CONTRACTS.v3SwapRouter, ARC_MAINNET_CONTRACTS.v3Quoter, ARC_MAINNET_CONTRACTS.v3PositionManager,
@@ -244,9 +244,10 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     },
     {
       title: "Stocks",
-      note: "Ten US stocks and ETFs priced by Pyth, traded against an LP-funded USDC pool. 0.30% per trade: 80% to LPs, 20% to the treasury.",
+      note: "Ten US stocks and ETFs at live market prices, traded against an LP-funded USDC pool. 0.30% per trade: 80% to LPs, 20% to the treasury.",
       cards: [
-        ["ArcStockMarket", ARC_MAINNET_CONTRACTS.arcStockMarket, "Buys fill at the top of Pyth's confidence band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused. 250 USDC open-interest cap per stock, and total open interest never above half the pool. LP deposits lock for 24 hours."],
+        ["ArcStockMarket", ARC_MAINNET_CONTRACTS.arcStockMarket, "Buys fill at the top of the signed price band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused. 250 USDC open-interest cap per stock, and total open interest never above half the pool. LP deposits lock for 24 hours."],
+        ["ArcSignedPriceFeed · price oracle", ARC_MAINNET_CONTRACTS.arcStockPriceFeed, "Stores stock prices signed by Arcodian's price service (median of three independent market-data sources). Accepts only the authorized signer's signatures, bound to this chain and contract; the signer can be rotated by the admin."],
         ...STOCKS.map((s) => [`a${s.symbol} · ${s.name}`, STOCK_TOKENS[s.id], `Price-tracking token for ${s.name}, minted and burned only by ArcStockMarket.`] as [string, string, string]),
       ],
     },
@@ -418,14 +419,14 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-stocks" className="docs-section">
       <div className="docs-section-head"><span>04b</span><h2>Stocks</h2></div>
-      <p><b>Stocks</b> lets you trade ten US stocks and ETFs (NVDA, AAPL, TSLA, SPY, QQQ, MSFT, AMZN, GOOGL, META, COIN) in USDC on Arc. Each trade carries Pyth&apos;s latest signed price for that stock; you receive a token (aNVDA, aAAPL, …) that the pool buys back at the market price when you sell.</p>
+      <p><b>Stocks</b> lets you trade ten US stocks and ETFs (NVDA, AAPL, TSLA, SPY, QQQ, MSFT, AMZN, GOOGL, META, COIN) in USDC on Arc. Each trade carries the latest signed price for that stock; you receive a token (aNVDA, aAAPL, …) that the pool buys back at the market price when you sell.</p>
       <div className="economics-ledger">
         <div><small>Trade fee</small><strong>0.30%</strong><p>On every buy and sell. 80% stays in the pool for LPs, 20% goes to the Arcodian treasury.</p></div>
-        <div><small>Fill price</small><strong>Pyth ± band</strong><p>Buys fill at price + confidence, sells at price − confidence. Prices older than 60 seconds or with a band wider than 1% are refused.</p></div>
+        <div><small>Fill price</small><strong>Median ± band</strong><p>Prices are the median of CNBC, Nasdaq and Yahoo quotes, signed only when at least two agree within 0.5%. Buys fill at the top of the band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused.</p></div>
         <div><small>Liquidity</small><strong>Public LP pool</strong><p>Anyone can deposit USDC. LPs earn the fees and take the other side of traders: trader profits are paid from the pool, trader losses stay in it. Deposits lock for 24 hours.</p></div>
         <div><small>Limits</small><strong>250 USDC / stock</strong><p>Open interest per stock is capped, and total open interest can never exceed half the pool. Trading follows US market hours (09:30–16:00 New York).</p></div>
       </div>
-      <aside className="docs-notice"><strong>Price tracking, not ownership</strong><p>Tokens carry no ownership, votes or dividends and cannot be redeemed for stock. Market {ARC_MAINNET_CONTRACTS.arcStockMarket}; source-verified, not externally audited.</p></aside>
+      <aside className="docs-notice"><strong>Price tracking, not ownership</strong><p>Tokens carry no ownership, votes or dividends and cannot be redeemed for stock. Market {ARC_MAINNET_CONTRACTS.arcStockMarket}, price oracle {ARC_MAINNET_CONTRACTS.arcStockPriceFeed}. Prices are signed by Arcodian&apos;s price service, so that signer is the trust point; per-stock caps bound the exposure. Source-verified, not externally audited.</p></aside>
     </article>
 
     <article id="docs-bridge" className="docs-section">

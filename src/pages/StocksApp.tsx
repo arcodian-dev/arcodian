@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { BrowserProvider, Contract, JsonRpcProvider, formatEther, parseEther } from "ethers";
 import { ARC_MAINNET, ARC_MAINNET_CONTRACTS } from "../config";
 import { ensureWalletChain } from "../shared";
-import { STOCKS, fetchPyth, usMarketOpen, type PythQuote } from "../stocks";
+import { STOCKS, fetchStockPrices, usMarketOpen, type StockQuote } from "../stocks";
 import { describeTxError } from "../txError";
 import "./LendApp.css";
 import "./StocksApp.css";
@@ -31,7 +31,7 @@ const usd = (value: number, digits = 2) => value.toLocaleString(undefined, { min
 const toWei = (value: number) => parseEther(value.toFixed(18).replace(/\.?0+$/, "") || "0");
 
 export default function StocksApp({ account, chainId, activeProvider, connect, disconnect }: Props) {
-  const [quotes, setQuotes] = useState<Record<string, PythQuote>>({});
+  const [quotes, setQuotes] = useState<Record<string, StockQuote>>({});
   const [priceError, setPriceError] = useState("");
   const [selected, setSelected] = useState(0);
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -46,15 +46,15 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
   const stock = STOCKS[selected];
   const quote = quotes[stock.feedId];
   const now = Math.floor(Date.now() / 1000);
-  const fresh = (q?: PythQuote) => Boolean(q && now - q.publishTime <= 45);
+  const fresh = (q?: StockQuote) => Boolean(q && now - q.publishTime <= 45);
 
-  // Prices: Pyth's latest reports through our proxy, every 5 seconds.
+  // Prices: the price service's latest signed bundle, every 5 seconds.
   useEffect(() => {
     let alive = true;
     const load = async () => {
       setOpen(usMarketOpen());
       try {
-        const bundle = await fetchPyth(ALL_FEEDS);
+        const bundle = await fetchStockPrices(ALL_FEEDS);
         if (alive) { setQuotes(bundle.prices); setPriceError(""); }
       } catch (error) { if (alive) setPriceError(error instanceof Error ? error.message : "Price service unavailable"); }
     };
@@ -106,7 +106,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
       // With no open positions the pool's value is just its USDC, so LP
       // actions need no prices and still work outside market hours.
       const needsPrices = kind === "trade" || (pool?.openInterest ?? 1) > 0;
-      const bundle = needsPrices ? await fetchPyth(kind === "trade" ? [stock.feedId] : ALL_FEEDS) : { updates: [], prices: {} as Record<string, PythQuote> };
+      const bundle = needsPrices ? await fetchStockPrices(kind === "trade" ? [stock.feedId] : ALL_FEEDS) : { updates: [], prices: {} as Record<string, StockQuote> };
       const signer = await new BrowserProvider(activeProvider).getSigner();
       const market = new Contract(MARKET, MARKET_ABI, signer);
       let tx;
@@ -140,7 +140,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
 
   return <main className="lend-site stocks-site">
     <nav><a href="/" className="lend-brand"><img src="/arcodian-mark.svg" alt=""/><span>ARCODIAN<small>STOCKS</small></span></a><div className="lend-nav-links"><a href="/market">Market</a><a className="active" href="/stocks">Stocks</a><a href="/lend">Lend</a><a href="/fx">FX</a></div><div className="lend-wallet"><a href="/wallet">Wallet</a><button onClick={account ? disconnect : connect}>{short(account)}</button></div></nav>
-    <header><p>STOCKS · ARC MAINNET</p><h1>US stock prices.<br/>Settled in USDC on Arc.</h1><span>Trade NVIDIA, Apple, Tesla and seven more at Pyth&apos;s live price, settled in USDC on Arc. Each token tracks its stock&apos;s price and is paid out from the USDC pool at the market price when you sell.</span><div className="lend-badges"><b className={open ? "stocks-open" : "stocks-closed"}>{open ? "US MARKET OPEN" : "US MARKET CLOSED"}</b><b>0.30% PER TRADE</b><b>80% OF FEES TO LPS</b><b>PYTH PRICED</b></div></header>
+    <header><p>STOCKS · ARC MAINNET</p><h1>US stock prices.<br/>Settled in USDC on Arc.</h1><span>Trade NVIDIA, Apple, Tesla and seven more at live market prices, settled in USDC on Arc. Each token tracks its stock&apos;s price and is paid out from the USDC pool at the market price when you sell.</span><div className="lend-badges"><b className={open ? "stocks-open" : "stocks-closed"}>{open ? "US MARKET OPEN" : "US MARKET CLOSED"}</b><b>0.30% PER TRADE</b><b>80% OF FEES TO LPS</b><b>3-SOURCE PRICES</b></div></header>
 
     <section className="lend-terminal">
       <div className="lend-overview lend-totals"><article><small>POOL LIQUIDITY</small><strong>{pool ? `${usd(pool.balance)} USDC` : "—"}</strong><em>backs every payout</em></article><article><small>OPEN INTEREST</small><strong>{pool ? `$${usd(pool.openInterest)}` : "—"}</strong><em>capped at 50% of the pool</em></article><article><small>LP VALUE</small><strong>{pool?.nav != null ? `${usd(pool.nav)} USDC` : "—"}</strong><em>pool minus what traders are owed</em></article><article><small>STOCKS LISTED</small><strong>{STOCKS.length}</strong><em>Pyth US equity feeds</em></article></div>
@@ -155,7 +155,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
         <article className="stocks-trade">
           <p>a{stock.symbol} · {stock.name.toUpperCase()}</p>
           <h2>{quote ? `$${usd(quote.price)}` : "—"}</h2>
-          <small>{quote ? `Buy at $${usd(quote.price + quote.conf)} · sell at $${usd(Math.max(0, quote.price - quote.conf))} (Pyth confidence band)` : "No price yet"}</small>
+          <small>{quote ? `Buy at $${usd(quote.price + quote.conf)} · sell at $${usd(Math.max(0, quote.price - quote.conf))} (price band)` : "No price yet"}</small>
           <div className="stocks-side"><button className={side === "buy" ? "active" : ""} onClick={() => { setSide("buy"); setAmount(""); }}>Buy</button><button className={side === "sell" ? "active" : ""} onClick={() => { setSide("sell"); setAmount(""); }}>Sell</button></div>
           <label>{side === "buy" ? "Pay" : "Sell"}<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00"/><b>{side === "buy" ? "USDC" : `a${stock.symbol}`}</b></label>
           {side === "sell" && holding > 0 && <button className="lend-inline" onClick={() => setAmount(String(holding))}>Max {usd(holding, 6)}</button>}
@@ -173,7 +173,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
           <small>Your LP position {lpValue !== null ? `${usd(lpValue, 4)} USDC` : pool && pool.lpShares > 0 ? `${usd(pool.lpShares, 4)} shares` : "none"}{locked && pool ? ` · unlocks ${new Date(pool.lockedUntil * 1000).toLocaleString()}` : ""}</small>
           <div><button disabled={!live || busy || !Number(lpAmount) || pool?.paused} onClick={() => send("deposit")}>Deposit</button><button disabled={!live || busy || !pool?.lpShares || locked} onClick={() => send("withdraw")}>Withdraw all</button></div></article>
         <article><p>HOW PRICES WORK</p><h2>One signed price per trade</h2>
-          <span className="stocks-note">Each trade fetches Pyth&apos;s latest signed report for the stock and posts it on-chain in the same transaction. The contract refuses prices older than 60 seconds or with a confidence band wider than 1%, fills buys at the top of the band and sells at the bottom, and charges 0.30%. Outside US market hours the feeds stop, so trading stops too.</span></article>
+          <span className="stocks-note">Arcodian&apos;s price service reads each stock from three independent market-data sources (CNBC, Nasdaq, Yahoo), takes the median, and signs it only when at least two agree within 0.5%. Each trade carries that signed price on-chain. The contract refuses prices older than 60 seconds or with a confidence band wider than 1%, fills buys at the top of the band and sells at the bottom, and charges 0.30%. Nothing is signed outside US market hours, so trading follows the US session.</span></article>
       </div>
       {status && <p className="lend-status">{status}</p>}
     </section>
@@ -181,8 +181,9 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
     <section className="lend-risk"><p>RISK</p><h2>Read this before you trade.</h2><div>
       <article><b>Price tracking, not ownership</b><span>Tokens follow the stock price only. They carry no ownership, votes or dividends and cannot be redeemed for the stock itself.</span></article>
       <article><b>Pool-backed payouts</b><span>Winnings are paid from LP liquidity. Caps keep open interest at or below half the pool, but if the pool ran dry, sells would fail until liquidity returned.</span></article>
+      <article><b>Price oracle</b><span>Prices are signed by Arcodian&apos;s price service. That key is the trust point: per-stock caps and the 50%-of-pool limit bound what a bad price could cost the pool.</span></article>
       <article><b>Not audited</b><span>The contract is source-verified and tested but has not had an external audit. Per-stock caps are small for that reason.</span></article>
     </div></section>
-    <footer><span>Arcodian Stocks · Arc Mainnet · priced by Pyth</span>{live ? <a href={`${ARC_MAINNET.explorer}/address/${MARKET}?tab=contract`} target="_blank" rel="noreferrer">View verified contract →</a> : <span>Contract launching soon</span>}</footer>
+    <footer><span>Arcodian Stocks · Arc Mainnet · signed market prices</span>{live ? <a href={`${ARC_MAINNET.explorer}/address/${MARKET}?tab=contract`} target="_blank" rel="noreferrer">View verified contract →</a> : <span>Contract launching soon</span>}</footer>
   </main>;
 }

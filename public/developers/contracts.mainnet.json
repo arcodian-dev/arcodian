@@ -93,9 +93,7 @@
     "priceSource": "Uniswap V3 USDC/EURC 30-min TWAP (0x6fd5F2fb831940DcD61A98c5B3aCB7D8C6f3bFc1), Pyth cross-check (0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a)"
   },
   "stocks": {
-    "market": "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de",
-    "deployBlock": 21471693,
-    "pyth": "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a",
+    "market": "0x6171084061b98E0A71B4b77f73a00B13b76512C1",
     "feeBps": 30,
     "lpShareOfFeeBps": 8000,
     "maxPriceAgeSeconds": 60,
@@ -104,16 +102,20 @@
     "lpLockSeconds": 86400,
     "capPerStockUsdc": 250,
     "tokens": {
-      "aNVDA": "0xb3e88208b28F4b4fFD29B717F2b6605447092423",
-      "aAAPL": "0x10be292d3e41F08EA3B7bCf9dBFA8ee191EF3eC5",
-      "aTSLA": "0x161A40d9b70b6dca10d6417536B7c9F786f7f37a",
-      "aSPY": "0x6473681C0f26468C6a901525edC6556B79153050",
-      "aQQQ": "0x82e0424BBA9a69900C0E1E18A84BcAED92f0516b",
-      "aMSFT": "0xB8B333Ef54a25b3b125b61075dFF0585e16D0bb1",
-      "aAMZN": "0xd9A1a9Fe47aa0fE311e2d1b5a22041Ae98Bb1442",
-      "aGOOGL": "0x5724494968B8821AfaDE2b9aCA8894F21Ec53165",
-      "aMETA": "0x1D1E027f77d7e37aca6D56EA6c640b9CB201CAA2",
-      "aCOIN": "0x445dAe2591Fcf47A381d3AF288e8FDC9674189Bc"
-    }
+      "aNVDA": "0x7023e9f5e9eF0E636F8CaDc94ca18bCc724B4675",
+      "aAAPL": "0xED98B427Cecc076E5C9416A1a890ffb6bE03A1c8",
+      "aTSLA": "0xeD5723D45A9F5d9E435c8572C280DC2E9d07c550",
+      "aSPY": "0x722739Af6070EC69a3548AbF40B68a166e02D69e",
+      "aQQQ": "0xb1F855D2e2B8dA130d6dF376429e07dBb898ae8F",
+      "aMSFT": "0x5dD6799aD8933F5776368F6A982d01BE1A67D5E7",
+      "aAMZN": "0x9523bED27C4608A8a085d072F6c3D25134468Da7",
+      "aGOOGL": "0xF406De48f9C2A2C40B1E0cDd07Da6d2384267563",
+      "aMETA": "0xd59C3d08dfE760F28a789234ed0AaD6f0d140c6b",
+      "aCOIN": "0x16b984B6d899f993E8965a01eEf895ff57a854a3"
+    },
+    "priceFeed": "0xE8e3eE1201E6D9dA70B4147CD2E63185A063573d",
+    "priceSigner": "0xb88982A1636A5e7aDf0d90d251f280952E1F4f5C",
+    "priceSource": "median of CNBC, Nasdaq, Yahoo; signed when >=2 agree within 0.5%, US regular session only",
+    "retiredMarket": "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de (Pyth-based, paused, never funded)"
   }
 }

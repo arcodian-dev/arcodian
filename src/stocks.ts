@@ -25,18 +25,24 @@ export function usMarketOpen(now = new Date()): boolean {
   return minutes >= 9 * 60 + 30 && minutes < 16 * 60;
 }
 
-export type PythQuote = { price: number; conf: number; publishTime: number };
-export type PythBundle = { updates: string[]; prices: Record<string, PythQuote> };
+export type StockQuote = { price: number; conf: number; publishTime: number };
+export type StockPriceBundle = { updates: string[]; prices: Record<string, StockQuote> };
 
-/** Latest signed updates (and parsed prices) through the same-origin proxy. */
-export async function fetchPyth(feedIds: string[]): Promise<PythBundle> {
-  const response = await fetch(`/api/pyth-updates.php?ids=${feedIds.join(",")}`, { cache: "no-store" });
-  const body = await response.json();
-  if (!body.ok) throw new Error(body.error || "Price service unavailable");
-  const prices: Record<string, PythQuote> = {};
-  for (const [id, p] of Object.entries(body.prices as Record<string, { price: string; conf: string; expo: number; publishTime: number }>)) {
-    const scale = 10 ** p.expo;
-    prices[id.toLowerCase()] = { price: Number(p.price) * scale, conf: Number(p.conf) * scale, publishTime: p.publishTime };
+/** Latest signed prices from Arcodian's price service (ArcSignedPriceFeed).
+ * The service writes one bundle every few seconds during the US session; each
+ * trade carries the updates for the stocks it prices. */
+export async function fetchStockPrices(feedIds: string[]): Promise<StockPriceBundle> {
+  const response = await fetch(`/data/stock-prices.json?t=${Date.now()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error("Price service unavailable");
+  const body = await response.json() as { feeds: Record<string, { update: string; price: string; conf: string; expo: number; publishTime: number }> };
+  const prices: Record<string, StockQuote> = {};
+  const updates: string[] = [];
+  for (const id of feedIds) {
+    const feed = body.feeds?.[id.toLowerCase()];
+    if (!feed) continue;
+    const scale = 10 ** feed.expo;
+    prices[id.toLowerCase()] = { price: Number(feed.price) * scale, conf: Number(feed.conf) * scale, publishTime: feed.publishTime };
+    updates.push(feed.update);
   }
-  return { updates: body.updates, prices };
+  return { updates, prices };
 }
