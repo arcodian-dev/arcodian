@@ -233,6 +233,7 @@ const LOG_CHUNK_BLOCKS = 90_000;
 // when the block window is wide. Keep global venue/pool scans narrower than
 // the legacy launch scan; subsequent timer runs only cover the new head.
 const ADDRESS_LOG_CHUNK_BLOCKS = Number(process.env.INDEX_ADDRESS_LOG_CHUNK_BLOCKS || 10_000);
+const MAX_VENUE_CATCHUP_BLOCKS = Number(process.env.INDEX_MAX_VENUE_CATCHUP_BLOCKS || 400_000);
 // Price change over a trailing window, using the correct baseline: the
 // last priced trade BEFORE the window opened (i.e. "price N seconds ago"),
 // not the first trade inside the window. The latter (the original bug here)
@@ -309,12 +310,12 @@ async function contractLogs(contract, fromBlock) {
   return logs;
 }
 
-async function addressLogs(address, fromBlock, topics) {
-  if (fromBlock > latestBlock) return [];
+async function addressLogs(address, fromBlock, topics, untilBlock = latestBlock) {
+  if (fromBlock > untilBlock) return [];
   const logs = [];
   let complete = true;
-  for (let start = fromBlock; start <= latestBlock; start += ADDRESS_LOG_CHUNK_BLOCKS) {
-    const toBlock = Math.min(latestBlock, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
+  for (let start = fromBlock; start <= untilBlock; start += ADDRESS_LOG_CHUNK_BLOCKS) {
+    const toBlock = Math.min(untilBlock, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
     for (let attempt = 0; attempt < 4; attempt += 1) {
       try { logs.push(...await getLogsResilient({ address, topics, fromBlock: start, toBlock })); break; }
       catch (error) {
@@ -638,7 +639,12 @@ async function indexGlobalV3Pools() {
     const fromBlock = !forceRescan && previousVenue && (previous?.pools || []).length > 0
       ? Number(previousVenue.indexedBlock) + 1
       : venue.fromBlock;
-    const createdResult = await addressLogs(venue.address, fromBlock, [poolCreatedTopic]);
+    // A venue that fell far behind catches up a bounded slice per run, so
+    // one run never outlives its 20-minute systemd budget (which leaves the
+    // whole market index unwritten). The cursor still only moves past blocks
+    // that were actually read, so nothing is skipped — just spread over runs.
+    const scanTo = Math.min(latestBlock, fromBlock + MAX_VENUE_CATCHUP_BLOCKS - 1);
+    const createdResult = await addressLogs(venue.address, fromBlock, [poolCreatedTopic], scanTo);
     const created = Array.isArray(createdResult) ? createdResult : createdResult.logs;
     for (const log of created) {
       try {
@@ -708,7 +714,7 @@ async function indexGlobalV3Pools() {
     venueCursors.set(venue.address.toLowerCase(), {
       address: venue.address,
       dex: venue.dex,
-      indexedBlock: complete ? latestBlock : Math.max(0, fromBlock - 1),
+      indexedBlock: complete ? scanTo : Math.max(0, fromBlock - 1),
     });
   }
   // Pool discovery is incremental, but reserves are live state. Previously we
