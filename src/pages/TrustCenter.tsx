@@ -146,11 +146,17 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
           "function TRADE_FEE_BPS() view returns(uint256)",
           "function CREATOR_FEE_BPS() view returns(uint256)",
         ], provider);
-        const [wired, engine, poolFee, gradQuote, gradFee, treasury, manager, quote, hookFactory, hookTreasury, tradeFee, creatorFee] = await Promise.all([
-          factory.wiringOk(), factory.ENGINE_VERSION(), factory.POOL_FEE(), factory.GRADUATION_QUOTE(), factory.GRADUATION_FEE_BPS(),
-          factory.treasury(), factory.poolManager(), factory.quote(),
-          hook.factory(), hook.treasury(), hook.TRADE_FEE_BPS(), hook.CREATOR_FEE_BPS(),
-        ]);
+        // One read at a time, each retried once: twelve parallel eth_calls
+        // through the shared RPC fallback got throttled and the whole panel
+        // stayed on "Reading Arc Mainnet…".
+        const read = async (call: () => Promise<unknown>) => { try { return await call(); } catch { return call(); } };
+        const values: unknown[] = [];
+        for (const call of [
+          () => factory.wiringOk(), () => factory.ENGINE_VERSION(), () => factory.POOL_FEE(), () => factory.GRADUATION_QUOTE(), () => factory.GRADUATION_FEE_BPS(),
+          () => factory.treasury(), () => factory.poolManager(), () => factory.quote(),
+          () => hook.factory(), () => hook.treasury(), () => hook.TRADE_FEE_BPS(), () => hook.CREATOR_FEE_BPS(),
+        ]) values.push(await read(call));
+        const [wired, engine, poolFee, gradQuote, gradFee, treasury, manager, quote, hookFactory, hookTreasury, tradeFee, creatorFee] = values as [boolean, bigint, bigint, bigint, bigint, string, string, string, string, string, bigint, bigint];
         const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
         setChecks([
           { label: "Launch factory ↔ fee hook bound", value: `engine v${Number(engine)}`, ok: Boolean(wired) && same(hookFactory, ARC_MAINNET_CONTRACTS.launchFactoryV15) && Number(engine) === 15 },
