@@ -244,8 +244,8 @@ export default function LendAdmin({ account, chainId, activeProvider, connect, d
 
   return <main className="lend-admin-site">
     <nav>
-      <a href="https://lend.arcodian.fun/" className="lend-brand"><img src="/arcodian-mark.svg" alt="" /><span>ARCODIAN<small>ARC LEND · CONTROL ROOM</small></span></a>
-      <div className="lend-nav-links"><a href="https://lend.arcodian.fun/">Market</a><a className="active" href="https://lend.arcodian.fun/admin">Admin</a><a href="https://arcodian.fun/contracts">Trust Center</a></div>
+      <a href="/lend" className="lend-brand"><img src="/arcodian-mark.svg" alt="" /><span>ARCODIAN<small>ARC LEND · CONTROL ROOM</small></span></a>
+      <div className="lend-nav-links"><a href="/lend">Market</a><a className="active" href="/lend/admin">Admin</a><a href="https://arcodian.fun/contracts">Trust Center</a></div>
       <div className="lend-wallet"><button onClick={account ? disconnect : connect}>{short(account)}</button></div>
     </nav>
 

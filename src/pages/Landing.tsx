@@ -82,7 +82,7 @@ const PILLARS: { group: string; blurb: string; items: { name: string; desc: stri
   {
     group: "Money", blurb: "A non-custodial home for USDC and EURC.",
     items: [
-      { name: "Wallet", desc: "Self-custody USDC + EURC on Arc. No keys held, no custody taken.", href: "https://wallet.arcodian.fun/" },
+      { name: "Wallet", desc: "Self-custody USDC + EURC on Arc. No keys held, no custody taken.", href: "/wallet" },
       { name: "Pay", desc: "Exact-value invoices that settle once, with a 0.30% fee taken atomically.", tab: "arcpay" },
       { name: "Swap", desc: "Trade any Arc token on the canonical AMM.", tab: "swap" },
       { name: "Bridge", desc: "Move USDC in and out over official Circle CCTP — no bridge holding your funds.", tab: "bridge" },
@@ -94,7 +94,7 @@ const PILLARS: { group: string; blurb: string; items: { name: string; desc: stri
     items: [
       { name: "Markets", desc: "Every Arc coin on one live radar with price, holders, and graduation.", tab: "screener" },
       { name: "Launchpad", desc: "Deploy a coin in minutes on a readable bonding curve — liquidity burns at graduation.", tab: "screener" },
-      { name: "Lend", desc: "Isolated USDC market: supply to earn, or borrow against EURC up to 70% LTV.", href: "https://lend.arcodian.fun/" },
+      { name: "Lend", desc: "Isolated USDC market: supply to earn, or borrow against EURC up to 70% LTV.", href: "/lend" },
     ],
   },
   {

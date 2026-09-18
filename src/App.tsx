@@ -31,7 +31,7 @@ import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
 import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchBurnLimitPerMessage, fetchCctpFee, savePendingClaim, tokenMessengerFor } from "./bridgeRecovery";
-import { canonicalRedirect, isWalletAppRoute } from "./routeIntegrity";
+import { canonicalRedirect, isLendRoute, isWalletAppRoute } from "./routeIntegrity";
 
 // Every chain the bridge can move USDC between, testnet and real mainnet
 // together. Looking a chain up must search both — a plain CHAINS.find(...)
@@ -846,8 +846,11 @@ export default function App() {
     window.dispatchEvent(new Event("arcodian:open-create"));
   }
 
-  const productName = window.location.hostname.split(".")[0] as "wallet" | "lend";
-  const productHost = ["wallet", "lend"].includes(productName);
+  // Lend and the wallet app are paths on arcodian.fun now (the old lend. and
+  // wallet. subdomains 301 here); the rest of the app is the SPA below.
+  const lendRoute = isLendRoute(window.location.pathname);
+  const productName = (lendRoute ? "lend" : "wallet") as "wallet" | "lend";
+  const productHost = lendRoute || isWalletAppRoute(window.location.hostname, window.location.pathname);
   const walletOnlyExperience = Capacitor.isNativePlatform();
   const redirect = canonicalRedirect(window.location.hostname, window.location.pathname);
 
@@ -929,7 +932,7 @@ export default function App() {
 
   if (productHost) {
     return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
-      {productName === "lend" ? <>{window.location.pathname.replace(/\/$/, "") === "/admin" ? <LendAdmin account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/> : <LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>}{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
+      {productName === "lend" ? <>{window.location.pathname.replace(/\/$/, "") === "/lend/admin" ? <LendAdmin account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/> : <LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>}{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
     </Suspense>;
   }
 
@@ -965,7 +968,7 @@ export default function App() {
             <div>
               <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
               <button onClick={openCreateStudio}><b>Launchpad</b><small>Create a coin on Arc Mainnet</small></button>
-              <a href="https://lend.arcodian.fun/"><b>Lend</b><small>Supply and borrow</small></a>
+              <a href="/lend"><b>Lend</b><small>Supply and borrow</small></a>
             </div>
           </details>
           <details className={`nav-group ${["agentpay", "jobs"].includes(tab) ? "active" : ""}`}>
@@ -1410,7 +1413,7 @@ export default function App() {
       </footer>
       <nav className="mobile-dock" aria-label="Primary">
         <button className={tab === "home" ? "active" : ""} onClick={() => chooseTab("home")}><i aria-hidden="true">◉</i><span>Home</span></button>
-        <button onClick={() => { window.location.href = "https://wallet.arcodian.fun/"; }}><i aria-hidden="true">◈</i><span>Wallet</span></button>
+        <button onClick={() => chooseTab("wallet")}><i aria-hidden="true">◈</i><span>Wallet</span></button>
         <button className={tab === "arcpay" ? "active" : ""} onClick={() => chooseTab("arcpay")}><i aria-hidden="true">⌗</i><span>Arc Pay</span></button>
         <button className={tab === "screener" ? "active" : ""} onClick={() => chooseTab("screener")}><i aria-hidden="true">◫</i><span>Markets</span></button>
         <button className={tab === "bridge" || tab === "swap" ? "active" : ""} onClick={() => chooseTab("bridge")}><i aria-hidden="true">⇄</i><span>Bridge</span></button>
@@ -1420,7 +1423,7 @@ export default function App() {
         <p className="mm-group">Product</p>
         <a href="/swap">Swap</a><a href="/ausd">AUSD Rail</a><a href="/arcpay">Pay</a><a href="/fx">Stablecoin FX</a>
         <p className="mm-group">Market</p>
-        <a href="/screener">Markets</a><a href="https://lend.arcodian.fun/">Lend</a>
+        <a href="/screener">Markets</a><a href="/lend">Lend</a>
         <p className="mm-group">Agent</p>
         <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/services">Services</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>

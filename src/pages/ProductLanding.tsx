@@ -44,9 +44,9 @@ export default function ProductLanding({ product }: { product: Product }) {
         </a>
         <div>
           <a href="https://arcodian.fun">Ecosystem</a>
-          <a href="https://wallet.arcodian.fun/app">Web Demo</a>
+          <a href="/app">Web Demo</a>
           <a href="https://arcodian.fun/arcpay">Arc Pay</a>
-          <a href="https://lend.arcodian.fun/">Lend</a>
+          <a href="/lend">Lend</a>
           <a className="product-nav-cta" href={copy.href}>
             {copy.primary}
           </a>
@@ -58,7 +58,7 @@ export default function ProductLanding({ product }: { product: Product }) {
           <h1>{copy.title}</h1>
           <span>{copy.body}</span>
           <div className="product-actions">
-            <a className="product-secondary" href="https://wallet.arcodian.fun/app">Open Web Demo</a>
+            <a className="product-secondary" href="/app">Open Web Demo</a>
             <a className="product-primary" href={copy.href}>
               {copy.primary}
             </a>
