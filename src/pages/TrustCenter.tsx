@@ -104,9 +104,20 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
   </section>;
 }
 
-// Contracts arcexplorer cannot index (CREATE2 deployments), verified on
-// Sourcify instead. Exact creation + runtime match, checked 2026-09-16.
-const SOURCIFY_VERIFIED = new Set([ARC_MAINNET_CONTRACTS.launchHookV13.toLowerCase(), ARC_MAINNET_CONTRACTS.launchHookV14.toLowerCase(), ARC_MAINNET_CONTRACTS.launchHookV15.toLowerCase()]);
+// Every Arcodian contract on this page is source-verified on Circle's
+// official explorer, explorer.arc.io (checked 2026-09-18). That explorer sits
+// behind a Cloudflare challenge that a server-side proxy cannot pass, so this
+// is a recorded fact, while arcexplorer.org's status below is read live.
+// The launch hook is only verifiable there and on Sourcify: the other
+// explorers do not index contracts created through the CREATE2 deployer.
+const OFFICIAL_EXPLORER_VERIFIED = new Set([
+  ARC_MAINNET_CONTRACTS.launchFactoryV15, ARC_MAINNET_CONTRACTS.launchHookV15, ARC_MAINNET_CONTRACTS.v4Router,
+  ARC_MAINNET_CONTRACTS.marketRouter, ARC_MAINNET_CONTRACTS.marketPairFactory, ARC_MAINNET_CONTRACTS.v3Factory,
+  ARC_MAINNET_CONTRACTS.v3SwapRouter, ARC_MAINNET_CONTRACTS.v3Quoter, ARC_MAINNET_CONTRACTS.v3PositionManager,
+  ARC_MAINNET_CONTRACTS.externalV3FeeRouter, ARC_MAINNET_CONTRACTS.arcPay, ARC_MAINNET_CONTRACTS.agentPayFactory,
+  ARC_MAINNET_CONTRACTS.agentPassport, ARC_MAINNET_CONTRACTS.agentJobs, ARC_MAINNET_CONTRACTS.sessionKeyAccount,
+  ARC_MAINNET_CONTRACTS.adminTimelock,
+].map((address) => address.toLowerCase()));
 
 export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () => void; openFaq: () => void; openCanary: () => void }) {
   const [checks, setChecks] = useState<Array<{ label: string; value: string; ok: boolean }>>([]);
@@ -119,29 +130,36 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     const provider = arcProvider(ARC_MAINNET);
     void (async () => {
       try {
-        const pump = new Contract(ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, [
-          "function graduationThreshold() view returns(uint256)",
+        const factory = new Contract(ARC_MAINNET_CONTRACTS.launchFactoryV15, [
+          "function wiringOk() view returns(bool)",
+          "function ENGINE_VERSION() view returns(uint8)",
+          "function POOL_FEE() view returns(uint24)",
+          "function GRADUATION_QUOTE() view returns(uint256)",
+          "function GRADUATION_FEE_BPS() view returns(uint128)",
           "function treasury() view returns(address)",
-          "function v3Factory() view returns(address)",
-          "function positionManager() view returns(address)",
-        ], provider);
-        const eurc = new Contract(ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11, [
-          "function graduationThreshold() view returns(uint256)",
-          "function treasury() view returns(address)",
+          "function poolManager() view returns(address)",
           "function quote() view returns(address)",
         ], provider);
-        const [threshold, treasury, v3Factory, positionManager, eurcThreshold, eurcTreasury, eurcQuote] = await Promise.all([
-          pump.graduationThreshold(), pump.treasury(), pump.v3Factory(), pump.positionManager(),
-          eurc.graduationThreshold(), eurc.treasury(), eurc.quote(),
+        const hook = new Contract(ARC_MAINNET_CONTRACTS.launchHookV15, [
+          "function factory() view returns(address)",
+          "function treasury() view returns(address)",
+          "function TRADE_FEE_BPS() view returns(uint256)",
+          "function CREATOR_FEE_BPS() view returns(uint256)",
+        ], provider);
+        const [wired, engine, poolFee, gradQuote, gradFee, treasury, manager, quote, hookFactory, hookTreasury, tradeFee, creatorFee] = await Promise.all([
+          factory.wiringOk(), factory.ENGINE_VERSION(), factory.POOL_FEE(), factory.GRADUATION_QUOTE(), factory.GRADUATION_FEE_BPS(),
+          factory.treasury(), factory.poolManager(), factory.quote(),
+          hook.factory(), hook.treasury(), hook.TRADE_FEE_BPS(), hook.CREATOR_FEE_BPS(),
         ]);
         const same = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
         setChecks([
-          { label: "Launch factory → Uniswap V3", value: short(v3Factory), ok: same(v3Factory, ARC_MAINNET_CONTRACTS.v3Factory) },
-          { label: "Graduation mints to position manager", value: short(positionManager), ok: same(positionManager, ARC_MAINNET_CONTRACTS.v3PositionManager) },
-          { label: "Treasury agreement (USDC + EURC)", value: short(treasury), ok: [treasury, eurcTreasury].every((value) => same(value, FEE_TREASURY)) },
-          { label: "USDC graduation threshold", value: `${Number(formatEther(threshold)).toLocaleString()} USDC`, ok: threshold === parseEther("12000") },
-          { label: "EURC engine quotes real EURC", value: short(eurcQuote), ok: same(eurcQuote, ARC_MAINNET_CONTRACTS.eurc) },
-          { label: "EURC graduation threshold", value: `${(Number(eurcThreshold) / 1e6).toLocaleString()} EURC`, ok: Number(eurcThreshold) === 3_000_000_000 },
+          { label: "Launch factory ↔ fee hook bound", value: `engine v${Number(engine)}`, ok: Boolean(wired) && same(hookFactory, ARC_MAINNET_CONTRACTS.launchFactoryV15) && Number(engine) === 15 },
+          { label: "Pools open on Uniswap V4", value: short(manager), ok: same(manager, ARC_MAINNET_CONTRACTS.v4PoolManager) },
+          { label: "Quoted in native USDC", value: short(quote), ok: same(quote, ARC_MAINNET_CONTRACTS.usdc) },
+          { label: "Trading fee · creator share", value: `${Number(tradeFee) / 100}% · ${Number(creatorFee) / 100}%`, ok: Number(tradeFee) === 100 && Number(creatorFee) === 50 },
+          { label: "Pool LP fee tier", value: `${Number(poolFee) / 10_000}%`, ok: Number(poolFee) === 0 },
+          { label: "Graduation · fee", value: `${(Number(gradQuote) / 1e6).toLocaleString()} USDC · ${Number(gradFee) / 100}%`, ok: Number(gradQuote) === 12_000_000_000 && Number(gradFee) === 100 },
+          { label: "Treasury agreement (factory + hook)", value: short(treasury), ok: [treasury, hookTreasury].every((value) => same(value, FEE_TREASURY)) },
         ]);
         setCheckedAt(new Date().toLocaleString());
       } catch { setChecks([]); }
@@ -155,19 +173,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
   useEffect(() => {
     let alive = true;
     const addresses = [
-      ARC_MAINNET_CONTRACTS.launchFactoryV15,
-      ARC_MAINNET_CONTRACTS.launchFactoryV14,
-      ARC_MAINNET_CONTRACTS.launchFactoryV13,
-      ARC_MAINNET_CONTRACTS.v4Router,
-      ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11,
-      ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11,
-      ARC_MAINNET_CONTRACTS.marketRouter,
-      ARC_MAINNET_CONTRACTS.marketGraduationHub,
-      ARC_MAINNET_CONTRACTS.fxPool,
-      ARC_MAINNET_CONTRACTS.arcPay,
-      ARC_MAINNET_CONTRACTS.agentPassport,
-      ARC_MAINNET_CONTRACTS.sessionKeyAccount,
-      ARC_MAINNET_CONTRACTS.adminTimelock,
+      ...OFFICIAL_EXPLORER_VERIFIED,
       CCTP_MAINNET_FEE_ROUTER[ARC_MAINNET.id],
     ];
     // Through our own origin: the explorer's API sends no CORS header, so a
@@ -190,18 +196,26 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
   // not belong on a public trust page.
   const contractGroups: { title: string; note: string; cards: (readonly [string, string, string])[] }[] = [
     {
-      title: "Launchpad & market",
-      note: "Every coin created on Arcodian is launched, traded and graduated by these. Source is published on the explorer — the same published ABI an external buyer bot reads from a pasted address.",
+      title: "Launchpad",
+      note: "Every coin created on Arcodian launches and trades through these. Only the current engine is listed; coins from earlier engines keep trading on-chain.",
       cards: [
-        ["Launch Factory · V15 (live)", ARC_MAINNET_CONTRACTS.launchFactoryV15, "Every new coin launches here. It opens a real Uniswap V4 pool in the same transaction, so a coin is indexable and buyable by anyone — external routers, scanners, Telegram buy bots — from the block it is created. The whole 1B supply goes into the pool at a ~$5,000 launch valuation; nothing is taken from it. The creator can buy in the launch transaction itself, which puts real USDC in the pool from the first block and cannot be sniped ahead of. Fees match the curve engines: 1% per trade in USDC, half to the creator, and a one-time 1% graduation fee in USDC charged by the swap that carries the pool past 12,000 USDC — the factory removes 1% of its position, the USDC goes to the treasury and the tokens are burned. That is the only removal it can ever make; the other 99% of the position stays locked."],
-        ["Launch Fee Hook · V15", ARC_MAINNET_CONTRACTS.launchHookV15, "Takes 1% of every swap through a V15 pool — always in USDC, from the USDC going in on a buy and the USDC coming out on a sell, exact-input or exact-output — and splits it evenly between the creator and the treasury, both pull-claimed. After each swap it asks the factory whether the pool just crossed 12,000 USDC, so graduation happens inside that trade. Only the factory can open a pool on it. Mined to end in 0x20CC and deployed through CREATE2, which arcexplorer does not index, so its source is published on Sourcify as an exact match."],
-        ["V4 Router", ARC_MAINNET_CONTRACTS.v4Router, "What arcodian.fun trades V4 launch pools through. One ordinary token approval, a slippage floor and a deadline on every swap, and quotes computed by running the real swap and reverting — so the quote you see already includes the 1% hook fee, exactly as the trade will. Holds nothing between calls."],
-        ["Launch Factory · EURC (V11)", ARC_MAINNET_CONTRACTS.eurcPumpFactoryV11, "The bonding-curve engine, quoted in Circle's Arc Mainnet EURC. Still the EURC path — there is no V12 EURC engine yet. Graduation threshold is 3,000 EURC rather than 12,000 because EURC liquidity on Arc is still thin, with the curve's virtual reserve scaled to match."],
-        ["Swap Router", ARC_MAINNET_CONTRACTS.marketRouter, "The route the swap surface executes through across Arcodian's own pools."],
-        ["Graduation Hub", ARC_MAINNET_CONTRACTS.marketGraduationHub, "Seals graduation authority so a launch's liquidity cannot be front-run at the moment it graduates."],
-        ["Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless AMM registry. Nothing has graduated into it on mainnet — every curve-engine graduation opened its own Uniswap V3 pool instead — so its graduation authority is deliberately still unset."],
-        ["Stablecoin FX pool · USDC/EURC", ARC_MAINNET_CONTRACTS.fxPool, "Arcodian's own USDC/EURC desk. Deployed and wired to Circle's real EURC, and currently holding no liquidity — the FX surface stays off until it is seeded."],
-        ["Fee treasury", FEE_TREASURY, "Receives protocol fees atomically. Graduation liquidity is burned permanently; liquidity added afterwards stays withdrawable by whoever added it."],
+        ["Launch Factory · V15", ARC_MAINNET_CONTRACTS.launchFactoryV15, "Every new coin launches here, straight into its own Uniswap V4 pool, so it is indexable and buyable by any router, scanner or buy bot from the block it is created. The whole 1B supply goes into the pool at a ~$5,000 launch valuation; the creator can buy in the same transaction. At 12,000 USDC raised the swap that crosses the line takes a one-time 1% graduation fee in USDC — 1% of the position, its USDC to the treasury and its tokens burned. That is the only removal the factory can ever make; the other 99% stays locked."],
+        ["Launch Fee Hook · V15", ARC_MAINNET_CONTRACTS.launchHookV15, "Takes 1% of every swap through a V15 pool — always in USDC, on buys and sells, exact-input or exact-output — and splits it evenly between the coin's creator and the treasury, both pull-claimed. Only the factory can open a pool on it. Its address ends in 0x20CC because Uniswap V4 reads a hook's permissions from its own address."],
+        ["V4 Router", ARC_MAINNET_CONTRACTS.v4Router, "What arcodian.fun trades launch pools through: one ordinary token approval, a slippage floor and a deadline on every swap, and quotes computed by running the real swap — so the quote already includes the 1% fee. Holds nothing between calls."],
+        ["Fee treasury", FEE_TREASURY, "Receives the treasury half of the 1% trading fee and the 1% graduation fee, both in USDC."],
+      ],
+    },
+    {
+      title: "Swap & Arcodian DEX",
+      note: "The routes the Swap page executes through: Arcodian's own Uniswap V3 deployment, its direct-pair AMM, and a fee router over the external Uniswap V3 venue.",
+      cards: [
+        ["Swap Router", ARC_MAINNET_CONTRACTS.marketRouter, "Stateless multi-hop router over the pair factory below. Holds no funds between transactions."],
+        ["Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless direct-pair AMM registry the Swap page reads on-chain."],
+        ["Arcodian DEX · V3 Factory", ARC_MAINNET_CONTRACTS.v3Factory, "Arcodian's deployment of the official Uniswap v3-core 1.0.0."],
+        ["Arcodian DEX · SwapRouter", ARC_MAINNET_CONTRACTS.v3SwapRouter, "Uniswap v3-periphery 1.3.0 SwapRouter over the factory above."],
+        ["Arcodian DEX · Quoter", ARC_MAINNET_CONTRACTS.v3Quoter, "Read-only quotes for the factory above."],
+        ["Arcodian DEX · Position Manager", ARC_MAINNET_CONTRACTS.v3PositionManager, "Liquidity positions for the factory above, issued as NFTs."],
+        ["Swap Fee Router", ARC_MAINNET_CONTRACTS.externalV3FeeRouter, "Routes swaps through the external Uniswap V3 venue and takes the disclosed protocol fee in the same transaction."],
       ],
     },
     {
@@ -222,8 +236,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Arc Pay", ARC_MAINNET_CONTRACTS.arcPay, "Exact-value invoice settlement. Each invoice settles once for its precise amount; a 0.30% fee is taken atomically and 99.70% reaches the merchant in the same transaction."],
         ["Agent Passport", ARC_MAINNET_CONTRACTS.agentPassport, "Binds an ERC-8004 Agent ID to an authorized wallet with owner-only rotation."],
         ["Agent Jobs", ARC_MAINNET_CONTRACTS.agentJobs, "Escrowed job lifecycle settled in USDC through Arc Pay."],
-        ["Agent Pay Factory v3", ARC_MAINNET_CONTRACTS.agentPayFactoryV3, "Mints one isolated, non-custodial vault per owner, with bounded spending policies keyed by Agent ID."],
-        ["Agent Pay Factory v6", ARC_MAINNET_CONTRACTS.agentPayFactoryV6, "Additive ERC-1271-aware vault template with atomic EIP-712 batch payments. No automatic vault creation."],
+        ["Agent Pay Factory", ARC_MAINNET_CONTRACTS.agentPayFactory, "Mints one isolated, non-custodial vault per owner, with bounded spending policies, paying through Arc Pay above."],
       ],
     },
     {
@@ -240,24 +253,10 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     },
     {
       title: "Uniswap V4",
-      note: "Not Arcodian's. The venue V12 launches trade on, listed so a pool id from this site can be checked against the contracts that hold it.",
+      note: "Not Arcodian's. The venue every launch trades on, listed so a pool id from this site can be checked against the contracts that hold it.",
       cards: [
         ["V4 Pool Manager", ARC_MAINNET_CONTRACTS.v4PoolManager, "Holds every V4 pool's tokens together and calls a pool's hook on each swap. Verified canonical before use — it answers extsload, protocolFeesAccrued and protocolFeeController. Not the address V4 uses on Ethereum, which has no code on Arc."],
-        ["V4 Position Manager", ARC_MAINNET_CONTRACTS.v4PositionManager, "Uniswap's own manager for V4 liquidity positions, issued as NFTs. V13 launches do not use it: their liquidity is added directly through the PoolManager and owned by the factory, which has no way to remove it."],
-      ],
-    },
-    {
-      title: "Superseded launch engines",
-      note: "Kept live and readable because a launch cannot be migrated between factories — coins that launched on these still trade normally. New coins do not go here.",
-      cards: [
-        ["Launch Factory · V14", ARC_MAINNET_CONTRACTS.launchFactoryV14, "Superseded by V15. Same pool launch with fees in USDC, but its one-time 1% was taken from the token supply at launch rather than in USDC at graduation. Coins launched here keep trading normally."],
-        ["Launch Fee Hook · V14", ARC_MAINNET_CONTRACTS.launchHookV14, "The fee hook of V14 pools, bound to them permanently. Source published on Sourcify (exact match)."],
-        ["Launch Factory · V13", ARC_MAINNET_CONTRACTS.launchFactoryV13, "Superseded by V14. Same pool launch, but its hook took the sell-side fee in the token rather than USDC and its pools sit in the 0.30% LP tier, which accrues to a position nobody can collect from. Coins launched here keep trading normally."],
-        ["Launch Fee Hook · V13", ARC_MAINNET_CONTRACTS.launchHookV13, "The fee hook of V13 pools, bound to them permanently. Source published on Sourcify (exact match)."],
-        ["Launch Factory · V12 — do not use", ARC_MAINNET_CONTRACTS.launchFactoryV12, "Withdrawn before any public launch. It opened pools at a price of effectively zero, so the first buy of any size could take a launch's entire supply — caught by quoting before the first trade. Its only launch was Arcodian's own test. Replaced by V13, which differs only in the launch price."],
-        ["Launch Factory · USDC (V11)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV11, "Bonding curve with a 1% trading fee split with the creator and a one-time 1% graduation fee, graduating into a Uniswap V3 pool at 12,000 USDC. Superseded because a coin on a curve has no pool for an external scanner or buy bot to index until it graduates."],
-        ["Launch Factory · USDC (V10)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV10, "Superseded by V11."],
-        ["Launch Factory · USDC (V9)", ARC_MAINNET_CONTRACTS.marketUsdcFactoryV9, "Superseded by V10."],
+        ["V4 Position Manager", ARC_MAINNET_CONTRACTS.v4PositionManager, "Uniswap's own manager for V4 liquidity positions, issued as NFTs. Launches do not use it: their liquidity is added directly through the PoolManager and owned by the factory, which has no way to remove it."],
       ],
     },
     {
@@ -277,17 +276,17 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     if (label.includes("Optimism")) return "https://optimistic.etherscan.io";
     if (label.includes("Arbitrum")) return "https://arbiscan.io";
     if (label.includes("Base")) return "https://basescan.org";
-    return "https://www.arcexplorer.org";
+    return ARC_MAINNET.explorer;
   };
   return <section className="contracts-page">
     <TrustNav active="contracts" openHow={openHow} openFaq={openFaq} openCanary={openCanary} />
-    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>Every contract below is deployed on Arc Mainnet, chain {ARC_MAINNET.id}, holding real value. Source is published on <a href="https://www.arcexplorer.org" target="_blank" rel="noreferrer">arcexplorer.org</a> — a <b>Verified</b> badge means anyone, including an external buyer bot, can read that contract's real ABI straight from the chain. Addresses open in the explorer, and the wiring checks below re-run on every page load, read from chain {ARC_MAINNET.id} itself. Testnet addresses are in <a href="/developers/contracts.json">the developer registry</a> rather than here. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads these same contracts and returns unsigned transactions only — it never holds a key.</p></header>
+    <header><p className="kicker">Public onchain record</p><h1>Trust the wiring.<br/><em>Then verify it.</em></h1><p>Every contract below is deployed on Arc Mainnet, chain {ARC_MAINNET.id}, holding real value. Source is published on Circle's official explorer, <a href={ARC_MAINNET.explorer} target="_blank" rel="noreferrer">explorer.arc.io</a>, and on Sourcify — a <b>Verified</b> badge means anyone, including an external buyer bot, can read that contract's real ABI straight from the chain. Addresses open in the explorer, and the wiring checks below re-run on every page load, read from chain {ARC_MAINNET.id} itself. Testnet addresses are in <a href="/developers/contracts.json">the developer registry</a> rather than here. The <a href={ARCODIAN_MCP_ENDPOINT}>Arcodian MCP</a> reads these same contracts and returns unsigned transactions only — it never holds a key.</p></header>
     {contractGroups.map((group) => <div key={group.title} className="contract-group">
       <div className="contract-group-head"><h2>{group.title}</h2><p>{group.note}</p></div>
-      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={label}><small>{label}{verified[address.toLowerCase()] ? <b className="contract-verified" title="Source published on arcexplorer.org">✓ Verified</b> : SOURCIFY_VERIFIED.has(address.toLowerCase()) && <a className="contract-verified" href={`https://repo.sourcify.dev/5042/${address}`} target="_blank" rel="noreferrer" title="Exact match published on Sourcify">✓ Verified · Sourcify</a>}</small><a href={`${explorerFor(group.title,label)}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
+      <div className="contract-address-grid">{group.cards.map(([label,address,note])=><article key={label}><small>{label}{(verified[address.toLowerCase()] || OFFICIAL_EXPLORER_VERIFIED.has(address.toLowerCase())) && <a className="contract-verified" href={`${ARC_MAINNET.explorer}/address/${address}?tab=contract`} target="_blank" rel="noreferrer" title="Source published on explorer.arc.io">✓ Verified</a>}</small><a href={`${explorerFor(group.title,label)}/address/${address}`} target="_blank" rel="noreferrer">{address} ↗</a><p>{note}</p><button onClick={()=>void navigator.clipboard.writeText(address)}>Copy address</button></article>)}</div>
     </div>)}
     <section className="wiring-proof"><div><p className="kicker">Live wiring proof</p><h2>{checks.length && checks.every((item)=>item.ok) ? "Canonical stack verified" : checks.length ? "Review required" : "Reading Arc Mainnet…"}</h2><p>Read directly from chain {ARC_MAINNET.id}. No dashboard value can override these contract getters.</p>{checkedAt&&<small>Last checked {checkedAt}</small>}</div><div className="wiring-checks">{checks.map((item)=><span key={item.label} className={item.ok?"ok":"bad"}><i>{item.ok?"✓":"!"}</i><small>{item.label}</small><b>{item.value}</b></span>)}</div></section>
-    <div className="contract-rules"><article><b>1%</b><small>Bonding-curve fee</small><p>Applied atomically to buys and sells before graduation.</p></article><article><b>12,000</b><small>USDC net threshold</small><p>The curve graduates only from its public onchain reserve. The EURC engine graduates at 3,000, with its virtual reserve scaled to keep the same curve.</p></article><article><b>0.30%</b><small>DEX total swap fee</small><p>Post-graduation swap pricing follows the canonical pair.</p></article><article><b>100%</b><small>LP ownership burned</small><p>Underlying liquidity stays tradable; its withdrawal right does not.</p></article></div>
+    <div className="contract-rules"><article><b>1%</b><small>Trading fee, in USDC</small><p>On every buy and sell, from any router. Half to the coin's creator, half to the treasury.</p></article><article><b>0%</b><small>Pool LP fee</small><p>The hook's 1% is the whole cost of a trade.</p></article><article><b>12,000</b><small>USDC graduation</small><p>The swap that crosses it takes a one-time 1% of the position: USDC to the treasury, tokens burned.</p></article><article><b>99%</b><small>Liquidity locked</small><p>The factory owns the position and has no other code path that touches it.</p></article></div>
   </section>;
 }
 
@@ -305,7 +304,6 @@ const DOCS_SECTIONS = [
   ["agent", "Agent economy"],
   ["lifecycle", "Launchpad & lifecycle"],
   ["fees", "Fees & graduation"],
-  ["eurc", "EURC launches"],
   ["roadmap", "Roadmap"],
   ["safety", "Safety & custody"],
   ["verify", "Verify everything"],
@@ -344,7 +342,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-what" className="docs-section">
       <div className="docs-section-head"><span>01</span><h2>What Arcodian is</h2></div>
-      <p>One non-custodial app for Arc's USDC economy. Hold and send USDC, get paid with a single exact-value invoice, put idle USDC to work in an isolated lending market, bridge across chains over Circle CCTP, convert USDC⇄EURC, and launch or trade coins on a live bonding curve. The web app and the Android wallet only ever read contracts and ask your wallet to sign—they hold no keys and take no custody.</p>
+      <p>One non-custodial app for Arc's USDC economy. Hold and send USDC, get paid with a single exact-value invoice, put idle USDC to work in an isolated lending market, bridge across chains over Circle CCTP, convert USDC⇄EURC, and launch or trade coins in their own Uniswap V4 pools. The web app and the Android wallet only ever read contracts and ask your wallet to sign—they hold no keys and take no custody.</p>
       <div className="docs-cards">
         <div><b>Non-custodial</b><p>Keys live on your device or in your own wallet. Every action is a signature you approve—Arcodian never receives your seed phrase.</p></div>
         <div><b>USDC-native</b><p>USDC is the gas and the unit of account on Arc. Balances, fees, and payments are all denominated in it—no wrapped placeholder token.</p></div>
@@ -421,38 +419,29 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-lifecycle" className="docs-section">
       <div className="docs-section-head"><span>08</span><h2>Launchpad & lifecycle</h2></div>
-      <p>The launchpad is permissionless: anyone can create a coin and it gets a live bonding-curve market immediately. A coin then moves through four public states—there is no hidden mint, pause, or exit between them.</p>
+      <p>The launchpad is permissionless: anyone can create a coin, and it trades in its own Uniswap V4 pool from the block it is created — on arcodian.fun and through any external router, scanner or buy bot. There is no hidden mint, pause, or exit.</p>
       <div className="economics-flow">
-        <div><i>01</i><small>Opening state</small><h3>1,000 USDC starting FDV</h3><p>A 1,000 USDC virtual reserve shapes the curve. It is pricing math—not withdrawable liquidity.</p></div>
-        <div><i>02</i><small>While trading</small><h3>Open price discovery</h3><p>Buys and sells execute against the curve. Every quote and minimum-output is computed on-chain before you sign.</p></div>
-        <div><i>03</i><small>Graduation</small><h3>12,000 USDC net reserve</h3><p>At the threshold, remaining tokens and real collateral move atomically into the canonical ARC DEX pair.</p></div>
-        <div><i>04</i><small>After graduation</small><h3>LP ownership burned</h3><p>All LP tokens are minted to the burn address. The token and collateral stay tradable; nobody can withdraw the liquidity.</p></div>
+        <div><i>01</i><small>Launch</small><h3>~$5,000 starting FDV</h3><p>The whole 1B supply goes into the pool at the launch price. The creator can buy in the same transaction, before anyone else can trade.</p></div>
+        <div><i>02</i><small>While trading</small><h3>Open price discovery</h3><p>Buys add USDC to the pool and move the price up; sells do the reverse. Quotes run the real swap, so they already include the fee.</p></div>
+        <div><i>03</i><small>Graduation</small><h3>12,000 USDC raised</h3><p>The swap that carries the pool past 12,000 USDC takes a one-time 1% of the position: its USDC to the treasury, its tokens burned. The price does not jump.</p></div>
+        <div><i>04</i><small>Liquidity</small><h3>Locked for good</h3><p>The factory owns the position and has no code path that removes it, other than that single 1% at graduation. There is no LP token to sell or pull.</p></div>
       </div>
     </article>
 
     <article id="docs-fees" className="docs-section">
       <div className="docs-section-head"><span>09</span><h2>Fees & graduation</h2></div>
-      <p>Two fee regimes, both charged atomically by the contracts—before and after graduation.</p>
+      <p>Every fee is taken by the contracts in the same transaction, in USDC.</p>
       <div className="economics-ledger">
-        <div><small>Bonding-curve fee</small><strong>1.00%</strong><p>Charged on every curve buy and sell. Buy fees are removed before reserve growth.</p></div>
-        <div><small>ARC DEX total swap fee</small><strong>0.30%</strong><p>Symmetric on buys and sells of the graduated pair.</p></div>
-        <div><small>Protocol share</small><strong>0.05%</strong><p>Accrues in-contract and is withdrawn by pull, so trading never halts on a treasury failure.</p></div>
-        <div><small>Graduation threshold</small><strong>12,000</strong><p>Net collateral reserve. A final transaction can cross slightly above it.</p></div>
+        <div><small>Trading fee</small><strong>1.00%</strong><p>On every buy and sell, from any router — taken from the USDC going in on a buy and the USDC coming out on a sell.</p></div>
+        <div><small>Creator share</small><strong>0.50%</strong><p>Half of the trading fee accrues to the coin's creator, claimable any time from the coin page.</p></div>
+        <div><small>Pool LP fee</small><strong>0%</strong><p>The pool's own fee tier is zero, so the 1% above is the whole cost of a trade.</p></div>
+        <div><small>Graduation fee</small><strong>1% once</strong><p>At 12,000 USDC raised, 1% of the position, paid in USDC to the treasury. Nothing is taken from the supply at launch.</p></div>
       </div>
     </article>
 
-    <article id="docs-eurc" className="docs-section">
-      <div className="docs-section-head"><span>10</span><h2>EURC launches</h2></div>
-      <p>Coins can be denominated in <b>EURC</b> instead of USDC. Pick the collateral with the USDC/EURC toggle when you create. The bonding curve, 1% fee, and graduation logic are identical; only the quote asset changes.</p>
-      <div className="docs-cards">
-        <div><b>Auto-detected</b><p>Choose EURC and every trade on that coin routes through EURC—approval, buy, and sell—without another switch.</p></div>
-        <div><b>Priced in €</b><p>Reserves, market cap, and the graduation bar display in euros. USDC coins are byte-identical to before.</p></div>
-        <div><b>Own pool at graduation</b><p>An EURC coin graduates into an EURC-denominated ARC DEX pair, with the same LP-burn guarantee.</p></div>
-      </div>
-    </article>
 
     <article id="docs-roadmap" className="docs-section">
-      <div className="docs-section-head"><span>11</span><h2>Roadmap</h2></div>
+      <div className="docs-section-head"><span>10</span><h2>Roadmap</h2></div>
       <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface — Bridge and USDC-only Market are already live on Arc Mainnet with real value; the rest run on testnet.</p>
       <div className="economics-flow">
         <div><i>01</i><small>Live · testnet + mainnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live on both Arc Testnet and Arc Mainnet. Next: recurring requests, payment links, and merchant webhooks.</p></div>
@@ -463,13 +452,13 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-safety" className="docs-section">
-      <div className="docs-section-head"><span>12</span><h2>Safety & custody</h2></div>
+      <div className="docs-section-head"><span>11</span><h2>Safety & custody</h2></div>
       <p>Arcodian is non-custodial by construction. The interface talks only to wallets, official Arc endpoints (or, where no official Arc Mainnet endpoint yet exists, an independently-verified third-party one — see Mainnet readiness below), and allowlisted route APIs; it never stores or transmits a private key. Community posts and coin links are signed by the wallet and verified server-side, so nobody can impersonate a creator. Features without an explicit mainnet deployment and readiness sign-off stay Arc Testnet only.</p>
       <aside className="docs-notice"><strong>Mixed testnet/mainnet notice</strong><p>Bridge, the USDC-only Market/Launchpad, and the additive Agent Pay V6 factory are deployed on Arc Mainnet, chain 5042. V6 has no automatic vault creation and the production UI remains on the reviewed migration path. Always check the network your wallet shows before signing. The active agent-economy surfaces and V6 batch vault testing run on Arc Testnet chain 5042002, where test USDC and test EURC have no financial value. Contract addresses, pool reserves, activity, and LP-burn proof remain independently inspectable through each network's explorer.</p></aside>
     </article>
 
     <article id="docs-verify" className="docs-section">
-      <div className="docs-section-head"><span>13</span><h2>Verify everything</h2></div>
+      <div className="docs-section-head"><span>12</span><h2>Verify everything</h2></div>
       <p>Don't take the docs on faith. The Contracts page reads the live wiring straight from chain, the FAQ covers the edge cases, and Arc Explorer lets you inspect any address or transaction yourself.</p>
       <div className="docs-links">
         <button onClick={openContracts}><b>Contracts →</b><small>Live on-chain wiring proof</small></button>
@@ -479,7 +468,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-readiness" className="docs-section readiness-section">
-      <div className="docs-section-head"><span>14</span><h2>Mainnet readiness</h2></div>
+      <div className="docs-section-head"><span>13</span><h2>Mainnet readiness</h2></div>
       <p><b>Current decision: PARTIAL GO.</b> Bridge (Circle CCTP), the USDC-only Market/Launchpad, and Swap (Arcodian's own on-chain routing across the Mainnet launch/DEX stack and permissionless external pools) are deployed and live on Arc Mainnet with real USDC — verified with real on-chain transactions, not just a deployment script. Everything else (StableCoin FX, Arc Lend, EURC launches, the agent-economy stack) stays testnet-only until its own gates below clear — for the EURC surfaces the external blocker lifted on 2026-09-16 when Circle published the Arc Mainnet EURC address, leaving only the Arcodian-side mainnet deployments. Governance and audit gates for the mainnet contracts that do exist remain open.</p>
       <div className="readiness-grid">
         <div className="ready"><small>LIVE</small><b>Bridge + USDC Market + Swap on Arc Mainnet</b><p>ArcBridgeRouter (Ethereum, Optimism, Arbitrum, Base, Arc), the USDC-only launch/DEX stack, and Swap's routing across it plus permissionless external pools are deployed to Arc Mainnet, chain 5042, and proven with real transactions. Source-verified on Sourcify + public Blockscout mirrors for the 4 EVM chains; Arc's own explorer is third-party and unofficial (no official Circle explorer is public yet) and its verify endpoint currently errors server-side on their end.</p></div>
@@ -496,12 +485,12 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
     </article>
 
     <article id="docs-faq" className="docs-section">
-      <div className="docs-section-head"><span>15</span><h2>Frequently asked questions</h2></div>
+      <div className="docs-section-head"><span>14</span><h2>Frequently asked questions</h2></div>
       <div className="faq-list docs-faq-list">{FAQ_ITEMS.map(([question,answer],index)=><details key={question} open={index===0}><summary><span>{String(index+1).padStart(2,"0")}</span>{question}<i>+</i></summary><p>{answer}</p></details>)}</div>
     </article>
 
     <article id="docs-legal" className="docs-section">
-      <div className="docs-section-head"><span>16</span><h2>Terms, risk & refunds</h2></div>
+      <div className="docs-section-head"><span>15</span><h2>Terms, risk & refunds</h2></div>
       <p>Bridge, the USDC-only Market/Launchpad, and Swap move real USDC on Arc Mainnet — treat every transaction there as final and irreversible with real financial consequences. Every other Arcodian surface (StableCoin FX, Arc Lend, EURC launches, the agent-economy contracts) is a testnet interface where test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing, on either network.</p>
       <div className="docs-cards">
         <div><b>Self-custody</b><p>Arcodian does not hold recovery phrases or sign on a user&apos;s behalf. Blockchain transactions are public and normally irreversible.</p></div>

@@ -79,7 +79,9 @@ function formatCountdown(totalSeconds: number) {
 }
 
 function attestationEta(item: PendingClaim, att: Attestation | null | undefined, now: number) {
-  if (att?.ready) return "Attestation ready · relayer normally mints within 30 seconds";
+  // No relayer mints on the user's behalf yet: the claim below is how the
+  // USDC arrives, so the status must not promise an automatic mint.
+  if (att?.ready) return "Attestation ready · claim below to receive your USDC";
   if (att?.status === "pending_confirmations") {
     const countdown = attestationCountdown(item, now);
     if (countdown.delayed) {

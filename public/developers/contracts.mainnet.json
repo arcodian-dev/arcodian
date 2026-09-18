@@ -1,59 +1,68 @@
 {
-  "version": 7,
-  "phase": "mainnet-phase-1-usdc-only",
-  "deployedAt": "2026-07-30T00:00:00Z",
-  "updatedAt": "2026-09-12T13:20:00Z",
-  "network": { "name": "Arc Mainnet", "chainId": 5042, "rpc": "https://arc-rpc.stakeme.pro", "explorer": "https://arc.exploreme.pro" },
-  "note": "Phase 1 covers only contracts with no external Circle/Pyth/ERC-8004 mainnet dependency. Confirmed by direct on-chain probe 2026-07-30: the native USDC ERC-20 view precompile at 0x3600...0000 IS live on mainnet at the same fixed address as testnet, but the testnet EURC token, Pyth oracle, and ERC-8004 Identity/Reputation/Validation Registry addresses all return no code on mainnet — nobody has deployed/published those there yet. Every contract below needed no address but our own and USDC. 2026-07-31: rpc.blockdaemon.mainnet.arc.io (used for the phase-1 deploy above) started returning 401 with no warning and stayed down — no official Circle RPC/explorer for Arc Mainnet is public yet. arc-rpc.stakeme.pro / arc.exploreme.pro is third-party, unofficial infrastructure, independently verified (chainId, real transaction/balance/bytecode cross-checks against our own known state) but not Circle's own; swap it out the moment an official endpoint exists.",
+  "version": 8,
+  "updatedAt": "2026-09-18T00:00:00Z",
+  "network": {
+    "name": "Arc Mainnet",
+    "chainId": 5042,
+    "rpc": "https://rpc.mainnet.arc.io",
+    "explorer": "https://explorer.arc.io"
+  },
+  "note": "Current contracts only. Every Arcodian contract here is source-verified on explorer.arc.io and Sourcify. Coins from earlier launch engines keep trading on-chain but are not listed.",
+  "launchpad": {
+    "engine": 15,
+    "launchFactory": "0xDFE3e7C6e139860d88f13FCCB6A1d9dCEE2211e2",
+    "launchFeeHook": "0x82AA4c459DB78C58fF279439bEDe03697C80A0Cc",
+    "v4Router": "0xb865dB1cC95b05Ee939b74779C6996173da8fb48",
+    "v4PoolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF",
+    "pool": {
+      "quote": "0x3600000000000000000000000000000000000000",
+      "lpFeeTier": 0,
+      "tickSpacing": 60,
+      "supply": "1000000000",
+      "launchFdvUsd": 4995
+    },
+    "fees": {
+      "tradeFeeBps": 100,
+      "creatorShareBps": 50,
+      "currency": "USDC",
+      "graduationQuoteUsdc": 12000,
+      "graduationFeeBps": 100
+    },
+    "createLaunch": "createLaunch(string name, string symbol, string imageURI, uint256 initialBuyUsdc6, uint256 minTokensOut) returns (address token, bytes32 poolId, uint256 tokensBought)",
+    "events": [
+      "LaunchCreated(uint256 indexed id, address indexed creator, address token, bytes32 poolId, uint256 tokenLiquidity, uint256 launchFee)",
+      "InitialBuy(uint256 indexed id, address indexed creator, uint256 quoteIn, uint256 tokensOut)",
+      "Graduated(uint256 indexed id, bytes32 poolId, uint256 quoteRaised, uint256 quoteFee, uint256 tokensBurned)"
+    ]
+  },
   "contracts": {
     "usdc": "0x3600000000000000000000000000000000000000",
+    "launchFactory": "0xDFE3e7C6e139860d88f13FCCB6A1d9dCEE2211e2",
+    "launchFeeHook": "0x82AA4c459DB78C58fF279439bEDe03697C80A0Cc",
+    "v4Router": "0xb865dB1cC95b05Ee939b74779C6996173da8fb48",
+    "swapRouter": "0x4A5eF82818F674452690539D75517b4604981Bed",
+    "pairFactory": "0x5E3d1b63213B8608539116d1c6248a36819684b5",
+    "arcodianDexV3Factory": "0x886694Bc4c5aCc545669E60a6694BA6a0B22d3bd",
+    "arcodianDexSwapRouter": "0xF0EeeE998470Dd277eB5E9eEc1116b10C407f166",
+    "arcodianDexQuoter": "0x79Af0A43Edc9d56ce44c770215066fbBA3B02D39",
+    "arcodianDexPositionManager": "0x332733D05a942da29087Ee4AF3497DE1911bA620",
+    "swapFeeRouter": "0xe4664b28Cb0624860aAeE28E573697473f2Bf46e",
     "arcPay": "0x69af28c7daddCFf7F9BC2DCfEd244c9696f3A9A2",
-    "arcPayLegacyWrongTreasury": "0x1dE9822D79aFdd53f9270503d16080F9ecbFdB7C",
     "agentPayFactory": "0xbFb5b17daE316f1d73f8A7ED456122d132BC5DB6",
-    "agentPayFactoryLegacyWrongArcPay": "0x4E3fDc7ddA063e8d629C7140e1D7ace574275c69",
-    "agentPayFactoryV6": "0x304f7ACFDB096358d89Da8762721207e0B5B1433",
-    "agentPayFactoryV6LegacyWrongArcPay": "0x69d7eE9672fE5b7660B6a13D3B6f767C7E8576dB",
-    "adminTimelock": "0xba953bc1282d0bffe22b4f769822d20900625594",
-    "governanceMultisig": "0xC67C731E16C4D45809EE5f50511FE5bB75008FA0",
+    "agentPassport": "0x1709E8986B0b30B7FBaAd05971e6f8530742070A",
+    "agentJobs": "0xc1e7c3B9ADc079628A231636CB9c0d51478B0e87",
     "sessionKeyAccount": "0x1602ee1fb997c75a7cf199f3adeba5b990edd06b",
-    "marketGraduationHub": "0xe98FF8c9825517eaC8A1CE2d00590D322AC4303F",
-    "marketPairFactory": "0x5E3d1b63213B8608539116d1c6248a36819684b5",
-    "marketPairFactoryLegacyWrongTreasury": "0xadb7d3d229F78198c4dE827607c89F95E9cE7722",
-    "marketUsdcFactory": "0x508FDa9F366E734a45fE7bc3a98F2909754633B7",
-    "marketUsdcFactoryV9": "0x6e1d1a09b07a4022B535269434C16A3452e195f9",
-    "marketUsdcFactoryV11": "0x12ae88784D1CB2A23408BBA483B4bBBc88226FF9",
-    "marketUsdcFactoryV10Legacy": "0xCf93231d55dA8Df1300619615b453e4EeAB6feD3",
-    "marketUsdcFactoryV10LegacyPoolGriefing": "0xCEc317Ca96b7e55FA0F9f7C243cDb0ee6BC19cED",
-    "marketUsdcFactoryV9LegacyWrongTreasury": "0x071f978A9e7b8Ea0Ad914cba0d4C2c097f327066",
-    "marketRouter": "0x4A5eF82818F674452690539D75517b4604981Bed"
+    "adminTimelock": "0xba953bc1282d0bffe22b4f769822d20900625594",
+    "bridgeFeeRouter": "0xc35deb937f5056a0e034f10e21094878485caee7",
+    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF"
   },
-  "creatorFeeAndGraduationFee2026_09_12": {
-    "note": "New launch engine ArcPumpFactoryV11 (0x12ae88784D...88226FF9), deployed by user request to add a creator fee. Curve/graduation math is otherwise byte-identical to V10 (same v3Factory/positionManager/treasury/graduationThreshold, same atomic pool-create-at-graduation fix). Two fee changes: (1) the 1% per-trade curve fee now splits 50/50 between the launch's creator (pull-claimed via withdrawCreatorFees(), same reentrancy-safe pattern as withdrawProtocolFees()) and the protocol treasury — V10's `creator` was event-attribution only, zero on-chain privilege, 100% went to treasury; (2) a new, separate one-time graduation fee (1% of the native liquidity, taken before it becomes the LP position) goes 100% to treasury, no creator share. Total fee surface across a launch's lifetime is therefore 2%: 1% ongoing trading (split) + 1% one-time at graduation (treasury only). Covered by contracts/test/ArcPumpV11CreatorFee.t.sol (9 tests) plus a re-run of the V10 graduation-frontrun regression since V11 is a separate contract, not a V10 subclass — full suite 326/326 passing. Dry-run simulated against live mainnet RPC before the real broadcast; deployed address verified on-chain (treasury/graduationThreshold/v3Factory/ENGINE_VERSION all read back correctly) before wiring into config.ts/the mainnet indexer/frontend. V10's one existing launch is not migratable and stays indexed/tradeable there under marketUsdcFactoryV10Legacy; every new launch now goes through V11. Source verification is pending the same Sourcify/Arcscan gap documented elsewhere in this repo (chain 5042 isn't listed on Sourcify yet — confirmed via Arcscan's own public API, not just the web UI's Cloudflare challenge)."
-  },
-  "feeRoutingFix2026_09_05": {
-    "note": "A full fee-routing sweep (does every fee-charging contract's treasury actually reach 0xF1CBe360...05CaF?) found ArcPay mainnet's immutable treasury still set to the deployer EOA (0x7D9b5ab1...40C2) — the same bug class as the 2026-08-02 fix below, just not caught in that sweep since ArcPay wasn't audited then. Only 0.00003 USDC had accrued (no real invoice volume yet). Redeployed to 0x69af28c7...3A9A2 with treasury correctly set to the multisig, verified live via treasury()/FEE_BPS() reads against the new contract, not the deploy script's log. arcPay above now points at the fixed contract; the old one is arcPayLegacyWrongTreasury. Everything else checked in the same sweep was already correct: marketUsdcFactoryV10, marketPairFactory, externalV3FeeRouter, and all 5 ArcBridgeRouter deployments (Arc/Ethereum/Optimism/Arbitrum/Base) all read back the real treasury. Same day, follow-up: agentPayFactory and agentPayFactoryV6 both held an immutable internal reference to the OLD ArcPay (set at their own construction) — redeployed both against the new ArcPay too (0xbFb5b17d...C5DB6 and 0x304f7ACF...B1433), verified via arcPay()/passport() reads. Both old factories had vaultCount() 0 on Arc Mainnet, so nothing needed migrating; they're now agentPayFactoryLegacyWrongArcPay / agentPayFactoryV6LegacyWrongArcPay. Source verification on all of today's redeployed contracts (ArcPay, both Agent Pay factories) is pending — Arc's own third-party explorer's verify endpoint has been erroring server-side since before this session; retry once it's fixed, alongside the other still-unverified contracts tracked in verification-status.json."
-  },
-  "graduationPoolGriefingFix2026_08_30": {
-    "note": "marketUsdcFactoryV10 redeployed: 0xCEc317Ca...19cED (now marketUsdcFactoryV10LegacyPoolGriefing) pre-created each launch's Uniswap V3 pool at launch time, left uninitialized — anyone could call initialize() with an arbitrary starting price before graduation, and the graduation mint used amount0Min/amount1Min of 0, so a front-run price was accepted silently and most of the LP reserve could be stranded permanently. Fixed factory (0xCf93231d...b6feD3) creates and initializes the pool atomically inside _graduate() instead, with a real slippage floor on the mint and a revert if a pool is somehow already mispriced. Same v3Factory/positionManager/treasury/graduationThreshold (12,000 ether) as before — only the graduation mechanics changed. The old factory's existing launches (including \"Architects\") are not migratable and stay indexed/tradeable there; every new launch now goes through the fixed factory. See contracts/test/ArcPumpV10Graduation.t.sol for the regression tests."
-  },
-  "feeRoutingFix2026_08_02": {
-    "note": "Auditing 'does swap fee reach treasury' surfaced two contracts whose immutable `treasury` was set to the deployer EOA (0x7D9b5ab1...40C2) instead of the real treasury (0xF1CBe360...05CaF): marketPairFactory (0 pairs ever created there — clean swap, nothing to migrate) and marketUsdcFactoryV9 (the live 1% bonding-curve fee path — ~0.04 USDC had accrued, withdrawable only by the deployer EOA, and every future launch would have inherited the same bug since treasury is set once per factory and inherited by every curve it spawns). Both replaced with freshly deployed, correctly-configured factories, verified with treasury() reads against both before cutover. The old V9 factory's one live launch (\"Architects\") is not migratable (treasury is immutable per already-deployed curve) and stays indexed as a legacy factory; the old pair factory is simply abandoned (never used). Uninvolved and unaffected: externalV3FeeRouter (0.30% external-pool swap fee) already correctly pointed at the real treasury. Also worth knowing: post-graduation trading fees on Arcodian's OWN V9 pools are NOT collected by treasury at all — the LP position is minted straight to a burn address at graduation (by design, so liquidity can never be pulled/rugged), so that 0.30% accrues to the burned LP forever, not to anyone. The only per-swap fee treasury actually earns today is the external-V3-venue 0.30% and the pre-graduation 1% curve fee."
-  },
-  "bridge": {
-    "addedAt": "2026-07-31T00:00:00Z",
-    "note": "ArcBridgeRouter (1.5% fee on top of Circle's canonical CCTP v2 TokenMessengerV2/MessageTransmitterV2, same deterministic addresses across every chain listed here). Deployed once arc-rpc.stakeme.pro proved Arc Mainnet was actually reachable; a prior deployment had a Solidity interface bug (declared a uint64 nonce return that CCTP v2's real depositForBurn doesn't have) that reverted every single bridge call on every chain since its original deployment — fixed, redeployed, and proven with real transactions on all 5 chains, including a full Arc-to-Base-to-Arc-equivalent round trip and independent third-party wallets bridging on their own. Circle's own TokenMinter.burnLimitsPerMessage caps a single burn OUT of Arc — a network-side rollout limit, not ours, that Circle raises over time: 1 USDC when first confirmed 2026-07-31, already 100,000 USDC by 2026-08-30. The frontend reads this limit live instead of hardcoding it (fetchBurnLimitPerMessage in src/bridgeRecovery.ts).",
-    "inboundAttestationStuck": "Confirmed 2026-08-30: outbound burns FROM Arc get a real Circle attestation (status \"complete\") within minutes — e.g. 0xac40c8ee...79e8a5 (Arc→Arbitrum) and 0x790ac8f2...48c9227 (Arc→Base), both source domain 26, both complete. But real burns INTO Arc from another chain never get attested: three Arbitrum→Arc burns (0xdccd1211...5f8d0b0, 0xfc3ac4fb...39eec, 0x772e8f02...d4c2ada, destination domain 26) sit at attestation \"PENDING\" / status \"pending_confirmations\" indefinitely, including ones from blocks tens of millions old on Arbitrum — no amount of waiting completes them. The on-chain contracts are fine on both sides (Arc's TokenMinter.getLocalToken(3, arbUSDC) correctly resolves to Arc's native USDC, so the token link exists); this is Circle's off-chain attestation SERVICE not yet attesting messages where Arc is the destination domain, consistent with Arc Mainnet still being pre-public-launch (Circle's own Sept 16, 2026 date). Nothing in Arcodian's bridge code can fix this — it will presumably start working once Circle turns on inbound attestation for Arc's domain. Re-check this note after Sept 16, 2026.",
-    "routers": {
-      "1": "0x9fc12b77ae41181c98563e5ae5645ae8a0f6eddd",
-      "10": "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
-      "42161": "0x66cc4767ec52ff09d8bda7abfccdea6ab9b70967",
-      "8453": "0x274454aa0413b96651983c5efd6817cb30968e71",
-      "5042": "0xc35deb937f5056a0e034f10e21094878485caee7"
-    },
-    "tokenMessengerV2": "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
-    "messageTransmitterV2": "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
-    "treasury": "0xF1CBe360b45F2E22Ab74A2c434e5602f66105CaF",
-    "sourceVerification": { "1": "sourcify+blockscout", "10": "sourcify+blockscout", "42161": "sourcify+blockscout", "8453": "sourcify+blockscout", "5042": "unverified — third-party explorer's verify endpoint errors server-side" }
+  "external": {
+    "v4PoolManager": "0x8366a39CC670B4001A1121B8F6A443A643e40951",
+    "v4PositionManager": "0x6049c9a0e26405c0985f9e3685c87d0ae917f82b",
+    "eurc": "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+    "cctpTokenMinterV2": "0xfd78EE919681417d192449715b2594ab58f5D002",
+    "gatewayWallet": "0x77777777Dcc4d5A8B6E418Fd04D8997ef11000eE"
   },
   "deployer": "0x7D9b5ab14b24Dede3b78b7e1715C1E01032F40C2",
   "governance": {
@@ -65,19 +74,6 @@
       "0x43332cCeAC6db1E7665b75a9F75C87935bFD8858",
       "0xf63748010F29c00F67C3F7E5598eBd3AE20055bE"
     ],
-    "note": "2026-08-02: ArcAdminTimelock's admin (the role that can change who may propose/execute, or transfer admin again) was migrated from the deployer EOA to a freshly-deployed 2-of-3 ArcMultisig (contracts/src/ArcGovernance.sol) via transferAdmin/acceptAdmin — verified on-chain, admin() now returns the multisig. isProposer/isExecutor were left as the deployer alone (routine timelock operations stay single-key; only the higher-privilege admin role required 2 signatures to change). ArcMultisig itself has NO owner-rotation function — its signer set is immutable once deployed, so this is a one-shot decision. All 3 signer keys were generated on and are stored on the same VPS that runs this project (not independent devices/parties) — this multisig protects against a single lost/misused key, not against compromise of this server itself. See docs/ARCODIAN-AUDIT-READINESS.md; ArcAdminTimelock's own contract docstring still says 'Not audited, not for mainnet' — this migration does not change that."
-  },
-  "marketParams": {
-    "graduationThresholdUsdc": "12000000000000000000000",
-    "note": "Mirrors testnet v10 economics (12,000 USDC threshold, 1% curve fee) — not independently re-derived for mainnet, just carried over for parity."
-  },
-  "deferredUntilOfficialAddressesExist": {
-    "arcodianEurcContracts": "Deployed 2026-09-16, the day Circle published Arc Mainnet EURC. ArcFxPoolV2 at 0x506f61b6c287c616bb7ef827d2455b401373418f (usdc/eurc/treasury immutables read back on-chain after deploy) — holds NO liquidity yet, nobody has seeded it, so the FX surface stays testnet-only in the UI until it does. ArcPumpFactoryEurcV11 at 0x426e68f06207a3f3ef7aa261f3856e71746af7aa — EURC launch engine graduating into Uniswap V3, reusing the live USDC ArcPumpFactoryV11's own v3Factory/positionManager/treasury so the two cannot drift; ENGINE_VERSION 11, QUOTE_KIND 1, graduationThreshold 3,000 EURC with the curve's virtual reserve scaled to 1,125 so the curve shape matches the USDC engine exactly. Not yet reachable from the UI: Create still forces USDC on mainnet and the market indexer does not read this factory.", "eurc": "RESOLVED 2026-09-16: Circle published the Arc Mainnet EURC contract at 0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1 on docs.arc.io, verified independently on chain 5042 (eth_getCode returns real bytecode; name() and symbol() both read EURC, decimals() 6). The testnet address 0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a has no code on mainnet. This unblocks the EURC pump factory, the stablecoin FX pool and ArcLendV2 collateral at the Circle dependency level — each still needs its own Arcodian mainnet deployment against this address, and ArcLendV2 additionally still needs a mainnet Pyth oracle, which does not exist.",
-    "pythOracle": "No official Arc mainnet Pyth contract address found. Blocks: ArcLendV2 (needs EUR/USD price feed).",
-    "erc8004IdentityRegistry": "Testnet address 0x8004A818...BD9e has no code on mainnet — the canonical ERC-8004 reference registries have not been deployed to chain 5042 by anyone yet. Blocks: ArcAgentPassport, ArcAgentPayFactoryV4, ArcAgentJobsV2 (constructor hard-reverts on a zero passport address), Reputation/Validation integration."
-  },
-  "resolved2026_07_31": {
-    "cctp": "Was listed as deferred/blocking the bridge — that was wrong. Circle CCTP v2's TokenMessengerV2/MessageTransmitterV2 addresses are deterministic and identical across every chain including Arc Mainnet; no separate Circle publication was ever needed. The actual blocker was Arc Mainnet RPC/explorer access, resolved via the third-party endpoint above."
-  },
-  "migrationManifest": "/developers/legacy-migration.json"
+    "note": "2026-08-02: ArcAdminTimelock's admin (the role that can change who may propose/execute, or transfer admin again) was migrated from the deployer EOA to a freshly-deployed 2-of-3 ArcMultisig (contracts/src/ArcGovernance.sol) via transferAdmin/acceptAdmin \u2014 verified on-chain, admin() now returns the multisig. isProposer/isExecutor were left as the deployer alone (routine timelock operations stay single-key; only the higher-privilege admin role required 2 signatures to change). ArcMultisig itself has NO owner-rotation function \u2014 its signer set is immutable once deployed, so this is a one-shot decision. All 3 signer keys were generated on and are stored on the same VPS that runs this project (not independent devices/parties) \u2014 this multisig protects against a single lost/misused key, not against compromise of this server itself. See docs/ARCODIAN-AUDIT-READINESS.md; ArcAdminTimelock's own contract docstring still says 'Not audited, not for mainnet' \u2014 this migration does not change that."
+  }
 }

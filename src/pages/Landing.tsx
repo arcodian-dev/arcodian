@@ -51,8 +51,8 @@ const RAILS = [
   {
     tab: "screener", key: "market", label: "Market", tag: "DISCOVER",
     title: "Every Arc coin on one radar",
-    desc: "Watch curves fill in real time. Creator, contract, holders, tape and graduation progress all sit in the same room — before anyone has to trust anything.",
-    bullets: ["Live curve and tape per coin", "Creator and contract always visible", "Graduation progress from public reserve"],
+    desc: "Watch every launch pool live. Creator, contract, holders, tape and graduation progress all sit in the same room — before anyone has to trust anything.",
+    bullets: ["Live pool and tape per coin", "Creator and contract always visible", "Graduation progress from the pool itself"],
     cta: "Open Market",
   },
   {
@@ -93,7 +93,7 @@ const PILLARS: { group: string; blurb: string; items: { name: string; desc: stri
     group: "Market", blurb: "Discover, launch, and put idle USDC to work.",
     items: [
       { name: "Markets", desc: "Every Arc coin on one live radar with price, holders, and graduation.", tab: "screener" },
-      { name: "Launchpad", desc: "Deploy a coin in minutes on a readable bonding curve — liquidity burns at graduation.", tab: "screener" },
+      { name: "Launchpad", desc: "Deploy a coin in minutes straight into its own Uniswap V4 pool — liquidity locked from the first block.", tab: "screener" },
       { name: "Lend", desc: "Isolated USDC market: supply to earn, or borrow against EURC up to 70% LTV.", href: "/lend" },
     ],
   },
@@ -118,17 +118,17 @@ const PILLARS: { group: string; blurb: string; items: { name: string; desc: stri
 ];
 
 const STEPS = [
-  { n: "01", title: "Discover", desc: "New coins surface the moment they launch. Price discovery starts in the open, on a curve anyone can read." },
+  { n: "01", title: "Discover", desc: "New coins surface the moment they launch. Price discovery starts in the open, in a pool any router or bot can trade." },
   { n: "02", title: "Launch", desc: "Deploy in minutes with no hidden allocation. Supply and distribution are verifiable from the first block." },
-  { n: "03", title: "Graduate", desc: "At the threshold, liquidity moves into a public pool and LP ownership is burned. Nobody can pull it back." },
+  { n: "03", title: "Graduate", desc: "At 12,000 USDC raised the coin graduates in place: a one-time 1% fee in USDC, and the rest of the liquidity stays locked. Nobody can pull it." },
 ];
 
 const FAQS = [
-  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Bridge and the USDC-only Market/Launchpad are live on Arc Mainnet with real USDC. Swap (via Circle's App Kit SDK), Stablecoin FX, Lend, and the agent-economy rails are still Arc Testnet only." },
+  { q: "What is Arc?", a: "Arc is Circle's network, where USDC is the gas token itself. Arcodian is the interface for discovering, launching and trading assets on it. Bridge, the Market/Launchpad, Swap and Arc Pay are live on Arc Mainnet with real USDC. Stablecoin FX, Lend and the agent-economy rails are still Arc Testnet only." },
   { q: "Is Arcodian custodial?", a: "No. You connect your own wallet and every action settles directly on chain. Arcodian never holds your assets and has no ability to move them." },
-  { q: "What does graduation actually do?", a: "When a curve reaches its threshold, its liquidity is moved into a public pool and the LP tokens are sent to a dead address. The liquidity stays tradable forever; the right to withdraw it is destroyed." },
-  { q: "Who can create a pool?", a: "Anyone. The pair factory is permissionless — any two tokens, at either fee tier. The one exception is a launchpad coin still on its curve: only that coin's own curve may open its pair, so graduation liquidity cannot be front-run." },
-  { q: "Are these real numbers?", a: "Yes. The radar and table below read Arc Mainnet's launch factory live from chain — if it looks empty, that's because it is: nobody has launched a mainnet coin yet, not a bug or a placeholder. The Bridge figures higher on this page are also read live from the deployed Arc Mainnet contracts. Nothing here is illustrative or filled in." },
+  { q: "What does graduation actually do?", a: "A coin trades in its own Uniswap V4 pool from launch. When 12,000 USDC has been raised, the swap that crosses the line takes a one-time 1% of the position in USDC for the treasury and burns the matching tokens. The rest stays locked in the pool for good; there is no LP token anyone can withdraw." },
+  { q: "Who can create a pool?", a: "Anyone. The pair factory is permissionless — any two tokens, at either fee tier. Launchpad coins already have their own pool from the moment they are created." },
+  { q: "Are these real numbers?", a: "Yes. The radar and table below read Arc Mainnet's launch factory live from chain, and the Bridge figures higher on this page are read live from the deployed Arc Mainnet contracts. Nothing here is illustrative or filled in." },
 ];
 
 function sparkFrom(trades: Trade[]): string {
@@ -468,7 +468,7 @@ export default function LandingExperience({ enterMarket, chooseCoin, openTab }: 
           <h2>Launch a coin the transparent way.</h2>
           <p>
             No hidden allocation, no private mempool head start. Deploy in minutes
-            and let the market read the curve from the first block — the same view
+            and let the market read the pool from the first block — the same view
             you get is the view everyone gets.
           </p>
           <div className="lp-hero-cta">
