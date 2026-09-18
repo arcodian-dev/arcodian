@@ -665,7 +665,10 @@ async function indexGlobalV3Pools() {
           token.balanceOf(pool),
           new Contract(USDC, tokenAbi, provider).balanceOf(pool),
         ]);
-        const swapResult = await addressLogs(pool, log.blockNumber, [swapTopic]);
+        // A pool found during a historical catch-up only needs its recent
+        // tape; reading a year of swaps per pool is what made a single run
+        // outlive its time budget.
+        const swapResult = await addressLogs(pool, Math.max(log.blockNumber, latestBlock - MAX_VENUE_CATCHUP_BLOCKS), [swapTopic]);
         const swaps = (Array.isArray(swapResult) ? swapResult : swapResult.logs).flatMap((entry) => {
           try {
             const item = poolContract.interface.parseLog(entry);
