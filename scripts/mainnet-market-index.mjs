@@ -135,12 +135,23 @@ const provider = new ThrottledProvider(RPC, undefined, { batchMaxCount: 1, stati
 const ARCHIVE_RPCS = (process.env.ARC_ARCHIVE_RPCS || "https://arc-rpc.stakeme.pro")
   .split(",").map((url) => url.trim()).filter(Boolean)
   .map((url) => new JsonRpcProvider(url, 5042, { staticNetwork: true, batchMaxCount: 1 }));
+// Highest block the primary has refused as pruned. Ranges starting at or
+// below it go straight to the archive endpoints instead of failing first.
+let primaryPrunedAt = -1;
 async function getLogsResilient(filter) {
   let lastError;
-  for (const source of [provider, ...ARCHIVE_RPCS]) {
+  const sources = Number(filter.fromBlock) <= primaryPrunedAt ? ARCHIVE_RPCS : [provider, ...ARCHIVE_RPCS];
+  for (const source of sources) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try { return await source.getLogs(filter); }
-      catch (error) { lastError = error; await delay(400 * (attempt + 1)); }
+      catch (error) {
+        lastError = error;
+        if (source === provider && /pruned/i.test(String(error?.message || error) + JSON.stringify(error?.error || ""))) {
+          primaryPrunedAt = Math.max(primaryPrunedAt, Number(filter.toBlock));
+          break;
+        }
+        await delay(400 * (attempt + 1));
+      }
     }
   }
   throw lastError;
