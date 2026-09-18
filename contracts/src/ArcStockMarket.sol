@@ -105,7 +105,7 @@ contract ArcStockMarket {
     uint256 public constant MAX_PRICE_AGE = 60; // seconds
     uint256 public constant MAX_CONF_BPS = 100; // 1% of price
     uint256 public constant MAX_POOL_EXPOSURE_BPS = 5_000; // open interest ≤ 50% of pool value
-    uint256 public constant LP_LOCK = 1 days;
+    uint256 public constant LP_LOCK = 15 minutes; // blocks deposit→withdraw loops on a lagging price, short enough to stay flexible
     /// First deposit must be at least 1 USDC, and 0.001 of its shares are
     /// minted to nobody, so the share price cannot be inflated from a dust
     /// first deposit to round later depositors down.

@@ -161,6 +161,19 @@ contract ArcStockMarketTest is Test {
         assertEq(s, 3 ether, "second depositor priced at NAV, no rounding loss");
     }
 
+    function testLpLockIsFifteenMinutes() public {
+        vm.prank(lp);
+        vm.expectRevert(ArcStockMarket.Locked.selector);
+        market.withdraw(1, none);
+        vm.warp(block.timestamp + 15 minutes);
+        _price(NVDA, 180_00000, 5000);
+        _price(AAPL, 230_00000, 5000);
+        uint256 shares = market.sharesOf(lp);
+        vm.prank(lp);
+        market.withdraw(shares, none);
+        assertEq(market.sharesOf(lp), 0);
+    }
+
     function testOnlyMarketMints() public {
         vm.expectRevert(ArcSynthStock.NotMarket.selector);
         nvda.mint(address(this), 1);
