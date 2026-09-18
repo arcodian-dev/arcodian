@@ -1136,15 +1136,15 @@ export default function App() {
             <p className="kicker">StableCoin desk</p>
             <h2>USDC ⇄ EURC,<br /><em>one on-chain rate.</em></h2>
             <p>
-              Convert between the two Arc stablecoins with automatic venue selection.
-              Arcodian&apos;s permissionless pool is always quoted; approved external
-              liquidity can compete for the order when it offers a better executable result.
+              Convert between the two Arc stablecoins at the best executable rate. Every
+              order is quoted exactly against Arcodian&apos;s own pool and the Uniswap V3
+              USDC/EURC pools on Arc Mainnet, and fills where you receive the most.
             </p>
             <div className="fx-facts">
               <span><i>◎</i><small>Routing</small><b>Best quote</b></span>
               <span><i>✓</i><small>Custody</small><b>Wallet-signed</b></span>
               <span><i>⇄</i><small>Pair</small><b>USDC · EURC</b></span>
-              <span><i>◈</i><small>Network</small><b>Arc Testnet</b></span>
+              <span><i>◈</i><small>Network</small><b>Arc Mainnet</b></span>
             </div>
           </div>
           <div className="fx-stage">

@@ -114,7 +114,7 @@ const OFFICIAL_EXPLORER_VERIFIED = new Set([
   ARC_MAINNET_CONTRACTS.launchFactoryV15, ARC_MAINNET_CONTRACTS.launchHookV15, ARC_MAINNET_CONTRACTS.v4Router,
   ARC_MAINNET_CONTRACTS.marketRouter, ARC_MAINNET_CONTRACTS.marketPairFactory, ARC_MAINNET_CONTRACTS.v3Factory,
   ARC_MAINNET_CONTRACTS.v3SwapRouter, ARC_MAINNET_CONTRACTS.v3Quoter, ARC_MAINNET_CONTRACTS.v3PositionManager,
-  ARC_MAINNET_CONTRACTS.externalV3FeeRouter, ARC_MAINNET_CONTRACTS.arcPay, ARC_MAINNET_CONTRACTS.agentPayFactory,
+  ARC_MAINNET_CONTRACTS.externalV3FeeRouter, ARC_MAINNET_CONTRACTS.fxPool, ARC_MAINNET_CONTRACTS.arcPay, ARC_MAINNET_CONTRACTS.agentPayFactory,
   ARC_MAINNET_CONTRACTS.agentPassport, ARC_MAINNET_CONTRACTS.agentJobs, ARC_MAINNET_CONTRACTS.sessionKeyAccount,
   ARC_MAINNET_CONTRACTS.adminTimelock,
 ].map((address) => address.toLowerCase()));
@@ -213,7 +213,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
     },
     {
       title: "Swap & Arcodian DEX",
-      note: "The routes the Swap page executes through: Arcodian's own Uniswap V3 deployment, its direct-pair AMM, and a fee router over the external Uniswap V3 venue.",
+      note: "The routes the Swap and FX pages execute through: Arcodian's own Uniswap V3 deployment, its direct-pair AMM, the stablecoin FX pool, and a fee router over the external Uniswap V3 venue.",
       cards: [
         ["Swap Router", ARC_MAINNET_CONTRACTS.marketRouter, "Stateless multi-hop router over the pair factory below. Holds no funds between transactions."],
         ["Pair Factory", ARC_MAINNET_CONTRACTS.marketPairFactory, "Permissionless direct-pair AMM registry the Swap page reads on-chain."],
@@ -222,6 +222,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
         ["Arcodian DEX · Quoter", ARC_MAINNET_CONTRACTS.v3Quoter, "Read-only quotes for the factory above."],
         ["Arcodian DEX · Position Manager", ARC_MAINNET_CONTRACTS.v3PositionManager, "Liquidity positions for the factory above, issued as NFTs."],
         ["Swap Fee Router", ARC_MAINNET_CONTRACTS.externalV3FeeRouter, "Routes swaps through the external Uniswap V3 venue and takes the disclosed protocol fee in the same transaction."],
+        ["Stablecoin FX pool · USDC/EURC", ARC_MAINNET_CONTRACTS.fxPool, "Arcodian's own USDC/EURC pool on Circle's mainnet EURC. Anyone can add liquidity and earn 0.08% of every swap it fills; 0.02% goes to the treasury. The FX desk quotes it alongside the Uniswap V3 pools and fills wherever the trader receives most."],
       ],
     },
     {
@@ -401,11 +402,11 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-fx" className="docs-section">
       <div className="docs-section-head"><span>06</span><h2>StableCoin FX</h2></div>
-      <p>The <b>StableCoin FX</b> desk smart-routes USDC and EURC. Arcodian&apos;s on-chain pool competes with configured external venues, while strict target allowlisting prevents an aggregator response from redirecting approvals or transactions to an untrusted contract.</p>
+      <p>The <b>StableCoin FX</b> desk converts USDC and EURC on Arc Mainnet at the best executable rate. Every order is quoted exactly — by simulating the real swap — against Arcodian&apos;s own pool and the Uniswap V3 USDC/EURC pools on Arc, and fills wherever you receive the most. Anyone can provide liquidity to Arcodian&apos;s pool and earn from every swap it fills.</p>
       <div className="economics-ledger">
-        <div><small>Pool type</small><strong>Constant-product</strong><p>x·y=k AMM over the 6-decimal USDC and EURC interfaces.</p></div>
-        <div><small>Pool fee</small><strong>0.10%</strong><p>Lower than a curve trade—this is pure stablecoin conversion.</p></div>
-        <div><small>Protection</small><strong>Min-out + deadline</strong><p>Every swap enforces a minimum output and an expiry, wallet-signed.</p></div>
+        <div><small>Arcodian pool fee</small><strong>0.10%</strong><p>0.08% to liquidity providers, 0.02% to the treasury. Constant-product pool over Circle&apos;s USDC and EURC.</p></div>
+        <div><small>Uniswap V3 route</small><strong>0.30% + tier</strong><p>Arcodian&apos;s 0.30% routing fee plus the pool&apos;s own tier, taken in the same transaction.</p></div>
+        <div><small>Protection</small><strong>Min-out + deadline</strong><p>Re-quoted before you sign; every swap enforces a minimum output and an expiry.</p></div>
       </div>
     </article>
 
@@ -451,7 +452,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <p>Where Arcodian is heading, in order. Each phase ships as public contracts plus a wallet surface — Bridge and USDC-only Market are already live on Arc Mainnet with real value; the rest run on testnet.</p>
       <div className="economics-flow">
         <div><i>01</i><small>Live · testnet + mainnet</small><h3>Payments</h3><p>Arc Pay exact-value invoices are live on both Arc Testnet and Arc Mainnet. Next: recurring requests, payment links, and merchant webhooks.</p></div>
-        <div><i>02</i><small>Live · testnet</small><h3>Stablecoin FX</h3><p>USDC⇄EURC desk is live on Arc Testnet. Circle published the Arc Mainnet EURC contract on 2026-09-16, which removes the blocker that kept this testnet-only, but the desk itself is an Arcodian pool that still has to be deployed on mainnet against that real EURC before it can move. Next: that deployment, then deeper pools and best-execution routing across more Arc stablecoins.</p></div>
+        <div><i>02</i><small>Live · mainnet</small><h3>Stablecoin FX</h3><p>USDC⇄EURC is live on Arc Mainnet, routed to the best executable rate across Arcodian&apos;s pool and Uniswap V3. Next: deeper Arcodian liquidity from public LPs and more Arc stablecoins.</p></div>
         <div><i>03</i><small>Planned</small><h3>E-commerce</h3><p>A checkout SDK and hosted pay pages so any store can accept exact USDC/EURC settlement with an order lifecycle.</p></div>
         <div><i>04</i><small>Planned</small><h3>Agentic economy</h3><p>Programmable, policy-scoped wallets so autonomous agents can pay, get paid, and settle on Arc under spending limits.</p></div>
       </div>
@@ -475,7 +476,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-readiness" className="docs-section readiness-section">
       <div className="docs-section-head"><span>13</span><h2>Mainnet readiness</h2></div>
-      <p><b>Current decision: PARTIAL GO.</b> Bridge (Circle CCTP), the USDC-only Market/Launchpad, and Swap (Arcodian's own on-chain routing across the Mainnet launch/DEX stack and permissionless external pools) are deployed and live on Arc Mainnet with real USDC — verified with real on-chain transactions, not just a deployment script. Everything else (StableCoin FX, Arc Lend, EURC launches, the agent-economy stack) stays testnet-only until its own gates below clear — for the EURC surfaces the external blocker lifted on 2026-09-16 when Circle published the Arc Mainnet EURC address, leaving only the Arcodian-side mainnet deployments. Governance and audit gates for the mainnet contracts that do exist remain open.</p>
+      <p><b>Current decision: PARTIAL GO.</b> Bridge (Circle CCTP), the USDC-only Market/Launchpad, and Swap (Arcodian's own on-chain routing across the Mainnet launch/DEX stack and permissionless external pools) are deployed and live on Arc Mainnet with real USDC — verified with real on-chain transactions, not just a deployment script. StableCoin FX is live on mainnet too. Everything else (Arc Lend, EURC launches, the agent-economy stack) stays testnet-only until its own gates below clear — for the EURC surfaces the external blocker lifted on 2026-09-16 when Circle published the Arc Mainnet EURC address, leaving only the Arcodian-side mainnet deployments. Governance and audit gates for the mainnet contracts that do exist remain open.</p>
       <div className="readiness-grid">
         <div className="ready"><small>LIVE</small><b>Bridge + USDC Market + Swap on Arc Mainnet</b><p>ArcBridgeRouter (Ethereum, Optimism, Arbitrum, Base, Arc), the USDC-only launch/DEX stack, and Swap's routing across it plus permissionless external pools are deployed to Arc Mainnet, chain 5042, and proven with real transactions. Source-verified on Sourcify + public Blockscout mirrors for the 4 EVM chains; Arc's own explorer is third-party and unofficial (no official Circle explorer is public yet) and its verify endpoint currently errors server-side on their end.</p></div>
         <div className="blocked"><small>BLOCKER</small><b>Official Arc Mainnet infrastructure</b><p>No official Circle RPC or explorer for Arc Mainnet is public yet — the RPC in use is a third-party operator's endpoint, independently verified against known on-chain state but not Circle's own. Swap this out the moment an official endpoint exists.</p></div>
@@ -497,7 +498,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
 
     <article id="docs-legal" className="docs-section">
       <div className="docs-section-head"><span>15</span><h2>Terms, risk & refunds</h2></div>
-      <p>Bridge, the USDC-only Market/Launchpad, and Swap move real USDC on Arc Mainnet — treat every transaction there as final and irreversible with real financial consequences. Every other Arcodian surface (StableCoin FX, Arc Lend, EURC launches, the agent-economy contracts) is a testnet interface where test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing, on either network.</p>
+      <p>Bridge, the USDC-only Market/Launchpad, Swap and StableCoin FX move real USDC and EURC on Arc Mainnet — treat every transaction there as final and irreversible with real financial consequences. Every other Arcodian surface (Arc Lend, EURC launches, the agent-economy contracts) is a testnet interface where test assets have no financial value. Users remain responsible for reviewing the network, recipient, amount, allowance, price impact, health factor, and transaction before signing, on either network.</p>
       <div className="docs-cards">
         <div><b>Self-custody</b><p>Arcodian does not hold recovery phrases or sign on a user&apos;s behalf. Blockchain transactions are public and normally irreversible.</p></div>
         <div><b>Payments & refunds</b><p>Arc Pay refunds are new merchant-funded transactions returning the gross amount. The original protocol fee and network costs are not reversed.</p></div>

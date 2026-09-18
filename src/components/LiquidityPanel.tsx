@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { BrowserProvider, Contract, JsonRpcProvider, formatUnits, parseUnits } from "ethers";
-import { ARC, ARC_FX_POOL_ADDRESS, ARC_USDC_ERC20, ARC_EURC_ADDRESS } from "../config";
+import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
+import { ARC_MAINNET } from "../config";
+import { ensureWalletChain } from "../shared";
+import { FX_EURC as ARC_EURC_ADDRESS, FX_POOL as ARC_FX_POOL_ADDRESS, FX_USDC as ARC_USDC_ERC20, fxRead as read } from "../fxMainnet";
 import type { FxPool } from "./FxDesk";
 
 const POOL_ABI = [
@@ -17,7 +19,6 @@ const ERC20_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
 ];
 
-const read = new JsonRpcProvider(ARC.rpc, undefined, { batchMaxCount: 1 });
 
 /** Turn a raw revert / RPC error into something a person can act on. */
 function friendlyError(error: unknown): string {
@@ -55,12 +56,14 @@ type Props = {
   activeProvider: { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> } | null;
   onConnect: () => void;
   pool?: FxPool | null;
+  /** EURC per USDC on the external market; seeds the first deposit's ratio. */
+  marketRate?: number;
 };
 
 const fmt = (value: bigint, digits = 2) =>
   Number(formatUnits(value, 6)).toLocaleString(undefined, { maximumFractionDigits: digits });
 
-export default function LiquidityPanel({ account, activeProvider, onConnect, pool }: Props) {
+export default function LiquidityPanel({ account, activeProvider, onConnect, pool, marketRate = 0 }: Props) {
   const [usdcAmount, setUsdcAmount] = useState("");
   const [eurcAmount, setEurcAmount] = useState("");
   const [position, setPosition] = useState<Position | null>(null);
@@ -69,7 +72,11 @@ export default function LiquidityPanel({ account, activeProvider, onConnect, poo
   const [busy, setBusy] = useState(false);
 
   // EURC per USDC, from live reserves — used to keep the two inputs at the pool ratio.
-  const ratio = useMemo(() => (pool && pool.usdc > 0n ? Number(pool.eurc) / Number(pool.usdc) : 0), [pool]);
+  // An empty pool takes whatever ratio its first deposit brings, and a ratio
+  // off the market is arbitraged against that depositor at once — so until
+  // the pool holds liquidity, both sides are matched at the external rate.
+  const poolEmpty = !pool || pool.usdc === 0n;
+  const ratio = useMemo(() => (pool && pool.usdc > 0n ? Number(pool.eurc) / Number(pool.usdc) : marketRate), [pool, marketRate]);
 
   useEffect(() => {
     let alive = true;
@@ -131,7 +138,7 @@ export default function LiquidityPanel({ account, activeProvider, onConnect, poo
       if (eurcBal < eurcUnits) short.push(`EURC (have ${formatUnits(eurcBal, 6)})`);
       if (short.length) { setStatus(`Not enough ${short.join(" and ")} in your wallet.`); setBusy(false); return; }
 
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] });
+      await ensureWalletChain(activeProvider, ARC_MAINNET);
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
       for (const [address, units, label] of [
         [ARC_USDC_ERC20, usdcUnits, "USDC"] as const,
@@ -169,7 +176,7 @@ export default function LiquidityPanel({ account, activeProvider, onConnect, poo
     setBusy(true);
     setStatus("");
     try {
-      await activeProvider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ARC.hexId }] });
+      await ensureWalletChain(activeProvider, ARC_MAINNET);
       const signer = await new BrowserProvider(activeProvider as never).getSigner();
       const poolContract = new Contract(ARC_FX_POOL_ADDRESS, POOL_ABI, signer);
       const deadline = Math.floor(Date.now() / 1000) + 600;
@@ -227,8 +234,16 @@ export default function LiquidityPanel({ account, activeProvider, onConnect, poo
         </label>
       </div>
 
+      {!poolEmpty && marketRate > 0 && ratio > 0 && Math.abs(ratio / marketRate - 1) > 0.005 && (
+        <p className="lp-note lp-warn">
+          The pool&apos;s ratio (1 USDC ≈ {ratio.toFixed(4)} EURC) is {(Math.abs(ratio / marketRate - 1) * 100).toFixed(2)}% away from the market rate
+          ({marketRate.toFixed(4)}). A deposit made now can be arbitraged against you until the pool is traded back in line — consider waiting or depositing a small amount.
+        </p>
+      )}
       <p className="lp-note">
-        {ratio
+        {poolEmpty && ratio
+          ? `You would be the first liquidity provider. Both sides are matched at the market rate (1 USDC ≈ ${ratio.toFixed(4)} EURC) so the pool opens at a fair price.`
+          : ratio
           ? "Both sides are matched to the pool's current ratio automatically, so none of your deposit is left behind."
           : "Add both sides at the pool's current ratio. Anything above that ratio stays in the pool and is shared among all providers."}
       </p>
