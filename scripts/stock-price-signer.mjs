@@ -1,9 +1,11 @@
 // Arcodian stock price service: the signer behind ArcSignedPriceFeed.
 //
 // Every few seconds during the US regular session it reads each listed stock
-// from independent public quote sources (CNBC and Nasdaq in batches, Yahoo one
-// symbol at a time in rotation), takes the median of the fresh ones, and signs
-// it only when at least two agree within MAX_SPREAD_BPS. The signed bundle is
+// from two independent public quote sources (CNBC and Nasdaq, each one batch
+// call for all stocks) and signs the midpoint only when both are fresh and
+// within MAX_SPREAD_BPS of each other. (Yahoo was a third source until it
+// began rate-limiting this server; a source that is often missing only adds
+// delay.) It also keeps chart candles from CNBC for the page. The signed bundle is
 // written to shared/data/stock-prices.json, which /stocks fetches and passes
 // into each trade, exactly as it would a Pyth update.
 //
@@ -13,16 +15,16 @@
 // Server-only config: /root/.config/arcodian/stock-signer.json { "PRIVATE_KEY": "0x…" }
 // Env: STOCK_FEED_ADDRESS (required), STOCK_PRICES_OUT, FORCE_SIGN=1 (ignore
 // market hours and use extended-hours quotes; for fork testing only).
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { AbiCoder, Wallet, getBytes, hashMessage, keccak256, toUtf8Bytes } from "ethers";
 
 const FEED = process.env.STOCK_FEED_ADDRESS;
 if (!FEED) throw new Error("STOCK_FEED_ADDRESS is required");
 const CHAIN_ID = Number(process.env.STOCK_CHAIN_ID || 5042);
 const OUT = process.env.STOCK_PRICES_OUT || "/www/wwwroot/arcodian.fun/shared/data/stock-prices.json";
-const INTERVAL_MS = Number(process.env.STOCK_INTERVAL_MS || 10_000);
+const INTERVAL_MS = Number(process.env.STOCK_INTERVAL_MS || 5_000);
 const FORCE = process.env.FORCE_SIGN === "1";
-const MAX_SPREAD_BPS = 50; // sources must agree within 0.5% of the median
+const MAX_SPREAD_BPS = 50; // highest and lowest source within 0.5% of each other
 const MIN_CONF_BPS = 5; // confidence band floor: 0.05% of price
 const EXPO = -5;
 const UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/128 Safari/537.36";
@@ -61,16 +63,33 @@ async function getJson(url) {
 
 const num = (value) => Number(String(value).replace(/[$,]/g, ""));
 
-/** CNBC, all symbols in one call. Regular-session price while the market is open. */
+/** CNBC, all symbols in one call. Returns the regular-session prices used for
+ * signing (only while CNBC reports the regular market) and, for display, the
+ * latest quote in any session (pre-market, after-hours or the last close). */
 async function cnbc() {
   const symbols = STOCKS.map(([s]) => s).join("|");
   const body = await getJson(`https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol?symbols=${symbols}&requestMethod=itv&noform=1&partnerId=2&fund=1&exthrs=1&output=json`);
-  const out = {};
+  const regular = {};
+  const display = {};
   for (const q of body.FormattedQuoteResult.FormattedQuote) {
-    if (q.curmktstatus === "REG_MKT") out[q.symbol] = num(q.last);
-    else if (FORCE && q.ExtendedMktQuote?.last) out[q.symbol] = num(q.ExtendedMktQuote.last);
+    const ext = q.ExtendedMktQuote;
+    if (q.curmktstatus === "REG_MKT") regular[q.symbol] = num(q.last);
+    else if (FORCE && ext?.last) regular[q.symbol] = num(ext.last);
+    const session = q.curmktstatus === "REG_MKT" ? "regular" : ext?.type === "PRE_MKT" ? "pre-market" : ext?.type === "POST_MKT" ? "after-hours" : "closed";
+    // Reference for the day's change: yesterday's close during the session,
+    // the latest regular close outside it (what pre/after-hours moves from).
+    const regularSession = session === "regular";
+    display[q.symbol] = {
+      price: num(ext?.last && !regularSession ? ext.last : q.last),
+      close: num(q.last),
+      reference: regularSession ? num(q.previous_day_closing) : num(q.last),
+      session,
+      open: num(q.open) || null, high: num(q.high) || null, low: num(q.low) || null,
+      volume: String(q.volume ?? ""), marketCap: q.mktcapView ?? null, pe: q.pe ?? null,
+      yearHigh: num(q.yrhiprice) || null, yearLow: num(q.yrloprice) || null, name: q.name ?? null,
+    };
   }
-  return out;
+  return { regular, display };
 }
 
 /** "Sep 18, 2026 10:13 AM" in New York time → epoch ms (EDT or EST as it falls). */
@@ -94,23 +113,45 @@ async function nasdaq() {
   return out;
 }
 
-/** Yahoo rate-limits batches, so one symbol per tick, each kept 60 s. */
-const yahooCache = {};
-let yahooNext = 0;
-async function yahooTick() {
-  const [symbol] = STOCKS[yahooNext++ % STOCKS.length];
-  try {
-    const body = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1m&range=1d`);
-    const meta = body.chart.result[0].meta;
-    yahooCache[symbol] = { price: meta.regularMarketPrice, at: meta.regularMarketTime * 1000 };
-  } catch { /* the other two sources carry the tick */ }
-}
-function yahoo() {
-  const out = {};
-  for (const [symbol, q] of Object.entries(yahooCache)) {
-    if (FORCE || Date.now() - q.at < 90_000) out[symbol] = q.price;
+// --- chart candles (display only; never signed, never seen on-chain) -------
+
+const CANDLES_DIR = process.env.STOCK_CANDLES_DIR || "/www/wwwroot/arcodian.fun/shared/data/stock-candles";
+/** Chart ranges (CNBC's names) and how often each is refreshed. */
+const RANGES = { "1D": 2 * 60_000, "5D": 10 * 60_000, "1M": 30 * 60_000, "6M": 6 * 3600_000, "1Y": 6 * 3600_000 };
+const candlesFetchedAt = {};
+let candlesReady = false;
+
+async function writeCandles(symbol, range) {
+  const body = await getJson(`https://ts-api.cnbc.com/harmony/app/charts/${range}.json?symbol=${symbol}`);
+  const out = [];
+  let lastTime = 0;
+  for (const bar of body.barData?.priceBars ?? []) {
+    const time = Math.floor(Number(bar.tradeTimeinMills) / 1000);
+    const [open, high, low, close] = [bar.open, bar.high, bar.low, bar.close].map(Number);
+    if (!(time > lastTime) || ![open, high, low, close].every((v) => Number.isFinite(v) && v > 0)) continue;
+    out.push({ time, open, high, low, close, volume: Number(bar.volume) || 0 });
+    lastTime = time;
   }
-  return out;
+  if (!out.length) return;
+  if (!candlesReady) { await mkdir(CANDLES_DIR, { recursive: true }); candlesReady = true; }
+  const file = `${CANDLES_DIR}/${symbol}-${range}.json`;
+  await writeFile(`${file}.tmp`, JSON.stringify({ symbol, range, updatedAt: Math.floor(Date.now() / 1000), candles: out }));
+  await rename(`${file}.tmp`, file);
+}
+
+/** One overdue (symbol, range) per call, so the source sees a gentle rate.
+ * Intraday ranges only need refreshing while the market is open. */
+async function candleTick() {
+  const open = usMarketOpen();
+  for (const [range, every] of Object.entries(RANGES)) {
+    const period = open || !["1D", "5D"].includes(range) ? every : 30 * 60_000;
+    for (const [symbol] of STOCKS) {
+      if (Date.now() - (candlesFetchedAt[`${symbol}-${range}`] ?? 0) < period) continue;
+      candlesFetchedAt[`${symbol}-${range}`] = Date.now(); // also backs off a failing fetch
+      try { await writeCandles(symbol, range); } catch { /* retried next period */ }
+      return;
+    }
+  }
 }
 
 /** Median of the fresh quotes, or null unless ≥2 agree within MAX_SPREAD_BPS. */
@@ -118,9 +159,9 @@ export function aggregate(values) {
   const quotes = values.filter((v) => Number.isFinite(v) && v > 0).sort((a, b) => a - b);
   if (quotes.length < 2) return null;
   const mid = quotes.length % 2 ? quotes[(quotes.length - 1) / 2] : (quotes[quotes.length / 2 - 1] + quotes[quotes.length / 2]) / 2;
-  const worst = Math.max(...quotes.map((q) => Math.abs(q - mid)));
-  if (worst * 10_000 > mid * MAX_SPREAD_BPS) return null;
-  return { price: mid, conf: Math.max(worst, mid * MIN_CONF_BPS / 10_000), sources: quotes.length };
+  const range = quotes[quotes.length - 1] - quotes[0];
+  if (range * 10_000 > mid * MAX_SPREAD_BPS) return null;
+  return { price: mid, conf: Math.max(range / 2, mid * MIN_CONF_BPS / 10_000), sources: quotes.length };
 }
 
 async function sign(id, price, conf, publishTime) {
@@ -132,29 +173,39 @@ async function sign(id, price, conf, publishTime) {
   return { update, price: p.toString(), conf: c.toString(), expo: EXPO, publishTime };
 }
 
+let lastDisplay = {};
+let lastDisplayAt = 0;
+
 async function tick() {
   const open = FORCE || usMarketOpen();
   const feeds = {};
   const skipped = {};
   if (open) {
-    await yahooTick();
     const [a, b] = await Promise.allSettled([cnbc(), nasdaq()]);
-    const c = yahoo();
+    if (a.status === "fulfilled") { lastDisplay = a.value.display; lastDisplayAt = Date.now(); }
     const publishTime = Math.floor(Date.now() / 1000);
     for (const [symbol, id] of STOCKS) {
-      const values = [a.status === "fulfilled" ? a.value[symbol] : undefined, b.status === "fulfilled" ? b.value[symbol] : undefined, c[symbol]];
+      const values = [a.status === "fulfilled" ? a.value.regular[symbol] : undefined, b.status === "fulfilled" ? b.value[symbol] : undefined];
       const agg = aggregate(values);
       if (!agg) { skipped[symbol] = values.map((v) => v ?? null); continue; }
       feeds[id] = { symbol, sources: agg.sources, ...(await sign(id, agg.price, agg.conf, publishTime)) };
     }
+  } else if (Date.now() - lastDisplayAt > 60_000) {
+    // Closed: nothing to sign; refresh the display quotes once a minute.
+    try { lastDisplay = (await cnbc()).display; lastDisplayAt = Date.now(); } catch { /* keep the last ones */ }
   }
-  const body = JSON.stringify({ ok: true, feed: FEED, signer: wallet.address, marketOpen: open, signedAt: Math.floor(Date.now() / 1000), feeds, skipped });
+  // Display-only quotes: unsigned, never accepted on-chain.
+  const display = {};
+  for (const [symbol, id] of STOCKS) if (lastDisplay[symbol]) display[id] = { symbol, ...lastDisplay[symbol] };
+  const body = JSON.stringify({ ok: true, feed: FEED, signer: wallet.address, marketOpen: open, signedAt: Math.floor(Date.now() / 1000), feeds, skipped, display });
   await writeFile(`${OUT}.tmp`, body);
   await rename(`${OUT}.tmp`, OUT);
   return { open, signed: Object.keys(feeds).length, skipped: Object.keys(skipped) };
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split("/").pop())) {
+  // Chart data runs on its own timer so it can never delay a signing tick.
+  setInterval(() => { candleTick().catch(() => {}); }, 4_000);
   let last = "";
   for (;;) {
     try {
