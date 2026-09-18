@@ -123,6 +123,29 @@ class ThrottledProvider extends JsonRpcProvider {
 
 const provider = new ThrottledProvider(RPC, undefined, { batchMaxCount: 1, staticNetwork: true });
 
+// Log history the primary RPC no longer serves. Blockdaemon and Arcscan
+// answer "pruned history unavailable" for old ranges (found 2026-09-18: both
+// V3 venue cursors had sat at block 15,056,730 for weeks, retrying the same
+// chunk every run). Measured 2026-09-18: only Alchemy and STAKEME serve the
+// full history AND 10k–100k-block ranges (Circle's endpoint and QuickNode
+// keep history but reject ranges over ~2k blocks). Alchemy's keyed URL comes
+// from ARC_ARCHIVE_RPCS in the server env file, never from the repo. Any
+// getLogs that fails on the primary is retried on these before the chunk
+// counts as failed; a failed chunk never advances a cursor.
+const ARCHIVE_RPCS = (process.env.ARC_ARCHIVE_RPCS || "https://arc-rpc.stakeme.pro")
+  .split(",").map((url) => url.trim()).filter(Boolean)
+  .map((url) => new JsonRpcProvider(url, 5042, { staticNetwork: true, batchMaxCount: 1 }));
+async function getLogsResilient(filter) {
+  let lastError;
+  for (const source of [provider, ...ARCHIVE_RPCS]) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try { return await source.getLogs(filter); }
+      catch (error) { lastError = error; await delay(400 * (attempt + 1)); }
+    }
+  }
+  throw lastError;
+}
+
 const factoryAbi = ["function launchCount() view returns(uint256)", "function tokenByLaunch(uint256) view returns(address)", "function curveByLaunch(uint256) view returns(address)"];
 const tokenAbi = ["function name() view returns(string)", "function symbol() view returns(string)", "function imageURI() view returns(string)", "function balanceOf(address) view returns(uint256)", "function totalSupply() view returns(uint256)"];
 const usdcContract = new Contract(USDC, tokenAbi, provider);
@@ -267,7 +290,7 @@ async function contractLogs(contract, fromBlock) {
   for (let start = fromBlock; start <= latestBlock; start += LOG_CHUNK_BLOCKS) {
     const toBlock = Math.min(latestBlock, start + LOG_CHUNK_BLOCKS - 1);
     try {
-      logs.push(...await provider.getLogs({ address, fromBlock: start, toBlock }));
+      logs.push(...await getLogsResilient({ address, fromBlock: start, toBlock }));
     } catch (error) {
       console.error(`getLogs failed for ${address} [${start}-${toBlock}]: ${error?.shortMessage || error?.message || error}`);
     }
@@ -282,7 +305,7 @@ async function addressLogs(address, fromBlock, topics) {
   for (let start = fromBlock; start <= latestBlock; start += ADDRESS_LOG_CHUNK_BLOCKS) {
     const toBlock = Math.min(latestBlock, start + ADDRESS_LOG_CHUNK_BLOCKS - 1);
     for (let attempt = 0; attempt < 4; attempt += 1) {
-      try { logs.push(...await provider.getLogs({ address, topics, fromBlock: start, toBlock })); break; }
+      try { logs.push(...await getLogsResilient({ address, topics, fromBlock: start, toBlock })); break; }
       catch (error) {
         const message = String(error?.shortMessage || error?.message || error).toLowerCase();
         if (attempt === 3 || (!message.includes("413") && !message.includes("502") && !message.includes("503") && !message.includes("429") && !message.includes("rate limit"))) {
@@ -382,7 +405,7 @@ const int24Packed = (tick) => toBeHex(BigInt.asUintN(24, BigInt(tick)), 3);
 async function logsInRange(filter, fromBlock, toBlock, span = 99_000) {
   const out = [];
   for (let start = fromBlock; start <= toBlock; start += span + 1) {
-    out.push(...await provider.getLogs({ ...filter, fromBlock: start, toBlock: Math.min(toBlock, start + span) }));
+    out.push(...await getLogsResilient({ ...filter, fromBlock: start, toBlock: Math.min(toBlock, start + span) }));
   }
   return out;
 }
@@ -494,6 +517,9 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
       const current = Number(old?.v4TradesVersion) === V4_TRADES_VERSION;
       let trades = current ? [...(old?.trades || [])] : [];
       const cursor = current ? Math.max(fromBlock, Number(old?.indexedBlock || 0) + 1) : fromBlock;
+      // Only a complete read moves this pool's cursor; otherwise the next run
+      // re-reads from the same block (trades are de-duplicated by tx).
+      let swapsThrough = latestBlock;
       try {
         const logs = await logsInRange({ address: V4_POOL_MANAGER, topics: [V4_SWAP_TOPIC, poolId] }, cursor, latestBlock);
         for (const log of logs) {
@@ -527,6 +553,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
         }
       } catch (error) {
         console.error(`V13 swaps for ${symbol} unreadable: ${String(error).slice(0, 90)}`);
+        swapsThrough = cursor - 1;
       }
       trades = trades
         .filter((trade, index, all) => all.findIndex((c) => c.tx === trade.tx && c.side === trade.side) === index)
@@ -549,7 +576,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
         factory: FACTORY, dex: "Uniswap V4", venue: "Uniswap V4", risk: "Uniswap V4", type: "Launch",
         reserve: reserve.toString(), virtualReserve: "0", threshold: V13_GRADUATION.toString(),
         inventory: tokensInPool.toString(), marketCap: marketCap.toString(), liquidity: (reserve * 2n).toString(),
-        price: priceX, lpSupply: "0", lpBurned: "0", indexedBlock: latestBlock, v4TradesVersion: V4_TRADES_VERSION,
+        price: priceX, lpSupply: "0", lpBurned: "0", indexedBlock: swapsThrough, v4TradesVersion: V4_TRADES_VERSION,
         tradeCount: trades.length, holderCount, topHolders,
         volume: trades.reduce((sum, t) => sum + BigInt(t.native), 0n).toString(),
         createdAt: meta ? await timeOf(meta.block) : Number(old?.createdAt || 0),
