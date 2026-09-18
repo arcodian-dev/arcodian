@@ -103,7 +103,10 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
     try {
       // Trades carry the traded stock's update; LP actions price the whole
       // book, so they carry every feed.
-      const bundle = await fetchPyth(kind === "trade" ? [stock.feedId] : ALL_FEEDS);
+      // With no open positions the pool's value is just its USDC, so LP
+      // actions need no prices and still work outside market hours.
+      const needsPrices = kind === "trade" || (pool?.openInterest ?? 1) > 0;
+      const bundle = needsPrices ? await fetchPyth(kind === "trade" ? [stock.feedId] : ALL_FEEDS) : { updates: [], prices: {} as Record<string, PythQuote> };
       const signer = await new BrowserProvider(activeProvider).getSigner();
       const market = new Contract(MARKET, MARKET_ABI, signer);
       let tx;
@@ -137,7 +140,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
 
   return <main className="lend-site stocks-site">
     <nav><a href="/" className="lend-brand"><img src="/arcodian-mark.svg" alt=""/><span>ARCODIAN<small>STOCKS</small></span></a><div className="lend-nav-links"><a href="/market">Market</a><a className="active" href="/stocks">Stocks</a><a href="/lend">Lend</a><a href="/fx">FX</a></div><div className="lend-wallet"><a href="/wallet">Wallet</a><button onClick={account ? disconnect : connect}>{short(account)}</button></div></nav>
-    <header><p>SYNTHETIC STOCKS · ARC MAINNET</p><h1>US stock prices.<br/>Settled in USDC on Arc.</h1><span>Buy and sell synthetic shares that track NVIDIA, Apple, Tesla and seven more at Pyth&apos;s live price. You never hold the real stock: a synthetic share is a claim on the USDC pool, paid out at the market price when you sell.</span><div className="lend-badges"><b className={open ? "stocks-open" : "stocks-closed"}>{open ? "US MARKET OPEN" : "US MARKET CLOSED"}</b><b>0.30% PER TRADE</b><b>80% OF FEES TO LPS</b><b>PYTH PRICED</b></div></header>
+    <header><p>STOCKS · ARC MAINNET</p><h1>US stock prices.<br/>Settled in USDC on Arc.</h1><span>Trade NVIDIA, Apple, Tesla and seven more at Pyth&apos;s live price, settled in USDC on Arc. Each token tracks its stock&apos;s price and is paid out from the USDC pool at the market price when you sell.</span><div className="lend-badges"><b className={open ? "stocks-open" : "stocks-closed"}>{open ? "US MARKET OPEN" : "US MARKET CLOSED"}</b><b>0.30% PER TRADE</b><b>80% OF FEES TO LPS</b><b>PYTH PRICED</b></div></header>
 
     <section className="lend-terminal">
       <div className="lend-overview lend-totals"><article><small>POOL LIQUIDITY</small><strong>{pool ? `${usd(pool.balance)} USDC` : "—"}</strong><em>backs every payout</em></article><article><small>OPEN INTEREST</small><strong>{pool ? `$${usd(pool.openInterest)}` : "—"}</strong><em>capped at 50% of the pool</em></article><article><small>LP VALUE</small><strong>{pool?.nav != null ? `${usd(pool.nav)} USDC` : "—"}</strong><em>pool minus what traders are owed</em></article><article><small>STOCKS LISTED</small><strong>{STOCKS.length}</strong><em>Pyth US equity feeds</em></article></div>
@@ -150,22 +153,22 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
         </button>; })}</div>
 
         <article className="stocks-trade">
-          <p>s{stock.symbol} · SYNTHETIC {stock.name.toUpperCase()}</p>
+          <p>a{stock.symbol} · {stock.name.toUpperCase()}</p>
           <h2>{quote ? `$${usd(quote.price)}` : "—"}</h2>
           <small>{quote ? `Buy at $${usd(quote.price + quote.conf)} · sell at $${usd(Math.max(0, quote.price - quote.conf))} (Pyth confidence band)` : "No price yet"}</small>
           <div className="stocks-side"><button className={side === "buy" ? "active" : ""} onClick={() => { setSide("buy"); setAmount(""); }}>Buy</button><button className={side === "sell" ? "active" : ""} onClick={() => { setSide("sell"); setAmount(""); }}>Sell</button></div>
-          <label>{side === "buy" ? "Pay" : "Sell"}<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00"/><b>{side === "buy" ? "USDC" : `s${stock.symbol}`}</b></label>
+          <label>{side === "buy" ? "Pay" : "Sell"}<input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00"/><b>{side === "buy" ? "USDC" : `a${stock.symbol}`}</b></label>
           {side === "sell" && holding > 0 && <button className="lend-inline" onClick={() => setAmount(String(holding))}>Max {usd(holding, 6)}</button>}
-          <small>{value > 0 && quote ? (side === "buy" ? `≈ ${usd(estimate, 6)} s${stock.symbol}` : `≈ ${usd(estimate)} USDC`) + ` after the 0.30% fee · ${SLIPPAGE * 100}% max slippage` : `You hold ${usd(holding, 6)} s${stock.symbol}`}</small>
+          <small>{value > 0 && quote ? (side === "buy" ? `≈ ${usd(estimate, 6)} a${stock.symbol}` : `≈ ${usd(estimate)} USDC`) + ` after the 0.30% fee · ${SLIPPAGE * 100}% max slippage` : `You hold ${usd(holding, 6)} a${stock.symbol}`}</small>
           {pool && <small>Open interest {usd(pool.exposure[selected])} / {usd(pool.caps[selected], 0)} USD cap</small>}
-          {!account ? <button onClick={connect}>Connect wallet</button> : <button disabled={tradeDisabled} onClick={() => send("trade")}>{!onArc ? "Switch to Arc Mainnet" : side === "buy" ? `Buy s${stock.symbol}` : `Sell s${stock.symbol}`}</button>}
+          {!account ? <button onClick={connect}>Connect wallet</button> : <button disabled={tradeDisabled} onClick={() => send("trade")}>{!onArc ? "Switch to Arc Mainnet" : side === "buy" ? `Buy a${stock.symbol}` : `Sell a${stock.symbol}`}</button>}
           {blocker && <em className="stocks-blocker">{blocker}</em>}
         </article>
       </div>
 
       <div className="lend-actions">
         <article><p>LIQUIDITY</p><h2>Be the house</h2>
-          <span className="stocks-note">LPs fund the pool that pays traders. You earn 80% of every trade fee and take the other side of traders&apos; positions: when traders win, LP value falls; when they lose, it rises. Deposits lock for 24 hours. Deposits and withdrawals need fresh prices, so they work during US market hours.</span>
+          <span className="stocks-note">LPs fund the pool that pays traders. You earn 80% of every trade fee and take the other side of traders&apos; positions: when traders win, LP value falls; when they lose, it rises. Deposits lock for 24 hours. While traders hold open positions, deposits and withdrawals need fresh prices, so they work during US market hours.</span>
           <label>Deposit<input inputMode="decimal" value={lpAmount} onChange={(e) => setLpAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00"/><b>USDC</b></label>
           <small>Your LP position {lpValue !== null ? `${usd(lpValue, 4)} USDC` : pool && pool.lpShares > 0 ? `${usd(pool.lpShares, 4)} shares` : "none"}{locked && pool ? ` · unlocks ${new Date(pool.lockedUntil * 1000).toLocaleString()}` : ""}</small>
           <div><button disabled={!live || busy || !Number(lpAmount) || pool?.paused} onClick={() => send("deposit")}>Deposit</button><button disabled={!live || busy || !pool?.lpShares || locked} onClick={() => send("withdraw")}>Withdraw all</button></div></article>
@@ -176,7 +179,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
     </section>
 
     <section className="lend-risk"><p>RISK</p><h2>Read this before you trade.</h2><div>
-      <article><b>Not real shares</b><span>Synthetic shares carry no ownership, votes or dividends and cannot be redeemed for stock. They are a USDC claim on this pool at the Pyth price.</span></article>
+      <article><b>Price tracking, not ownership</b><span>Tokens follow the stock price only. They carry no ownership, votes or dividends and cannot be redeemed for the stock itself.</span></article>
       <article><b>Pool-backed payouts</b><span>Winnings are paid from LP liquidity. Caps keep open interest at or below half the pool, but if the pool ran dry, sells would fail until liquidity returned.</span></article>
       <article><b>Not audited</b><span>The contract is source-verified and tested but has not had an external audit. Per-stock caps are small for that reason.</span></article>
     </div></section>

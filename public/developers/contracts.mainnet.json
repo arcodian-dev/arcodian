@@ -91,5 +91,29 @@
     "borrowCapUsdc": 3000,
     "maxOracleAgeSeconds": 21600,
     "priceSource": "Uniswap V3 USDC/EURC 30-min TWAP (0x6fd5F2fb831940DcD61A98c5B3aCB7D8C6f3bFc1), Pyth cross-check (0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a)"
+  },
+  "stocks": {
+    "market": "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de",
+    "deployBlock": 21471693,
+    "pyth": "0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a",
+    "feeBps": 30,
+    "lpShareOfFeeBps": 8000,
+    "maxPriceAgeSeconds": 60,
+    "maxConfidenceBps": 100,
+    "maxPoolExposureBps": 5000,
+    "lpLockSeconds": 86400,
+    "capPerStockUsdc": 250,
+    "tokens": {
+      "aNVDA": "0xb3e88208b28F4b4fFD29B717F2b6605447092423",
+      "aAAPL": "0x10be292d3e41F08EA3B7bCf9dBFA8ee191EF3eC5",
+      "aTSLA": "0x161A40d9b70b6dca10d6417536B7c9F786f7f37a",
+      "aSPY": "0x6473681C0f26468C6a901525edC6556B79153050",
+      "aQQQ": "0x82e0424BBA9a69900C0E1E18A84BcAED92f0516b",
+      "aMSFT": "0xB8B333Ef54a25b3b125b61075dFF0585e16D0bb1",
+      "aAMZN": "0xd9A1a9Fe47aa0fE311e2d1b5a22041Ae98Bb1442",
+      "aGOOGL": "0x5724494968B8821AfaDE2b9aCA8894F21Ec53165",
+      "aMETA": "0x1D1E027f77d7e37aca6D56EA6c640b9CB201CAA2",
+      "aCOIN": "0x445dAe2591Fcf47A381d3AF288e8FDC9674189Bc"
+    }
   }
 }

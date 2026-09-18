@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Contract, formatEther, parseEther } from "ethers";
 import { ARC, ARC_LEND_ADDRESS, ARC_LEND_COLLATERAL_ADDRESS, ARC_MAINNET, ARC_MAINNET_CONTRACTS, ARC_PAIR_FACTORY_ADDRESS, ARC_PAY_ADDRESS, CCTP_MAINNET_FEE_ROUTER, CCTP_MAINNET_TOKEN_MESSENGER_V2, CCTP_MAINNET_MESSAGE_TRANSMITTER_V2, FEE_TREASURY, PUMP_FACTORY_ADDRESS, AGENT_PASSPORT_ADDRESS, AGENT_JOBS_ADDRESS, REPUTATION_REGISTRY_ADDRESS, VALIDATION_REGISTRY_ADDRESS, AGENT_PAY_V3_FACTORY_ADDRESS, AGENT_PAY_V6_FACTORY_ADDRESS, SESSION_KEY_ACCOUNT_ADDRESS, ADMIN_TIMELOCK_ADDRESS, ARCODIAN_MCP_ENDPOINT } from "../config";
 import { FAQ_ITEMS, arcProvider, short } from "../shared";
+import { STOCKS } from "../stocks";
 import { fetchBurnLimitPerMessage, tokenMessengerFor } from "../bridgeRecovery";
 
 function TrustNav({ active, openContracts, openHow }: { active: "contracts" | "how" | "faq" | "canary"; openContracts?: () => void; openHow?: () => void; openFaq?: () => void; openCanary?: () => void }) {
@@ -110,7 +111,15 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
 // is a recorded fact, while arcexplorer.org's status below is read live.
 // The launch hook is only verifiable there and on Sourcify: the other
 // explorers do not index contracts created through the CREATE2 deployer.
+/** aNVDA … aCOIN, in ArcStockMarket asset-id order. */
+const STOCK_TOKENS = [
+  "0xb3e88208b28F4b4fFD29B717F2b6605447092423", "0x10be292d3e41F08EA3B7bCf9dBFA8ee191EF3eC5", "0x161A40d9b70b6dca10d6417536B7c9F786f7f37a",
+  "0x6473681C0f26468C6a901525edC6556B79153050", "0x82e0424BBA9a69900C0E1E18A84BcAED92f0516b", "0xB8B333Ef54a25b3b125b61075dFF0585e16D0bb1",
+  "0xd9A1a9Fe47aa0fE311e2d1b5a22041Ae98Bb1442", "0x5724494968B8821AfaDE2b9aCA8894F21Ec53165", "0x1D1E027f77d7e37aca6D56EA6c640b9CB201CAA2",
+  "0x445dAe2591Fcf47A381d3AF288e8FDC9674189Bc",
+];
 const OFFICIAL_EXPLORER_VERIFIED = new Set([
+  ARC_MAINNET_CONTRACTS.arcStockMarket, ...STOCK_TOKENS,
   ARC_MAINNET_CONTRACTS.launchFactoryV15, ARC_MAINNET_CONTRACTS.launchHookV15, ARC_MAINNET_CONTRACTS.v4Router,
   ARC_MAINNET_CONTRACTS.marketRouter, ARC_MAINNET_CONTRACTS.marketPairFactory, ARC_MAINNET_CONTRACTS.v3Factory,
   ARC_MAINNET_CONTRACTS.v3SwapRouter, ARC_MAINNET_CONTRACTS.v3Quoter, ARC_MAINNET_CONTRACTS.v3PositionManager,
@@ -234,6 +243,14 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       ],
     },
     {
+      title: "Stocks",
+      note: "Ten US stocks and ETFs priced by Pyth, traded against an LP-funded USDC pool. 0.30% per trade: 80% to LPs, 20% to the treasury.",
+      cards: [
+        ["ArcStockMarket", ARC_MAINNET_CONTRACTS.arcStockMarket, "Buys fill at the top of Pyth's confidence band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused. 250 USDC open-interest cap per stock, and total open interest never above half the pool. LP deposits lock for 24 hours."],
+        ...STOCKS.map((s) => [`a${s.symbol} · ${s.name}`, STOCK_TOKENS[s.id], `Price-tracking token for ${s.name}, minted and burned only by ArcStockMarket.`] as [string, string, string]),
+      ],
+    },
+    {
       title: "Bridge",
       note: "A 1.5% fee router over Circle's official CCTP v2 rails, deployed on all five chains. Each non-Arc address opens that chain's own explorer.",
       cards: [
@@ -314,6 +331,7 @@ const DOCS_SECTIONS = [
   ["wallet", "Wallet"],
   ["pay", "Arc Pay"],
   ["lend", "Arc Lend"],
+  ["stocks", "Stocks"],
   ["bridge", "Bridge"],
   ["fx", "StableCoin FX"],
   ["agent", "Agent economy"],
@@ -396,6 +414,18 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
         <div><small>Price freshness</small><strong>≤ 6h</strong><p>The market uses a synced price. A keeper re-syncs it as it ages or moves, and anyone can sync it; a price older than six hours fails closed for new borrows.</p></div>
       </div>
       <aside className="docs-notice"><strong>Live on Arc Mainnet, small caps</strong><p>Market {ARC_MAINNET_CONTRACTS.arcLendMarket}, launched with 5,000 USDC supply and 3,000 USDC borrow caps. The contracts are source-verified but not externally audited; the caps are sized for that.</p></aside>
+    </article>
+
+    <article id="docs-stocks" className="docs-section">
+      <div className="docs-section-head"><span>04b</span><h2>Stocks</h2></div>
+      <p><b>Stocks</b> lets you trade ten US stocks and ETFs (NVDA, AAPL, TSLA, SPY, QQQ, MSFT, AMZN, GOOGL, META, COIN) in USDC on Arc. Each trade carries Pyth&apos;s latest signed price for that stock; you receive a token (aNVDA, aAAPL, …) that the pool buys back at the market price when you sell.</p>
+      <div className="economics-ledger">
+        <div><small>Trade fee</small><strong>0.30%</strong><p>On every buy and sell. 80% stays in the pool for LPs, 20% goes to the Arcodian treasury.</p></div>
+        <div><small>Fill price</small><strong>Pyth ± band</strong><p>Buys fill at price + confidence, sells at price − confidence. Prices older than 60 seconds or with a band wider than 1% are refused.</p></div>
+        <div><small>Liquidity</small><strong>Public LP pool</strong><p>Anyone can deposit USDC. LPs earn the fees and take the other side of traders: trader profits are paid from the pool, trader losses stay in it. Deposits lock for 24 hours.</p></div>
+        <div><small>Limits</small><strong>250 USDC / stock</strong><p>Open interest per stock is capped, and total open interest can never exceed half the pool. Trading follows US market hours (09:30–16:00 New York).</p></div>
+      </div>
+      <aside className="docs-notice"><strong>Price tracking, not ownership</strong><p>Tokens carry no ownership, votes or dividends and cannot be redeemed for stock. Market {ARC_MAINNET_CONTRACTS.arcStockMarket}; source-verified, not externally audited.</p></aside>
     </article>
 
     <article id="docs-bridge" className="docs-section">

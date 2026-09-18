@@ -1,4 +1,4 @@
-// Stocks listed on ArcStockMarket, in listing order (the contract's asset id
+// Stocks listed on ArcStockMarket (tokens aNVDA, aAAPL, …), in listing order (the contract's asset id
 // is the index). Feed ids are Pyth's US equity feeds.
 export type StockListing = { id: number; symbol: string; name: string; feedId: string };
 

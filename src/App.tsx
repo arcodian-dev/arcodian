@@ -977,7 +977,7 @@ export default function App() {
               <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
               <button onClick={openCreateStudio}><b>Launchpad</b><small>Create a coin on Arc Mainnet</small></button>
               <a href="/lend"><b>Lend</b><small>Supply and borrow</small></a>
-              <a href="/stocks"><b>Stocks</b><small>Synthetic US stocks</small></a>
+              <a href="/stocks"><b>Stocks</b><small>US stocks in USDC</small></a>
             </div>
           </details>
           <details className={`nav-group ${["agentpay", "jobs"].includes(tab) ? "active" : ""}`}>
