@@ -794,6 +794,10 @@ export const ARC_MAINNET_CONTRACTS = {
   // EUR/USD for it: 30-minute TWAP of the deepest Uniswap V3 USDC/EURC pool,
   // cross-checked against Pyth whenever Pyth has a fresh report.
   arcEurUsdOracle: "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
+  // Synthetic stock market: Pyth-priced synthetic shares traded against an
+  // LP-funded USDC pool. Empty until deployed; /stocks shows live prices and
+  // a "launching" state until then.
+  arcStockMarket: "",
 } as const;
 
 /// V13 pool parameters, fixed by the factory. A V4 pool is identified by

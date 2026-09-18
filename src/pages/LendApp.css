@@ -293,7 +293,7 @@
   text-decoration: none;
 }
 @media (max-width: 760px) {
-  .lend-site nav > div > a {
+  .lend-site nav .lend-wallet > a {
     display: none;
   }
   .lend-site > header {
@@ -407,5 +407,6 @@
   .lend-terminal .lend-overview article { border-right: 0; border-bottom: 1px solid var(--f-hair, #2d3457); }
   .lend-terminal .lend-overview article:last-child { border-bottom: 0; }
   .lend-site nav .lend-nav-links { display: flex !important; order: 3; width: 100%; justify-content: center; }
-  .lend-site nav { flex-wrap: wrap; }
+  .lend-site nav { flex-wrap: wrap; height: auto; row-gap: 12px; padding-top: 14px; padding-bottom: 14px; }
+  .lend-site nav .lend-nav-links a { padding: 8px 10px; }
 }

@@ -14,3 +14,7 @@ export function isWalletAppRoute(_hostname: string, pathname: string): boolean {
 export function isLendRoute(pathname: string): boolean {
   return pathname === "/lend" || pathname.startsWith("/lend/");
 }
+
+export function isStocksRoute(pathname: string): boolean {
+  return pathname === "/stocks" || pathname.startsWith("/stocks/");
+}

@@ -31,7 +31,7 @@ import { mainnetReadiness } from "./readiness";
 import { isArcBridgeRoute } from "./bridgeRoute";
 import { CIRCLE_BRIDGE_EXECUTION } from "./circleBridgeConfig";
 import { CCTP_DOMAIN, burnConfirmed, burnHashFromResult, fetchBurnLimitPerMessage, fetchCctpFee, savePendingClaim, tokenMessengerFor } from "./bridgeRecovery";
-import { canonicalRedirect, isLendRoute, isWalletAppRoute } from "./routeIntegrity";
+import { canonicalRedirect, isLendRoute, isStocksRoute, isWalletAppRoute } from "./routeIntegrity";
 
 // Every chain the bridge can move USDC between, testnet and real mainnet
 // together. Looking a chain up must search both — a plain CHAINS.find(...)
@@ -78,6 +78,7 @@ const WalletPage = lazy(() => import("./pages/Wallet"));
 const ProductLanding = lazy(() => import("./pages/ProductLanding"));
 const ArcPayLanding = lazy(() => import("./pages/ArcPayLanding"));
 const LendApp = lazy(() => import("./pages/LendApp"));
+const StocksApp = lazy(() => import("./pages/StocksApp"));
 const LendAdmin = lazy(() => import("./pages/LendAdmin"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const Treasury = lazy(() => import("./pages/Treasury"));
@@ -930,6 +931,13 @@ export default function App() {
     );
   }
 
+  if (isStocksRoute(window.location.pathname)) {
+    return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian Stocks…</div>}>
+      <StocksApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>
+      {walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}
+    </Suspense>;
+  }
+
   if (productHost) {
     return <Suspense fallback={<div className="loading-board route-fallback">Opening Arcodian…</div>}>
       {productName === "lend" ? <>{/* The testnet governance console is retired; /lend/admin shows the live market. */}{<LendApp account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect}/>}{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : isWalletAppRoute(window.location.hostname, window.location.pathname) ? <><main className="wallet-product-app"><WalletPage account={account} chainId={chainId} activeProvider={activeProvider} connect={() => connect()} disconnect={disconnect} /></main>{walletOpen && <WalletModal wallets={wallets} close={() => setWalletOpen(false)} connect={connect} walletConnect={connectWalletConnect}/>}</> : <ProductLanding product="wallet" />}
@@ -969,6 +977,7 @@ export default function App() {
               <button onClick={() => chooseTab("screener")}><b>Markets</b><small>Discover Arc assets</small></button>
               <button onClick={openCreateStudio}><b>Launchpad</b><small>Create a coin on Arc Mainnet</small></button>
               <a href="/lend"><b>Lend</b><small>Supply and borrow</small></a>
+              <a href="/stocks"><b>Stocks</b><small>Synthetic US stocks</small></a>
             </div>
           </details>
           <details className={`nav-group ${["agentpay", "jobs"].includes(tab) ? "active" : ""}`}>
@@ -1423,7 +1432,7 @@ export default function App() {
         <p className="mm-group">Product</p>
         <a href="/swap">Swap</a><a href="/ausd">AUSD Rail</a><a href="/arcpay">Pay</a><a href="/fx">Stablecoin FX</a>
         <p className="mm-group">Market</p>
-        <a href="/screener">Markets</a><a href="/lend">Lend</a>
+        <a href="/screener">Markets</a><a href="/lend">Lend</a><a href="/stocks">Stocks</a>
         <p className="mm-group">Agent</p>
         <a href="/agentpay">Agent Pay</a><a href="/jobs">Jobs</a><a href="/services">Services</a><a href="/agents">Agents</a>
         <p className="mm-group">Resources</p>
