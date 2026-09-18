@@ -375,6 +375,18 @@ const int24Packed = (tick) => toBeHex(BigInt.asUintN(24, BigInt(tick)), 3);
  * reached the pool, after the launch hook has taken its 1% of the input, so
  * the input side is grossed back up to what the trader actually spent.
  */
+// eth_getLogs over any span, in pieces the RPC accepts (100,000 blocks).
+// A single call from a factory's deploy block stopped working once the chain
+// had moved ~250k blocks past it, which silently left new launches without a
+// creator, a timestamp or holders.
+async function logsInRange(filter, fromBlock, toBlock, span = 99_000) {
+  const out = [];
+  for (let start = fromBlock; start <= toBlock; start += span + 1) {
+    out.push(...await provider.getLogs({ ...filter, fromBlock: start, toBlock: Math.min(toBlock, start + span) }));
+  }
+  return out;
+}
+
 async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine = 13) {
   const holderState = await readFile(V13_HOLDERS_STATE, "utf8").then(JSON.parse).catch(() => ({}));
   const factory = new Contract(FACTORY, v4FactoryAbi, provider);
@@ -382,8 +394,15 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
   const count = Number(await factory.launchCount());
   const created = new Map();
   try {
-    for (const log of await factory.queryFilter(factory.filters.LaunchCreated(), fromBlock, latestBlock)) {
-      created.set(String(log.args.token).toLowerCase(), { creator: log.args.creator, block: log.blockNumber });
+    // Only when some launch is not known yet: once a row carries its creator
+    // and timestamp there is nothing more to learn from the event.
+    const known = [...previous.values()].filter((row) => String(row.factory).toLowerCase() === FACTORY.toLowerCase() && row.creator && row.createdAt).length;
+    if (known < count) {
+      const topic = factory.interface.getEvent("LaunchCreated").topicHash;
+      for (const raw of await logsInRange({ address: FACTORY, topics: [topic] }, fromBlock, latestBlock)) {
+        const log = factory.interface.parseLog(raw);
+        created.set(String(log.args.token).toLowerCase(), { creator: log.args.creator, block: raw.blockNumber });
+      }
     }
   } catch (error) {
     console.error(`V13 LaunchCreated scan failed: ${String(error).slice(0, 90)}`);
@@ -439,7 +458,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
       const holderKey = String(address).toLowerCase();
       const held = holderState[holderKey] ||= { block: Number(created.get(holderKey)?.block || fromBlock) - 1, balances: {} };
       try {
-        const transfers = await provider.getLogs({ address, topics: [TRANSFER_TOPIC], fromBlock: held.block + 1, toBlock: latestBlock });
+        const transfers = await logsInRange({ address, topics: [TRANSFER_TOPIC] }, held.block + 1, latestBlock);
         for (const log of transfers) {
           const from = `0x${log.topics[1].slice(26)}`, to = `0x${log.topics[2].slice(26)}`;
           const value = BigInt(log.data);
@@ -476,7 +495,7 @@ async function indexV4Launches(FACTORY, latestBlock, fromBlock, previous, engine
       let trades = current ? [...(old?.trades || [])] : [];
       const cursor = current ? Math.max(fromBlock, Number(old?.indexedBlock || 0) + 1) : fromBlock;
       try {
-        const logs = await provider.getLogs({ address: V4_POOL_MANAGER, topics: [V4_SWAP_TOPIC, poolId], fromBlock: cursor, toBlock: latestBlock });
+        const logs = await logsInRange({ address: V4_POOL_MANAGER, topics: [V4_SWAP_TOPIC, poolId] }, cursor, latestBlock);
         for (const log of logs) {
           const data = log.data.slice(2);
           const word = (i) => BigInt(`0x${data.slice(i * 64, (i + 1) * 64)}`);
