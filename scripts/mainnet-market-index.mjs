@@ -87,7 +87,7 @@ const V3_FACTORIES = [
   // 52+ days, show up only through Radar's aggregation and never through our
   // own factory scan. One-time historical rescan on this deploy, then the
   // cursor advances incrementally from here same as always.
-  { address: process.env.EXTERNAL_V3_FACTORY || "0xf0db7b58379503491d857dB50AC9ece64c653918", fromBlock: Number(process.env.EXTERNAL_V3_FROM_BLOCK || 1_948_019), dex: "Uniswap V3" },
+  { address: process.env.EXTERNAL_V3_FACTORY || "0xf0db7b58379503491d857dB50AC9ece64c653918", fromBlock: Number(process.env.EXTERNAL_V3_FROM_BLOCK || 1_948_019), dex: "Uniswap V3", discoveryOff: true },
 ];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -639,12 +639,23 @@ async function indexGlobalV3Pools() {
     const fromBlock = !forceRescan && previousVenue && (previous?.pools || []).length > 0
       ? Number(previousVenue.indexedBlock) + 1
       : venue.fromBlock;
+    // Measured 2026-09-18: 12,975 USDC pools created in 400k blocks (~2
+    // days), essentially all empty spam, and every discovered pool becomes an
+    // index row. Event discovery is therefore off for such venues: their
+    // pools with real liquidity arrive through radar-index, and known pools
+    // keep being refreshed below.
+    if (venue.discoveryOff) {
+      venueCursors.set(venue.address.toLowerCase(), { address: venue.address, dex: venue.dex, indexedBlock: latestBlock, discovery: "radar" });
+      continue;
+    }
     // A venue that fell far behind catches up a bounded slice per run, so
     // one run never outlives its 20-minute systemd budget (which leaves the
     // whole market index unwritten). The cursor still only moves past blocks
     // that were actually read, so nothing is skipped — just spread over runs.
     const scanTo = Math.min(latestBlock, fromBlock + MAX_VENUE_CATCHUP_BLOCKS - 1);
+    const venueStarted = Date.now();
     const createdResult = await addressLogs(venue.address, fromBlock, [poolCreatedTopic], scanTo);
+    console.error(`venue ${venue.dex}: PoolCreated ${fromBlock}-${scanTo} read in ${((Date.now() - venueStarted) / 1000).toFixed(1)}s`);
     const created = Array.isArray(createdResult) ? createdResult : createdResult.logs;
     for (const log of created) {
       try {
