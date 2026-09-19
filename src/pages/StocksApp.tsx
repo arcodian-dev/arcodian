@@ -5,6 +5,7 @@ import { ensureWalletChain } from "../shared";
 import { StockChart } from "../components/StockChart";
 import { CHART_RANGES, STOCKS, fetchStockCandles, fetchStockPrices, nextUsOpen, stockFromPath, usMarketOpen, type Candle, type ChartRange, type DisplayQuote, type StockQuote } from "../stocks";
 import { describeTxError } from "../txError";
+import { sendWithMargin } from "../txGas";
 import "./LendApp.css";
 import "./StocksApp.css";
 
@@ -61,16 +62,6 @@ function explainError(error: unknown): string {
   for (const [selector, message] of Object.entries(REVERTS)) if (text.includes(selector.slice(2))) return message;
   if (error instanceof Error && !("code" in error)) return error.message;
   return describeTxError(error);
-}
-
-/** Sends with a 30% margin over the gas estimate. These calls end inside a
- * reentrancy lock whose final storage write needs gas left over, and a bare
- * estimate can land just under that line (seen on a mainnet fork: the buy
- * ran out of gas at exactly the estimated limit). */
-async function send30(contract: Contract, method: string, args: unknown[], overrides: { value?: bigint } = {}) {
-  const fn = contract.getFunction(method);
-  const estimate = await fn.estimateGas(...args, overrides);
-  return fn(...args, { ...overrides, gasLimit: estimate * 13n / 10n });
 }
 
 /** Absolute times are shown in UTC everywhere on the site. */
@@ -231,17 +222,17 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
         if (!q) throw new Error(`No fresh ${stock.symbol} price. US markets trade 09:30–16:00 New York time.`);
         if (side === "buy") {
           const minShares = value * (1 - FEE) / (q.price + q.conf) * (1 - SLIPPAGE);
-          tx = await send30(contract, "buy", [stock.id, toWei(minShares), bundle.updates], { value: toWei(value) });
+          tx = await sendWithMargin(contract, "buy", [stock.id, toWei(minShares), bundle.updates], { value: toWei(value) });
         } else {
           // Selling everything uses the exact on-chain balance, not a rounded copy.
           const shares = value >= holding ? await new Contract(stock.token, ["function balanceOf(address) view returns (uint256)"], read).balanceOf(account) : toWei(sellShares);
           const minUsdc = Number(formatEther(shares)) * Math.max(0, q.price - q.conf) * (1 - FEE) * (1 - SLIPPAGE);
-          tx = await send30(contract, "sell", [stock.id, shares, toWei(minUsdc), bundle.updates]);
+          tx = await sendWithMargin(contract, "sell", [stock.id, shares, toWei(minUsdc), bundle.updates]);
         }
       } else if (kind === "deposit") {
-        tx = await send30(contract, "deposit", [bundle.updates], { value: toWei(lpInput) });
+        tx = await sendWithMargin(contract, "deposit", [bundle.updates], { value: toWei(lpInput) });
       } else {
-        tx = await send30(contract, "withdraw", [await contract.sharesOf(account), bundle.updates]);
+        tx = await sendWithMargin(contract, "withdraw", [await contract.sharesOf(account), bundle.updates]);
       }
       setStatus(`Submitted ${tx.hash.slice(0, 10)}… waiting for Arc`);
       await tx.wait();

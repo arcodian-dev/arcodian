@@ -4,6 +4,7 @@ import { ARC_MAINNET, ARC_MAINNET_CONTRACTS } from "../config";
 import { LEND_MARKETS, OFFICIAL_ARC_ASSET_STATUS } from "../lendMarkets";
 import { ensureWalletChain } from "../shared";
 import { describeTxError } from "../txError";
+import { sendWithMargin } from "../txGas";
 import "./LendApp.css";
 
 type Props = { account: string; chainId: number | null; activeProvider: EthereumProvider | null; connect: () => void; disconnect: () => void };
@@ -128,7 +129,7 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
     setBusy(true); setStatus("");
     try {
       const signer = await new BrowserProvider(activeProvider).getSigner();
-      const tx = await new Contract(ARC_LEND_ADDRESS, MARKET_ABI, signer).syncOracle();
+      const tx = await sendWithMargin(new Contract(ARC_LEND_ADDRESS, MARKET_ABI, signer), "syncOracle");
       setStatus("Syncing the EUR/USD price…"); await tx.wait(); setStatus("Price synced."); await refresh();
     } catch (error) { setStatus(describeTxError(error)); }
     finally { setBusy(false); }
@@ -142,16 +143,16 @@ export default function LendApp({ account, chainId, activeProvider, connect, dis
       const signer = await new BrowserProvider(activeProvider).getSigner();
       const market = new Contract(ARC_LEND_ADDRESS, MARKET_ABI, signer);
       let tx;
-      if (kind === "supply") tx = await market.supply({ value: parseUnits(amount, 18) });
-      else if (kind === "withdraw") { const shares = await market.supplyShares(account); if (shares === 0n) throw Error("No supply position to withdraw"); tx = await market.withdraw(shares); }
-      else if (kind === "borrow") tx = await market.borrow(parseUnits(amount, 18));
-      else if (kind === "repay") tx = await market.repay(account, { value: parseUnits(amount, 18) });
-      else if (kind === "withdrawCollateral") tx = await market.withdrawCollateral(parseUnits(collateral, 6));
+      if (kind === "supply") tx = await sendWithMargin(market, "supply", [], { value: parseUnits(amount, 18) });
+      else if (kind === "withdraw") { const shares = await market.supplyShares(account); if (shares === 0n) throw Error("No supply position to withdraw"); tx = await sendWithMargin(market, "withdraw", [shares]); }
+      else if (kind === "borrow") tx = await sendWithMargin(market, "borrow", [parseUnits(amount, 18)]);
+      else if (kind === "repay") tx = await sendWithMargin(market, "repay", [account], { value: parseUnits(amount, 18) });
+      else if (kind === "withdrawCollateral") tx = await sendWithMargin(market, "withdrawCollateral", [parseUnits(collateral, 6)]);
       else {
         const value = parseUnits(collateral, 6);
-        const approval = await new Contract(ARC_LEND_COLLATERAL_ADDRESS, TOKEN_ABI, signer).approve(ARC_LEND_ADDRESS, value);
+        const approval = await sendWithMargin(new Contract(ARC_LEND_COLLATERAL_ADDRESS, TOKEN_ABI, signer), "approve", [ARC_LEND_ADDRESS, value]);
         setStatus("EURC approval submitted…"); await approval.wait();
-        tx = await market.depositCollateral(value);
+        tx = await sendWithMargin(market, "depositCollateral", [value]);
       }
       setStatus(`Submitted ${tx.hash.slice(0, 10)}…`); await tx.wait(); setStatus(`${kind} confirmed on Arc.`); await refresh();
     } catch (error) { setStatus(describeTxError(error)); }

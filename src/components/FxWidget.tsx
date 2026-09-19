@@ -3,6 +3,7 @@ import { BrowserProvider, Contract, formatUnits, parseUnits } from "ethers";
 import { ARC_MAINNET } from "../config";
 import { ensureWalletChain } from "../shared";
 import { ERC20_ABI, FX_EURC, FX_FEE_ROUTER_ABI, FX_POOL_ABI, FX_USDC, fxRead, fxRoutes, type FxRoute } from "../fxMainnet";
+import { sendWithMargin } from "../txGas";
 
 type Props = {
   account: string;
@@ -78,13 +79,13 @@ export default function FxWidget({ account, activeProvider, onConnect }: Props) 
       const allowance = (await new Contract(tokenIn, ERC20_ABI, fxRead).allowance(account, fresh.spender)) as bigint;
       if (allowance < amountUnits) {
         setStatus(`Approve ${amount} ${inLabel} in your wallet…`);
-        await (await new Contract(tokenIn, ERC20_ABI, signer).approve(fresh.spender, amountUnits)).wait();
+        await (await sendWithMargin(new Contract(tokenIn, ERC20_ABI, signer), "approve", [fresh.spender, amountUnits])).wait();
       }
       setStatus(`Confirm the swap through ${fresh.label}…`);
       const deadline = Math.floor(Date.now() / 1000) + 300;
       const tx = fresh.venue === "arcodian"
-        ? await new Contract(fresh.spender, FX_POOL_ABI, signer).swap(usdcToEurc, amountUnits, guard, deadline)
-        : await new Contract(fresh.spender, FX_FEE_ROUTER_ABI, signer).swapExactInputSingle(tokenIn, tokenOut, fresh.poolFee, amountUnits, guard, deadline);
+        ? await sendWithMargin(new Contract(fresh.spender, FX_POOL_ABI, signer), "swap", [usdcToEurc, amountUnits, guard, deadline])
+        : await sendWithMargin(new Contract(fresh.spender, FX_FEE_ROUTER_ABI, signer), "swapExactInputSingle", [tokenIn, tokenOut, fresh.poolFee, amountUnits, guard, deadline]);
       await tx.wait();
       setStatus(`Swapped ${amount} ${inLabel} → ${outLabel} through ${fresh.label}.`);
       setAmount("");
