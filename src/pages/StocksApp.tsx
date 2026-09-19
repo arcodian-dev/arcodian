@@ -14,7 +14,7 @@ type Stats = { volume: number; lpFees: number; trades: number; traders: number; 
 
 const MARKET = ARC_MAINNET_CONTRACTS.arcStockMarket;
 /** Block the market was deployed in; its event history starts here. */
-const MARKET_DEPLOY_BLOCK = 21_475_400;
+const MARKET_DEPLOY_BLOCK = 21_579_040;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 const read = new JsonRpcProvider(ARC_MAINNET.rpc, ARC_MAINNET.id, { staticNetwork: true, batchMaxCount: 1 });
 const MARKET_ABI = [
@@ -46,7 +46,7 @@ const REVERTS: Record<string, string> = {
   [selectorOf("StalePrice()").slice(0, 10)]: "The price expired while the wallet was open (prices are valid for 60 seconds). Try again.",
   [selectorOf("Slippage()").slice(0, 10)]: "The price moved more than 1% before the trade landed. Try again.",
   [selectorOf("CapExceeded()").slice(0, 10)]: "This trade is above the open-interest cap for this stock or the pool. Try a smaller amount.",
-  [selectorOf("Locked()").slice(0, 10)]: "Your deposit is still inside its 24-hour lock.",
+  [selectorOf("Locked()").slice(0, 10)]: "Your deposit is still inside its 15-minute lock.",
   [selectorOf("IsPaused()").slice(0, 10)]: "The market is paused.",
   [selectorOf("Insolvent()").slice(0, 10)]: "The pool cannot cover this sale right now.",
   [selectorOf("BadPrice()").slice(0, 10)]: "The price band is too wide to trade safely right now.",
@@ -61,6 +61,16 @@ function explainError(error: unknown): string {
   for (const [selector, message] of Object.entries(REVERTS)) if (text.includes(selector.slice(2))) return message;
   if (error instanceof Error && !("code" in error)) return error.message;
   return describeTxError(error);
+}
+
+/** Sends with a 30% margin over the gas estimate. These calls end inside a
+ * reentrancy lock whose final storage write needs gas left over, and a bare
+ * estimate can land just under that line (seen on a mainnet fork: the buy
+ * ran out of gas at exactly the estimated limit). */
+async function send30(contract: Contract, method: string, args: unknown[], overrides: { value?: bigint } = {}) {
+  const fn = contract.getFunction(method);
+  const estimate = await fn.estimateGas(...args, overrides);
+  return fn(...args, { ...overrides, gasLimit: estimate * 13n / 10n });
 }
 
 /** Absolute times are shown in UTC everywhere on the site. */
@@ -221,17 +231,17 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
         if (!q) throw new Error(`No fresh ${stock.symbol} price. US markets trade 09:30–16:00 New York time.`);
         if (side === "buy") {
           const minShares = value * (1 - FEE) / (q.price + q.conf) * (1 - SLIPPAGE);
-          tx = await contract.buy(stock.id, toWei(minShares), bundle.updates, { value: toWei(value) });
+          tx = await send30(contract, "buy", [stock.id, toWei(minShares), bundle.updates], { value: toWei(value) });
         } else {
           // Selling everything uses the exact on-chain balance, not a rounded copy.
           const shares = value >= holding ? await new Contract(stock.token, ["function balanceOf(address) view returns (uint256)"], read).balanceOf(account) : toWei(sellShares);
           const minUsdc = Number(formatEther(shares)) * Math.max(0, q.price - q.conf) * (1 - FEE) * (1 - SLIPPAGE);
-          tx = await contract.sell(stock.id, shares, toWei(minUsdc), bundle.updates);
+          tx = await send30(contract, "sell", [stock.id, shares, toWei(minUsdc), bundle.updates]);
         }
       } else if (kind === "deposit") {
-        tx = await contract.deposit(bundle.updates, { value: toWei(lpInput) });
+        tx = await send30(contract, "deposit", [bundle.updates], { value: toWei(lpInput) });
       } else {
-        tx = await contract.withdraw(await contract.sharesOf(account), bundle.updates);
+        tx = await send30(contract, "withdraw", [await contract.sharesOf(account), bundle.updates]);
       }
       setStatus(`Submitted ${tx.hash.slice(0, 10)}… waiting for Arc`);
       await tx.wait();
@@ -332,7 +342,7 @@ export default function StocksApp({ account, chainId, activeProvider, connect, d
 
       <div className="lend-actions stocks-lower">
         <article><p>EARN</p><h2>Provide liquidity</h2>
-          <span className="stocks-note">Deposit USDC into the pool that pays traders. LPs earn <b>80% of every 0.30% trade fee</b>, and the pool keeps what traders lose, while paying out what they win. Anyone can deposit. Deposits lock for 24 hours.</span>
+          <span className="stocks-note">Deposit USDC into the pool that pays traders. LPs earn <b>80% of every 0.30% trade fee</b>, and the pool keeps what traders lose, while paying out what they win. Anyone can deposit, and withdraw 15 minutes after depositing.</span>
           <div className="stocks-lp-figures"><div><small>Your position</small><b>{lpValue !== null ? `${usd(lpValue, 4)} USDC` : pool && pool.lpShares > 0 ? `${usd(pool.lpShares, 4)} shares` : "—"}</b></div><div><small>Your pool share</small><b>{pool && pool.totalShares > 0 ? `${usd(pool.lpShares / pool.totalShares * 100)}%` : "—"}</b></div><div><small>LPs</small><b>{stats ? stats.providers : "—"}</b></div></div>
           <label>Deposit<input inputMode="decimal" value={lpAmount} onChange={(e) => setLpAmount(e.target.value.replace(/[^0-9.]/g, ""))} placeholder="0.00"/><b>USDC</b></label>
           <small>{firstDeposit ? `The first deposit must be at least ${MIN_FIRST_DEPOSIT} USDC. ` : ""}{locked && pool ? `Unlocks ${utcTime(pool.lockedUntil)}.` : ""}</small>

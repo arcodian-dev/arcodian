@@ -113,10 +113,10 @@ export function CanaryConsole({ account, connect, openContracts, openHow, openFa
 // explorers do not index contracts created through the CREATE2 deployer.
 /** aNVDA … aCOIN, in ArcStockMarket asset-id order. */
 const STOCK_TOKENS = [
-  "0x7023e9f5e9eF0E636F8CaDc94ca18bCc724B4675", "0xED98B427Cecc076E5C9416A1a890ffb6bE03A1c8", "0xeD5723D45A9F5d9E435c8572C280DC2E9d07c550",
-  "0x722739Af6070EC69a3548AbF40B68a166e02D69e", "0xb1F855D2e2B8dA130d6dF376429e07dBb898ae8F", "0x5dD6799aD8933F5776368F6A982d01BE1A67D5E7",
-  "0x9523bED27C4608A8a085d072F6c3D25134468Da7", "0xF406De48f9C2A2C40B1E0cDd07Da6d2384267563", "0xd59C3d08dfE760F28a789234ed0AaD6f0d140c6b",
-  "0x16b984B6d899f993E8965a01eEf895ff57a854a3",
+  "0xF5e18eE81f28A4d68FBE0684EF066720c7a82ab5", "0x5C073fD59bD8D0a36b1D21Eb4bA2C59C26F414E2", "0x7749b8aC3C3748D8eAEA62069CE1374a5f0A5177",
+  "0x6C0E702b10Ca01C952F5F1b64378963cC8daf640", "0xca5DE7fbc309e680eE9dA7704dA34aA9937c4e7B", "0x40f1F5dEC1AaBc17C00A58cA2aCfC28C90c1aF85",
+  "0xDfEC52612890B31E3E1E4ea754b80aD1F963BD44", "0xfE5FC940fC868a0e38A4e1829670435C61162eCe", "0x5e24d24C21bEBa3a984721CeE533acf45509EdA9",
+  "0x99A4e6C7089148f16172DF312bD46b58E0F23250",
 ];
 const OFFICIAL_EXPLORER_VERIFIED = new Set([
   ARC_MAINNET_CONTRACTS.arcStockMarket, ARC_MAINNET_CONTRACTS.arcStockPriceFeed, ...STOCK_TOKENS,
@@ -246,7 +246,7 @@ export function ContractsPage({ openHow, openFaq, openCanary }: { openHow: () =>
       title: "Stocks",
       note: "Ten US stocks and ETFs at live market prices, traded against an LP-funded USDC pool. 0.30% per trade: 80% to LPs, 20% to the treasury.",
       cards: [
-        ["ArcStockMarket", ARC_MAINNET_CONTRACTS.arcStockMarket, "Buys fill at the top of the signed price band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused. 250 USDC open-interest cap per stock, and total open interest never above half the pool. LP deposits lock for 24 hours."],
+        ["ArcStockMarket", ARC_MAINNET_CONTRACTS.arcStockMarket, "Buys fill at the top of the signed price band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused. 250 USDC open-interest cap per stock, and total open interest never above half the pool. LP deposits lock for 15 minutes."],
         ["ArcSignedPriceFeed · price oracle", ARC_MAINNET_CONTRACTS.arcStockPriceFeed, "Stores stock prices signed by Arcodian's price service (median of three independent market-data sources). Accepts only the authorized signer's signatures, bound to this chain and contract; the signer can be rotated by the admin."],
         ...STOCKS.map((s) => [`a${s.symbol} · ${s.name}`, STOCK_TOKENS[s.id], `Price-tracking token for ${s.name}, minted and burned only by ArcStockMarket.`] as [string, string, string]),
       ],
@@ -423,7 +423,7 @@ export function HowItWorks({ enterMarket, openContracts, openFaq, openCanary }: 
       <div className="economics-ledger">
         <div><small>Trade fee</small><strong>0.30%</strong><p>On every buy and sell. 80% stays in the pool for LPs, 20% goes to the Arcodian treasury.</p></div>
         <div><small>Fill price</small><strong>Median ± band</strong><p>Prices are the median of CNBC, Nasdaq and Yahoo quotes, signed only when at least two agree within 0.5%. Buys fill at the top of the band, sells at the bottom. Prices older than 60 seconds or with a band wider than 1% are refused.</p></div>
-        <div><small>Liquidity</small><strong>Public LP pool</strong><p>Anyone can deposit USDC. LPs earn the fees and take the other side of traders: trader profits are paid from the pool, trader losses stay in it. Deposits lock for 24 hours.</p></div>
+        <div><small>Liquidity</small><strong>Public LP pool</strong><p>Anyone can deposit USDC. LPs earn the fees and take the other side of traders: trader profits are paid from the pool, trader losses stay in it. Deposits lock for 15 minutes.</p></div>
         <div><small>Limits</small><strong>250 USDC / stock</strong><p>Open interest per stock is capped, and total open interest can never exceed half the pool. Trading follows US market hours (09:30–16:00 New York).</p></div>
       </div>
       <aside className="docs-notice"><strong>Price tracking, not ownership</strong><p>Tokens carry no ownership, votes or dividends and cannot be redeemed for stock. Market {ARC_MAINNET_CONTRACTS.arcStockMarket}, price oracle {ARC_MAINNET_CONTRACTS.arcStockPriceFeed}. Prices are signed by Arcodian&apos;s price service, so that signer is the trust point; per-stock caps bound the exposure. Source-verified, not externally audited.</p></aside>

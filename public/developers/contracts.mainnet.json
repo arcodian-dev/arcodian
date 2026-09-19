@@ -93,29 +93,33 @@
     "priceSource": "Uniswap V3 USDC/EURC 30-min TWAP (0x6fd5F2fb831940DcD61A98c5B3aCB7D8C6f3bFc1), Pyth cross-check (0x8250f4aF4B972684F7b336503E2D6dFeDeB1487a)"
   },
   "stocks": {
-    "market": "0x6171084061b98E0A71B4b77f73a00B13b76512C1",
+    "market": "0x880C7975BB50dad1356805660807810DfB9F9Eff",
     "feeBps": 30,
     "lpShareOfFeeBps": 8000,
     "maxPriceAgeSeconds": 60,
     "maxConfidenceBps": 100,
     "maxPoolExposureBps": 5000,
-    "lpLockSeconds": 86400,
+    "lpLockSeconds": 900,
     "capPerStockUsdc": 250,
     "tokens": {
-      "aNVDA": "0x7023e9f5e9eF0E636F8CaDc94ca18bCc724B4675",
-      "aAAPL": "0xED98B427Cecc076E5C9416A1a890ffb6bE03A1c8",
-      "aTSLA": "0xeD5723D45A9F5d9E435c8572C280DC2E9d07c550",
-      "aSPY": "0x722739Af6070EC69a3548AbF40B68a166e02D69e",
-      "aQQQ": "0xb1F855D2e2B8dA130d6dF376429e07dBb898ae8F",
-      "aMSFT": "0x5dD6799aD8933F5776368F6A982d01BE1A67D5E7",
-      "aAMZN": "0x9523bED27C4608A8a085d072F6c3D25134468Da7",
-      "aGOOGL": "0xF406De48f9C2A2C40B1E0cDd07Da6d2384267563",
-      "aMETA": "0xd59C3d08dfE760F28a789234ed0AaD6f0d140c6b",
-      "aCOIN": "0x16b984B6d899f993E8965a01eEf895ff57a854a3"
+      "aNVDA": "0xF5e18eE81f28A4d68FBE0684EF066720c7a82ab5",
+      "aAAPL": "0x5C073fD59bD8D0a36b1D21Eb4bA2C59C26F414E2",
+      "aTSLA": "0x7749b8aC3C3748D8eAEA62069CE1374a5f0A5177",
+      "aSPY": "0x6C0E702b10Ca01C952F5F1b64378963cC8daf640",
+      "aQQQ": "0xca5DE7fbc309e680eE9dA7704dA34aA9937c4e7B",
+      "aMSFT": "0x40f1F5dEC1AaBc17C00A58cA2aCfC28C90c1aF85",
+      "aAMZN": "0xDfEC52612890B31E3E1E4ea754b80aD1F963BD44",
+      "aGOOGL": "0xfE5FC940fC868a0e38A4e1829670435C61162eCe",
+      "aMETA": "0x5e24d24C21bEBa3a984721CeE533acf45509EdA9",
+      "aCOIN": "0x99A4e6C7089148f16172DF312bD46b58E0F23250"
     },
     "priceFeed": "0xE8e3eE1201E6D9dA70B4147CD2E63185A063573d",
     "priceSigner": "0xb88982A1636A5e7aDf0d90d251f280952E1F4f5C",
     "priceSource": "median of CNBC, Nasdaq, Yahoo; signed when >=2 agree within 0.5%, US regular session only",
-    "retiredMarket": "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de (Pyth-based, paused, never funded)"
+    "deployBlock": 21579044,
+    "retiredMarkets": [
+      "0xb713Ba3CC40faEF789aaF627F0ee13c826e7f0de (Pyth-based, paused, never funded)",
+      "0x6171084061b98E0A71B4b77f73a00B13b76512C1 (24h LP lock, paused, never funded)"
+    ]
   }
 }

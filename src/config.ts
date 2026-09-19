@@ -796,11 +796,11 @@ export const ARC_MAINNET_CONTRACTS = {
   arcEurUsdOracle: "0x07a75a39870e25BC38e5128d02150Ea34D0eD592",
   // Stock market, deployed 2026-09-18: stock-tracking tokens (aNVDA, aAAPL,
   // …) traded against an LP-funded USDC pool, 0.30% per trade, 80% to LPs,
-  // 250 USDC open-interest cap per stock. Priced by Arcodian's own signed feed
-  // (median of independent public quotes) because Pyth's equity feeds need a
-  // paid entitlement. The first market, 0xb713…f0de, was on Pyth, never got
-  // prices, and is paused.
-  arcStockMarket: "0x6171084061b98E0A71B4b77f73a00B13b76512C1",
+  // 250 USDC open-interest cap per stock, 15-minute LP lock. Priced by
+  // Arcodian's own signed feed (CNBC + Nasdaq, signed only when they agree)
+  // because Pyth's equity feeds need a paid entitlement. Earlier markets, all
+  // paused and never funded: 0xb713…f0de (Pyth) and 0x6171…12C1 (24-hour lock).
+  arcStockMarket: "0x880C7975BB50dad1356805660807810DfB9F9Eff",
   arcStockPriceFeed: "0xE8e3eE1201E6D9dA70B4147CD2E63185A063573d",
 } as const;
 

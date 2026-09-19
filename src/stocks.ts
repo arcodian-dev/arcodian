@@ -3,16 +3,16 @@
 export type StockListing = { id: number; symbol: string; name: string; feedId: string; token: string };
 
 export const STOCKS: StockListing[] = [
-  { id: 0, symbol: "NVDA", name: "NVIDIA", feedId: "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593", token: "0x7023e9f5e9eF0E636F8CaDc94ca18bCc724B4675" },
-  { id: 1, symbol: "AAPL", name: "Apple", feedId: "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688", token: "0xED98B427Cecc076E5C9416A1a890ffb6bE03A1c8" },
-  { id: 2, symbol: "TSLA", name: "Tesla", feedId: "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1", token: "0xeD5723D45A9F5d9E435c8572C280DC2E9d07c550" },
-  { id: 3, symbol: "SPY", name: "S&P 500 ETF", feedId: "0x19e09bb805456ada3979a7d1cbb4b6d63babc3a0f8e8a9509f68afa5c4c11cd5", token: "0x722739Af6070EC69a3548AbF40B68a166e02D69e" },
-  { id: 4, symbol: "QQQ", name: "Nasdaq-100 ETF", feedId: "0x9695e2b96ea7b3859da9ed25b7a46a920a776e2fdae19a7bcfdf2b219230452d", token: "0xb1F855D2e2B8dA130d6dF376429e07dBb898ae8F" },
-  { id: 5, symbol: "MSFT", name: "Microsoft", feedId: "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1", token: "0x5dD6799aD8933F5776368F6A982d01BE1A67D5E7" },
-  { id: 6, symbol: "AMZN", name: "Amazon", feedId: "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a", token: "0x9523bED27C4608A8a085d072F6c3D25134468Da7" },
-  { id: 7, symbol: "GOOGL", name: "Alphabet", feedId: "0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6", token: "0xF406De48f9C2A2C40B1E0cDd07Da6d2384267563" },
-  { id: 8, symbol: "META", name: "Meta", feedId: "0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe", token: "0xd59C3d08dfE760F28a789234ed0AaD6f0d140c6b" },
-  { id: 9, symbol: "COIN", name: "Coinbase", feedId: "0xfee33f2a978bf32dd6b662b65ba8083c6773b494f8401194ec1870c640860245", token: "0x16b984B6d899f993E8965a01eEf895ff57a854a3" },
+  { id: 0, symbol: "NVDA", name: "NVIDIA", feedId: "0xb1073854ed24cbc755dc527418f52b7d271f6cc967bbf8d8129112b18860a593", token: "0xF5e18eE81f28A4d68FBE0684EF066720c7a82ab5" },
+  { id: 1, symbol: "AAPL", name: "Apple", feedId: "0x49f6b65cb1de6b10eaf75e7c03ca029c306d0357e91b5311b175084a5ad55688", token: "0x5C073fD59bD8D0a36b1D21Eb4bA2C59C26F414E2" },
+  { id: 2, symbol: "TSLA", name: "Tesla", feedId: "0x16dad506d7db8da01c87581c87ca897a012a153557d4d578c3b9c9e1bc0632f1", token: "0x7749b8aC3C3748D8eAEA62069CE1374a5f0A5177" },
+  { id: 3, symbol: "SPY", name: "S&P 500 ETF", feedId: "0x19e09bb805456ada3979a7d1cbb4b6d63babc3a0f8e8a9509f68afa5c4c11cd5", token: "0x6C0E702b10Ca01C952F5F1b64378963cC8daf640" },
+  { id: 4, symbol: "QQQ", name: "Nasdaq-100 ETF", feedId: "0x9695e2b96ea7b3859da9ed25b7a46a920a776e2fdae19a7bcfdf2b219230452d", token: "0xca5DE7fbc309e680eE9dA7704dA34aA9937c4e7B" },
+  { id: 5, symbol: "MSFT", name: "Microsoft", feedId: "0xd0ca23c1cc005e004ccf1db5bf76aeb6a49218f43dac3d4b275e92de12ded4d1", token: "0x40f1F5dEC1AaBc17C00A58cA2aCfC28C90c1aF85" },
+  { id: 6, symbol: "AMZN", name: "Amazon", feedId: "0xb5d0e0fa58a1f8b81498ae670ce93c872d14434b72c364885d4fa1b257cbb07a", token: "0xDfEC52612890B31E3E1E4ea754b80aD1F963BD44" },
+  { id: 7, symbol: "GOOGL", name: "Alphabet", feedId: "0x5a48c03e9b9cb337801073ed9d166817473697efff0d138874e0f6a33d6d5aa6", token: "0xfE5FC940fC868a0e38A4e1829670435C61162eCe" },
+  { id: 8, symbol: "META", name: "Meta", feedId: "0x78a3e3b8e676a8f73c439f5d749737034b139bbbe899ba5775216fba596607fe", token: "0x5e24d24C21bEBa3a984721CeE533acf45509EdA9" },
+  { id: 9, symbol: "COIN", name: "Coinbase", feedId: "0xfee33f2a978bf32dd6b662b65ba8083c6773b494f8401194ec1870c640860245", token: "0x99A4e6C7089148f16172DF312bD46b58E0F23250" },
 ];
 
 /** US regular session, 09:30–16:00 New York time, Monday to Friday. Pyth's
